@@ -1,4 +1,4 @@
-/* Look on the header and a footer: the four fixed rows (light, dark, colour, inverted), a greyed one says why;
+/* Look on the header and a footer: only the backgrounds it can take and that look different, each a strip with its name;
    the change is made on every page. Needs tools/fake-save-server.py on 8788. */
 import { readFileSync } from 'fs';
 import { join } from 'path';
@@ -7,7 +7,7 @@ const b = await chromium.launch({ executablePath: process.env.TF_CHROME || '/App
 const p = await b.newPage({ viewport: { width: 1300, height: 850 } });
 p.on('pageerror', e => console.log('PAGEERROR', e.message));
 await p.goto('http://127.0.0.1:8788/demo/index.html#edit=test'); await p.waitForTimeout(1200);
-const rows = () => p.$$eval('.tf-menu .tf-item', es => es.map(e => (e.classList.contains('tf-off') ? 'off:' : e.getAttribute('aria-current') ? 'now:' : '') + e.querySelector('.tf-look-word').textContent));
+const rows = () => p.$$eval('.tf-menu .tf-swatch', es => es.map(e => (e.closest('[aria-current]') ? 'now:' : '') + e.textContent.toLowerCase()));
 const grounds = {};
 for (const sel of ['header', 'footer']) {
   await p.mouse.move(5, 5); const el = await p.$(sel); await el.scrollIntoViewIfNeeded(); const r = await el.boundingBox();
@@ -15,9 +15,8 @@ for (const sel of ['header', 'footer']) {
   const shown = await p.$$eval('.tf-tools > *', es => es.filter(e => getComputedStyle(e).display !== 'none').map(e => e.textContent).join(','));
   await p.click('.tf-look-open'); await p.waitForTimeout(200);
   const list = await rows();
-  console.log(sel + ': only Look', shown === 'Look', '| four rows in order', list.map(w => w.split(':').pop()).join(',') === 'light,dark,colour,inverted', '|', list.join(' '),
-    '| greyed say why', await p.$$eval('.tf-off', es => es.every(e => e.querySelector('.tf-look-why').textContent.length > 10)));
-  await p.click('.tf-menu .tf-item:not(.tf-off):not([aria-current]) >> nth=-1'); await p.waitForTimeout(1500); /* inverted */
+  console.log(sel + ': only Look', shown === 'Look', '| none greyed', !(await p.$('.tf-menu .tf-off')), '|', list.join(' '));
+  await p.click('.tf-menu .tf-swatch-row:not([aria-current]) >> nth=-1'); await p.waitForTimeout(1500); /* the last other one */
   grounds[sel] = await p.$eval(sel, e => getComputedStyle(e).backgroundColor);
 }
 await p.click('.tf-button:has-text("Done")'); await p.waitForTimeout(2500);
