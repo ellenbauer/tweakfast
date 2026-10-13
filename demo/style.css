@@ -1,0 +1,14 @@
+:root{--ink:#1d2a1f;--paper:#fbfaf5;--accent:#2f6f3e;--line:#dcd9cc}
+*{box-sizing:border-box}body{margin:0;font:18px/1.6 Georgia,serif;color:var(--ink);background:var(--paper)}
+header{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:20px 32px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+header .logo{font-weight:700;text-decoration:none;color:var(--ink);font-size:22px}
+nav a{margin-left:20px;color:var(--accent);text-decoration:none}nav a[aria-current]{text-decoration:underline}
+main{max-width:860px;margin:0 auto;padding:32px}
+section{margin:0 0 56px}h1{font-size:40px;line-height:1.15;margin:0 0 16px}h2{font-size:28px;margin:0 0 12px}
+img{max-width:100%;height:auto;display:block;border-radius:8px}
+.hero img{aspect-ratio:16/9;object-fit:cover;width:100%}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:24px}
+.card{background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}.card img{border-radius:0;aspect-ratio:16/10;object-fit:cover;width:100%}
+.card .text{padding:16px}.card h3{margin:0 0 6px;font-size:20px}.card p{margin:0}.card time{color:#666;font-size:15px}
+.button{display:inline-block;background:var(--accent);color:#fff;padding:12px 20px;border-radius:999px;text-decoration:none}
+footer{border-top:1px solid var(--line);padding:24px 32px;color:#666;font-size:15px;text-align:center}

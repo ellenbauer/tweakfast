@@ -1,0 +1,32 @@
+/* Putting back a version brings back the header and footers on every page, and every page keeps its menu as it is now.
+   Needs tools/fake-save-server.py on 8788, freshly started. */
+import fs from 'node:fs';
+const { chromium } = await import(process.env.TF_PLAYWRIGHT || new URL('../node_modules/playwright-core/index.mjs', import.meta.url).pathname);
+const LOG = (process.env.TMPDIR || '/tmp') + '/tweakfast-fake-save.json';
+const b = await chromium.launch({ executablePath: process.env.TF_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true });
+const p = await b.newPage({ viewport: { width: 1100, height: 800 } });
+p.on('pageerror', e => console.log('PAGEERROR', e.message)); p.on('dialog', d => d.dismiss());
+const edit = async (sel) => { await p.click(sel); await p.waitForTimeout(60); await p.click(sel); };
+const act = async (row, word) => { await p.hover(row); await p.click(row + ' button[title="More"]'); await p.click('.tf-menu button:has-text("' + word + '")'); };
+const status = () => p.$eval('.tf-status', s => s.textContent.trim());
+const openSite = async () => { if (!(await p.$('.tf-panel'))) await p.click('.tf-button:has-text("Site")'); };
+const done = async () => { await p.click('.tf-button:has-text("Done")'); await p.waitForFunction(() => /Live/.test(document.querySelector('.tf-status').textContent)); await p.waitForTimeout(100); };
+await p.goto('http://127.0.0.1:8788/demo/about.html?v=' + Date.now() + '#edit=test'); await p.waitForTimeout(500);
+await edit('header .logo'); await p.keyboard.press('Control+A'); await p.keyboard.press('Meta+A'); await p.keyboard.type('rose&fern'); await p.keyboard.press('Enter'); await p.waitForTimeout(400);
+await done();
+await openSite(); await p.click('.tf-sheet-head button[title="Add a page"]'); await p.selectOption('.tf-select', 'events.html'); await p.fill('.tf-add .tf-input', 'Zed'); await p.click('.tf-add button:has-text("Add")');
+await p.waitForFunction(() => /Page added/.test(document.querySelector('.tf-status').textContent));
+await done();
+const served = async (f) => (await fetch('http://127.0.0.1:8788/demo/' + f + '?v=' + Date.now())).text();
+console.log('logo renamed everywhere:', (await Promise.all(['index.html', 'about.html', 'events.html', 'contact.html'].map(served))).every(h => /rose&amp;fern/.test(h)));
+await openSite(); await act('.tf-row:has-text("About")', 'Versions'); await p.waitForTimeout(400);
+await p.click('.tf-versions .tf-row:has-text("The original") button'); await p.waitForTimeout(800);
+console.log('this page: logo back:', await p.$eval('header .logo', e => e.textContent) === 'Elm Street Garden Club', '| Zed still in its menu:', !!(await p.$('nav a[href="zed.html"]')), '| says:', await status());
+await done();
+const sent = JSON.parse(fs.readFileSync(LOG, 'utf8')).files;
+console.log('saved pages:', Object.keys(sent).sort().join(', '));
+const pages = ['index.html', 'about.html', 'events.html', 'contact.html', 'zed.html'];
+const html = await Promise.all(pages.map(served));
+pages.forEach((f, i) => console.log(' ', f, 'logo back:', /class="logo"[^>]*>Elm Street Garden Club</.test(html[i]), '| Zed in menu:', /href="zed\.html"/.test(html[i]), '| own page marked:', f === 'zed.html' || new RegExp('href="' + f + '" aria-current="page"').test(html[i]) || f === 'index.html'));
+await p.click('.tf-button:has-text("Undo")').catch(() => {});
+await b.close();

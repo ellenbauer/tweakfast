@@ -1,0 +1,33 @@
+/* Words for Google: a page's title and description from the Pages panel. Needs tools/fake-save-server.py on 8788. */
+import fs from 'node:fs';
+const { chromium } = await import(process.env.TF_PLAYWRIGHT || new URL('../node_modules/playwright-core/index.mjs', import.meta.url).pathname);
+const LOG = (process.env.TMPDIR || '/tmp') + '/tweakfast-fake-save.json';
+const b = await chromium.launch({ executablePath: process.env.TF_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true });
+const p = await b.newPage({ viewport: { width: 1100, height: 800 } });
+p.on('pageerror', e => console.log('PAGEERROR', e.message));
+const act = async (row, word) => { await p.hover(row); await p.click(row + ' button[title="More"]'); await p.click('.tf-menu button:has-text("' + word + '")'); };
+await p.goto('http://127.0.0.1:8788/demo/index.html#edit=test'); await p.waitForTimeout(500);
+await p.click('.tf-button:has-text("Site")'); await p.waitForTimeout(300);
+await act('.tf-row:has-text("Home")', 'Words for Google'); await p.waitForTimeout(300);
+const vals = () => p.$$eval('.tf-words input, .tf-words textarea', es => es.map(e => e.value));
+const preview = () => p.$eval('.tf-preview', e => [...e.children].map(c => c.textContent).join(' | '));
+console.log('preview at open:', await preview(), '| description is one line that grows:', await p.$eval('.tf-words textarea', t => t.rows === 1 && t.offsetHeight === 32));
+await p.fill('.tf-words input >> nth=0', 'A very long title for the Elm Street Garden Club that goes on and on past sixty letters'); await p.waitForTimeout(50);
+console.log('preview cuts a long title:', await p.$eval('.tf-preview-title', e => e.textContent.length <= 60 && e.textContent.endsWith('…')));
+console.log('home fields:', JSON.stringify(await vals()));
+await p.fill('.tf-words input >> nth=0', 'Elm Street Garden Club, Springfield'); await p.fill('.tf-words textarea', 'A club for everyone who likes to dig, and for those who only like to sit in the shade and watch the others dig. ' + 'A club for everyone who likes to dig.'); await p.waitForTimeout(50);
+console.log('a long description makes the field taller:', await p.$eval('.tf-words textarea', t => t.offsetHeight > 40));
+await p.fill('.tf-words textarea', 'A club for everyone who likes to dig.'); await p.waitForTimeout(50);
+console.log('a short one shrinks it back:', await p.$eval('.tf-words textarea', t => t.offsetHeight === 32));
+console.log('preview follows:', await preview());
+await p.keyboard.press('Enter'); await p.waitForTimeout(200);
+console.log('after Enter: title', await p.title(), '| description', await p.$eval('meta[name="description"]', m => m.content), '| box closed', (await p.$$('.tf-words')).length === 0, '| undo enabled', await p.$eval('.tf-button:has-text("Undo")', e => !e.disabled));
+await p.click('.tf-button:has-text("Undo")'); await p.waitForTimeout(100); /* one Undo for the box, though the title kept on blur and the description on Enter */
+console.log('after one Undo: title', await p.title(), '| description tag', await p.$$eval('meta[name="description"]', m => m.map(x => x.content).join('|') || 'none'));
+await act('.tf-row:has-text("About")', 'Words for Google'); await p.waitForTimeout(600);
+console.log('about fields:', JSON.stringify(await vals()));
+await p.fill('.tf-words textarea', 'Who we are and how to join.'); await p.keyboard.press('Enter'); await p.waitForTimeout(300);
+await p.click('.tf-button:has-text("Done")'); await p.waitForTimeout(800);
+const sent = JSON.parse(fs.readFileSync(LOG, 'utf8'));
+console.log('saved:', Object.keys(sent.files).join(', '), '| about has the description:', /name="description" content="Who we are and how to join\."/.test(sent.files['about.html'] || ''), '| about title kept:', /<title>About/.test(sent.files['about.html'] || ''));
+await b.close();

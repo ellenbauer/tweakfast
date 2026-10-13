@@ -1,0 +1,115 @@
+#!/bin/sh
+# One command for the maker: bundle, publish, set the key, print the owner's link.
+#
+#   tools/tweakfast <site folder>              first run creates a space, later runs update it
+#   tools/tweakfast <site.zip>                 a zip from a site-building tool; unpacked next to it
+#   tools/tweakfast <site folder> --key <word> set (or change) the owner's key
+#   tools/tweakfast <site folder> --slug <name> choose the site's name at space.fast (first run only)
+#   tools/tweakfast demo                       the live demo at tweakfast-demo.space.fast
+#
+# Pages are made plain on the way (tools/clean.py): programs and badges a tool attached are taken out and
+# the script line is added, so an export from an app-building tool works when the page text is in the file.
+#
+# Needs the Spacefast tool `sf`, logged in (`sf login`). The site folder remembers its space in
+# .spacefast/state.json, so the same folder always updates the same space. The key is generated on the
+# first run and kept afterwards; pass --key to change it, which makes the old link stop working.
+set -e
+HERE="$(cd "$(dirname "$0")/.." && pwd)"
+SRC=""; KEY=""; SLUG=""; SPACE=""; NAME=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --key) KEY="$2"; shift 2 ;;
+    --slug) SLUG="$2"; shift 2 ;;
+    --space) SPACE="$2"; shift 2 ;;
+    --name) NAME="$2"; shift 2 ;;
+    demo) SRC="$HERE/demo"; SPACE="${SPACE:-spc_3a78e4993be948b0ae4d6e0bf159ec8f}"; shift ;;
+    -*) echo "unknown option $1"; exit 1 ;;
+    *) SRC="$1"; shift ;;
+  esac
+done
+case "$SRC" in
+  *.zip) [ -f "$SRC" ] || { echo "No such file: $SRC"; exit 1; }
+    DIR="${SRC%.zip}"; mkdir -p "$DIR"; unzip -q -o "$SRC" -d "$DIR" -x '__MACOSX/*' '.DS_Store' '*/.DS_Store' 2>/dev/null
+    ls "$DIR"/*.html >/dev/null 2>&1 || for d in "$DIR"/*/; do ls "$d"*.html >/dev/null 2>&1 && DIR="${d%/}" && break; done
+    echo "Unpacked to $DIR. Next time run the command on that folder."; SRC="$DIR" ;;
+esac
+[ -n "$SRC" ] && [ -d "$SRC" ] || { echo "usage: tools/tweakfast <site folder or site.zip> [--key <word>] [--slug <name>]"; exit 1; }
+command -v sf >/dev/null || { echo "The Spacefast tool is missing. Install it: npm install -g spacefast, then sf login."; exit 1; }
+SRC="$(cd "$SRC" && pwd)"
+ls "$SRC"/*.html >/dev/null 2>&1 || { echo "No pages in $SRC. Pages are .html files at the top of the folder."; exit 1; }
+[ -f "$SRC/index.html" ] || { echo "No index.html in $SRC. The home page must be called index.html; the owner's link opens it."; exit 1; }
+BAD="$(cd "$SRC" && ls *.html | grep -v -E '^[A-Za-z0-9_-]+\.html$' | tr '\n' ' ' | sed 's/ $//')"
+[ -z "$BAD" ] || { echo "These page names cannot be served: $BAD. Use letters, numbers, - and _ only (about-us.html), and fix the links to them."; exit 1; }
+DEEP="$(cd "$SRC" && find . -mindepth 2 -name '*.html' -not -path './.spacefast/*' | sed 's|^\./||' | head -5 | tr '\n' ' ' | sed 's/ $//')"
+[ -z "$DEEP" ] || echo "Note: pages in folders are published as they are and cannot be edited: $DEEP"
+
+# 1. bundle
+OUT="$(mktemp -d)/bundle"
+LOG="$(dirname "$OUT")/bundle.log"
+if ! "$HERE/tools/bundle.sh" "$SRC" "$OUT" >"$LOG" 2>&1; then grep -v '^bundle ready' "$LOG"; rm -rf "$(dirname "$OUT")"; exit 2; fi
+grep -v '^bundle ready' "$LOG" || true
+rm -rf "$OUT/.spacefast"
+[ -d "$SRC/.spacefast" ] && cp -R "$SRC/.spacefast" "$OUT/.spacefast"
+
+# 2. publish: a new space is public and named after the folder; a known one is updated
+NEW=1
+if [ -n "$SPACE" ] || [ -f "$OUT/.spacefast/state.json" ]; then NEW=0; fi
+set -- --yes --publish-mode snapshot --wait --message "Tweakfast publish"
+[ -n "$SPACE" ] && set -- "$@" --space "$SPACE"
+if [ "$NEW" = 1 ]; then
+  set -- "$@" --access public --name "${NAME:-$(basename "$SRC")}"
+  [ -n "$SLUG" ] && set -- "$@" --slug "$SLUG"
+fi
+echo "Publishing $(ls "$OUT/_site" | wc -l | tr -d ' ') pages..."
+PLOG="$(dirname "$OUT")/publish.log"
+if ! (cd "$OUT" && sf publish "$@" >"$PLOG" 2>&1); then
+  echo "Publishing failed. The publish tool said:"; sed 's/^/  /' "$PLOG" | tail -12
+  if grep -q -i -E 'log ?in|logged|unauthori|not authenticated|credential' "$PLOG"; then echo "Sign in first: sf login. Then run the command again."
+  else echo "Some networks block Spacefast; a phone hotspot usually works. Then run the command again."; fi
+  rm -rf "$(dirname "$OUT")"; exit 2
+fi
+[ -f "$OUT/.spacefast/state.json" ] || { echo "Published, but the space could not be read back."; exit 1; }
+rm -rf "$SRC/.spacefast"; cp -R "$OUT/.spacefast" "$SRC/.spacefast"
+field() { sed -n "s/.*\"$1\": *\"\([^\"]*\)\".*/\1/p" "$SRC/.spacefast/state.json" | head -1; }
+ID="$(field spaceId)"; SITE="$(field lastSpaceUrl)"
+[ -n "$ID" ] && [ -n "$SITE" ] || { echo "Published, but the space could not be read back."; exit 1; }
+rm -rf "$(dirname "$OUT")"
+
+# 3. the key: made on the first run, kept afterwards, changed with --key
+if [ "$NEW" = 1 ] && [ -z "$KEY" ]; then
+  # four words from tools/words.txt: reads as intended in the address, and is still far too many to guess
+  KEY=""; for i in 1 2 3 4; do
+    N=$(( $(od -An -N2 -tu2 /dev/urandom | tr -d ' ') % 512 + 1 ))
+    W="$(sed -n "${N}p" "$HERE/tools/words.txt")"
+    KEY="${KEY}${KEY:+-}$W"
+  done
+fi
+if [ -n "$KEY" ]; then
+  printf '%s' "$KEY" | sf env set TWEAKFAST_KEY --value-from-stdin --no-secret --space "$ID" --yes >/dev/null
+fi
+
+# 4. the link, read back from the space so every run can print it
+[ -n "$KEY" ] || KEY="$(sf env ls --show-values --json --space "$ID" 2>/dev/null | python3 -c 'import json,sys
+try:
+    for v in json.load(sys.stdin)["data"]["variables"]:
+        if v["name"] == "TWEAKFAST_KEY": print(v.get("value", ""))
+except Exception: pass')"
+echo "Site: $SITE"
+if [ -n "$KEY" ]; then
+  echo "Owner's link: ${SITE%/}/#edit=$KEY"
+  [ "$NEW" = 1 ] && echo "Give this link to the owner and tell them to bookmark it. It is their only way in; there is no login."
+else
+  echo "The owner's link could not be read back. To make a new one: tools/tweakfast $SRC --key <word>"
+fi
+
+# 5. on an update: pages the owner has saved keep their version until they put the original back
+if [ "$NEW" = 0 ] && [ -n "$KEY" ]; then
+  SAVED="$(curl -s -m 20 -X POST -H 'content-type: application/json' --data "{\"key\":\"$KEY\"}" "${SITE%/}/api/pages" | python3 -c 'import json,sys
+try:
+    print(" ".join(p["path"] for p in json.load(sys.stdin).get("pages", [])))
+except Exception: pass')"
+  if [ -n "$SAVED" ]; then
+    echo "Pages the owner has saved, so their version is the one shown: $SAVED"
+    echo "Your new version of such a page comes in when the owner picks \"The original\" under Versions in their Site panel."
+  fi
+fi

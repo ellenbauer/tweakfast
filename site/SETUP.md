@@ -1,0 +1,9 @@
+# Setting up a site for Tweakfast (for the maker)
+
+1. Install the Spacefast tool and log in: `npm install -g spacefast`, then `sf login`.
+2. Run `tools/tweakfast <site folder>`, or `tools/tweakfast <site.zip>` for a download from a site-building tool. It publishes the site and prints the owner's link.
+3. Give the owner the link and tell them to bookmark it. It is their only way in: there is no login. They click, type, and press Done.
+
+The pages are made plain on the way: programs, badges and tracking a tool attached are taken out, and the script line `<script src="/tweakfast.js"></script>` is added when it is missing. A page whose text is drawn by a program rather than written in the file is refused with one sentence; ask the maker for plain HTML (RULES.md). The home page is `index.html`, page names use letters, numbers, `-` and `_`, and pages sit at the top of the folder (pages in folders are published but cannot be edited); the command says so when one of these is off. A zip is unpacked next to itself; run the command on that folder from then on. Run the same command again to publish changes to the site; the folder remembers its space, and the owner's edits stay. Every run prints the owner's link again. After an update the command names the pages the owner has saved: their version is the one shown, and your new version of such a page comes in when the owner picks "The original" under Versions in their Site panel. A failed publish prints what the publish tool said. The key is four words. `--key <word>` makes a new link and stops the old one; an owner who opens a stopped link is told so on arrival. `--slug <name>` picks the address on the first run.
+
+Edits live in the space's own database, new pictures in its storage. No API key, no dashboard. Some networks block Spacefast; a phone hotspot works.
