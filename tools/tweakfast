@@ -14,7 +14,9 @@
 # .spacefast/state.json, so the same folder always updates the same space. The key is generated on the
 # first run and kept afterwards; pass --key to change it, which makes the old link stop working.
 set -e
-HERE="$(cd "$(dirname "$0")/.." && pwd)"
+SELF="$0"   # through npx the command is a link in node_modules/.bin; follow it to this file
+while [ -L "$SELF" ]; do L="$(readlink "$SELF")"; case "$L" in /*) SELF="$L" ;; *) SELF="$(dirname "$SELF")/$L" ;; esac; done
+HERE="$(cd "$(dirname "$SELF")/.." && pwd)"
 SRC=""; KEY=""; SLUG=""; SPACE=""; NAME=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -33,7 +35,7 @@ case "$SRC" in
     ls "$DIR"/*.html >/dev/null 2>&1 || for d in "$DIR"/*/; do ls "$d"*.html >/dev/null 2>&1 && DIR="${d%/}" && break; done
     echo "Unpacked to $DIR. Next time run the command on that folder."; SRC="$DIR" ;;
 esac
-[ -n "$SRC" ] && [ -d "$SRC" ] || { echo "usage: tools/tweakfast <site folder or site.zip> [--key <word>] [--slug <name>]"; exit 1; }
+[ -n "$SRC" ] && [ -d "$SRC" ] || { echo "usage: tweakfast <site folder or site.zip> [--key <word>] [--slug <name>]"; exit 1; }
 command -v sf >/dev/null || { echo "The Spacefast tool is missing. Install it: npm install -g spacefast, then sf login."; exit 1; }
 SRC="$(cd "$SRC" && pwd)"
 ls "$SRC"/*.html >/dev/null 2>&1 || { echo "No pages in $SRC. Pages are .html files at the top of the folder."; exit 1; }

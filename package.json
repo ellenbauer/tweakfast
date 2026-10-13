@@ -1,0 +1,9 @@
+{
+  "name": "tweakfast",
+  "version": "0.1.0",
+  "description": "One script line on a plain HTML site. The owner keeps the site current by clicking.",
+  "license": "MIT",
+  "author": "Ellen Bauer",
+  "repository": "github:ellenbauer/tweakfast",
+  "bin": { "tweakfast": "tools/tweakfast" }
+}
