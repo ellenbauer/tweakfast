@@ -13,7 +13,10 @@
    uploaded to the space's storage and served at /pictures/<name>.
 
    One environment variable: TWEAKFAST_KEY, the secret after #edit= in the
-   owner's link. No Spacefast credentials are needed. */
+   owner's link. No Spacefast credentials are needed.
+   A public demo also sets TWEAKFAST_DEMO=1: Done answers as usual but writes
+   nothing, and every page is served as the maker published it, so each
+   visitor starts fresh. */
 
 var MAX_PAGE = 2 * 1024 * 1024;        /* bytes of HTML per page */
 var MAX_PICTURE = 5 * 1024 * 1024;     /* the storage limit */
@@ -39,10 +42,12 @@ export default {
 
 /* ---- serving ---- */
 async function page(name, url, env) {
-    await ready(env);
-    var row = await env.DB.prepare('select html, updated from tf_pages where path = ?').bind(name).first();
-    if (row && row.html) return html(stamp(row.html, row.updated));
-    if (row) return notFound('/' + name); /* removed by the owner: the original stays in _site/, but is not served */
+    if (!demo(env)) {
+        await ready(env);
+        var row = await env.DB.prepare('select html, updated from tf_pages where path = ?').bind(name).first();
+        if (row && row.html) return html(stamp(row.html, row.updated));
+        if (row) return notFound('/' + name); /* removed by the owner: the original stays in _site/, but is not served */
+    }
     var r = await fetch(url.origin + '/_site/' + name, { headers: { 'x-tweakfast': 'origin' } });
     if (r.status === 200) return html(hostClean(await r.text()));
     return notFound('/' + name);
@@ -77,7 +82,7 @@ async function check(request, env) {
     var body;
     try { body = await request.json(); } catch (e) { return answer(400, 'The request was not readable.'); }
     if (!env.TWEAKFAST_KEY || !same(body.key, env.TWEAKFAST_KEY)) return answer(403, 'This link no longer works. Ask the person who set up the site for a new one.');
-    return Response.json({ ok: true });
+    return demo(env) ? Response.json({ ok: true, demo: true }) : Response.json({ ok: true });
 }
 
 /* ---- saving ---- */
@@ -94,6 +99,7 @@ async function save(request, env) {
     var drop = Array.isArray(body.drop) ? body.drop : [];
     for (var i = 0; i < drop.length; i++) if (!pagePath(drop[i])) return answer(400, 'A page had a bad name: ' + drop[i]);
     if (!Object.keys(files).length && !Object.keys(pictures).length && !drop.length) return answer(400, 'Nothing to save.');
+    if (demo(env)) return Response.json({ ok: true, demo: true, saved: { pages: Object.keys(files).length, pictures: Object.keys(pictures).length }, at: new Date().toISOString() });
     await ready(env);
     if (!body.force) { /* a page saved from elsewhere since the editor opened it is not overwritten in silence */
         var seen = body.updated || {}, conflicts = [];
@@ -138,6 +144,7 @@ async function pages(request, env) {
     var body;
     try { body = await request.json(); } catch (e) { return answer(400, 'The request was not readable.'); }
     if (!env.TWEAKFAST_KEY || !same(body.key, env.TWEAKFAST_KEY)) return answer(403, 'This link no longer works. Ask the person who set up the site for a new one.');
+    if (demo(env)) return Response.json({ ok: true, pages: [] });
     await ready(env);
     var rows = await env.DB.prepare("select path, updated from tf_pages where html <> '' order by path").all(); /* an empty row is a page the owner removed */
     return Response.json({ ok: true, pages: (rows.results || []).map(function (r) { return { path: r.path, updated: r.updated }; }) });
@@ -147,6 +154,14 @@ async function history(request, env) {
     try { body = await request.json(); } catch (e) { return answer(400, 'The request was not readable.'); }
     if (!env.TWEAKFAST_KEY || !same(body.key, env.TWEAKFAST_KEY)) return answer(403, 'This link no longer works. Ask the person who set up the site for a new one.');
     if (!pagePath(body.path)) return answer(400, 'A page had a bad name.');
+    if (demo(env)) { /* a demo has no saved copies: only the original, and nothing is written */
+        if (body.list) return Response.json({ ok: true, saved: [], original: true });
+        if (body.get) {
+            var d = await fetch(new URL(request.url).origin + '/_site/' + body.path, { headers: { 'x-tweakfast': 'origin' } });
+            return d.status === 200 ? Response.json({ ok: true, html: hostClean(await d.text()), updated: '' }) : answer(404, 'The original could not be read.');
+        }
+        return Response.json({ ok: true, at: new Date().toISOString() });
+    }
     await ready(env);
     if (body.list) {
         var rows = await env.DB.prepare('select saved from tf_history where path = ? order by saved desc limit 50').bind(body.path).all();
@@ -217,6 +232,7 @@ function ready(env) {
 }
 
 /* ---- small helpers ---- */
+function demo(env) { return env.TWEAKFAST_DEMO === '1' || env.TWEAKFAST_DEMO === 'true'; }
 function answer(status, message) { return Response.json({ ok: false, message: message }, { status: status }); }
 function same(a, b) {
     if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;

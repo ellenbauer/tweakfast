@@ -153,6 +153,7 @@
 
     /* the first arrival on this computer: one card above the bar with the one thing the owner cannot find out by trying */
     function welcome() {
+        if (demo) return;
         card = el('div', 'tf-card');
         card.setAttribute('data-tweakfast', ''); card.setAttribute('role', 'dialog');
         card.appendChild(el('h2', 'tf-card-title', 'Bookmark this page.'));
@@ -1916,6 +1917,7 @@
     var freshPages = {};       /* pages added in this visit and not saved yet: they cannot be opened before Done */
     var saver = null;          /* '/api/save' when the site has the saving route */
     var noRoute = false;       /* the site answered, and has no saving route: Done saves files */
+    var demo = false;          /* a public demo: Done shows the change to this visitor only, nothing is written */
     function findSaver(then) {
         fetch('/api/save', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json().catch(function () { return null; }) : (r.status === 404 || r.status === 405 ? null : Promise.reject()); }).then(function (j) {
             if (j && j.tweakfast === 'save') { saver = '/api/save'; noRoute = false; if (panel) renderPages(); if (!then) checkKey(); }
@@ -1927,6 +1929,7 @@
     function checkKey() {
         fetch('/api/check', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: key }), cache: 'no-store' }).then(function (r) {
             if (r.status === 403) r.json().then(function (j) { lock(j && j.message); }, function () { lock(); });
+            else if (r.ok) r.json().then(function (j) { if (j && j.demo) { demo = true; if (card) { fade(card); card = null; placeNote(); } } }, function () {}); /* "Bookmark this page" is not true of a demo */
         }, function () {});
     }
     var panel = null;
@@ -2668,9 +2671,10 @@
                     return;
                 }
                 if (!j.ok) { var f = failure(j); afterSave = null; refresh(); say(f.text, 'error'); if (f.files) offer('Save as files', function () { downloadAll(true); }); return; }
-                /* the new pictures now exist on the host under their names */
-                named.forEach(function (n) { if (n.img) n.img.setAttribute('src', n.path); else n.box.setAttribute('style', n.box.getAttribute('style').replace(n.from, 'url("' + n.path + '")')); });
-                if (j.at && hereChanged) pageUpdated = j.at; /* only this page's stamp: when only others were saved, it is still what it was */
+                if (j.demo) demo = true;
+                /* the new pictures now exist on the host under their names (a demo keeps them in the page as they are) */
+                if (!demo) named.forEach(function (n) { if (n.img) n.img.setAttribute('src', n.path); else n.box.setAttribute('style', n.box.getAttribute('style').replace(n.from, 'url("' + n.path + '")')); });
+                if (j.at && hereChanged && !demo) pageUpdated = j.at; /* only this page's stamp: when only others were saved, it is still what it was */
                 saves.push({ files: before, at: j.at }); for (var f in files) loaded[f] = files[f];
                 if (hereChanged) loaded[here()] = named.reduce(function (h, n) { return n.src ? h.split(n.src).join(n.path) : h; }, html); /* the page as it went live (not as it is now: an edit made while saving is still to come) */
                 steps.splice(0, sentSteps);
@@ -2679,6 +2683,7 @@
                 for (var fp in files) delete freshPages[fp];
                 refresh();
                 if (afterSave) { var next = afterSave; afterSave = null; next(); return; }
+                if (demo) { say('Done. In this demo only you see it. On your own site, everyone would.', 'live'); later(8000); return; }
                 say('Live.', 'live');
                 offer('See the page', function () { window.open(location.pathname + location.search + '#view', '_blank'); });
                 later(8000);
