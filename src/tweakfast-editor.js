@@ -1723,15 +1723,24 @@
         steps.push(local);
         refresh(); if (panel && view && view.kind === 'pages') renderPages();
         once('ground', 'The colours come from this site. Undo brings the old ones back.');
-        var paths = pageList().map(function (p) { return p.path; });
-        Object.keys(changes).forEach(function (p) { if (paths.indexOf(p) < 0) paths.push(p); });
-        paths = paths.filter(function (p) { return p !== here(); });
-        if (!paths.length) return;
-        var changesBefore = copy(changes), differ = [], left = paths.length;
+        /* every page of the site, not only the menu's: the pages the menu names, those changed already, and each page
+           any of them links to (a project page, a legal page), as far as the links go */
+        var seen = [here()], queue = [], left = 0, changesBefore = copy(changes), differ = [];
+        var add = function (p) { if (p && seen.indexOf(p) < 0 && seen.length < 60) { seen.push(p); queue.push(p); } };
+        var linksIn = function (doc) { Array.prototype.forEach.call(doc.querySelectorAll('a[href]'), function (a) { if (isPageLink(a)) add(pathOf(a)); }); };
+        pageList().forEach(function (p) { add(p.path); });
+        Object.keys(changes).forEach(add);
+        linksIn(document);
+        if (!queue.length) return;
         say('Working…');
-        paths.forEach(function (path_) {
+        var next = function () {
+            while (queue.length) one(queue.shift());
+        };
+        var one = function (path_) {
+            left++;
             loadPage(path_, function (html) {
                 if (html === null) { finish(); return; }
+                linksIn(parse(html)); next();
                 unseen(html, function (doc) {
                     var there = doc && walkPath(doc.body, path);
                     if (!there || there.tagName !== b.tagName || (there.getAttribute('class') || '') !== (was || '') || tintText(there) !== before) { differ.push(path_); return; }
@@ -1741,9 +1750,10 @@
                     changes[path_] = serialize(doc);
                 }, finish);
             });
-        });
+        };
+        next();
         function finish() {
-            if (--left) return;
+            if (--left || queue.length) return;
             var restore = function () { changes = changesBefore; };
             if (steps[steps.length - 1] === local) { steps.pop(); steps.push(function () { local(); restore(); }); } else steps.push(restore);
             refresh(); say('');
