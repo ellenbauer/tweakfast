@@ -400,10 +400,9 @@
         if (pic) { e.preventDefault(); e.stopPropagation(); if (picked === pic) swapPicture(pic); else pick(pic); return; }
         if (!t) { if (held) unhold(); fixedTold(e.target); return; }
         e.preventDefault(); e.stopPropagation();
-        if (held === t) { begin(t); return; } /* the second click: type here */
-        hold(t);
+        begin(t); /* one click: type here */
     }
-    /* one click picks a text: the solid line, the block's tools, no caret. Enter or a second click edits it, Esc lets go. */
+    /* a text kept with Enter or put back with Esc stays picked: the solid line, the block's tools, no caret. Enter or a click edits it again, Esc lets go. */
     function hold(t) {
         hoverNone(); if (picked) unpick(); if (held && held !== t) unhold();
         held = t; showEditBox();
@@ -435,7 +434,7 @@
         t.setAttribute('contenteditable', 'true');
         t.classList.add('tf-editing');
         if (picked) unpick();
-        if (tools) hideTools();
+        if (tools) { var bk = toolTarget(t); if (bk) showTools(bk); else hideTools(); } /* the block's tools stay in reach, beside the words, never on them */
         showEditBox();
         clearBar(t);
         t.focus();
@@ -1077,7 +1076,7 @@
         document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !editing && !held && !picked) hideTools(); });
         window.addEventListener('scroll', function () { if (toolsFor) placeTools(); placeTag(); placeEdit(); }, { passive: true });
         window.addEventListener('resize', function () { if (toolsFor) placeTools(); placeTag(); placeEdit(); });
-        document.addEventListener('input', function (e) { if (editing && editing.contains(e.target)) placeEdit(); }, true);
+        document.addEventListener('input', function (e) { if (editing && editing.contains(e.target)) { placeEdit(); if (toolsFor) placeTools(); } }, true);
         window.addEventListener('resize', function () { if (toolsFor) placeTools(); placePanel(); });
     }
     function addPlus(parent) {
@@ -1190,7 +1189,8 @@
         var rm = iconButton('trash', 'Remove', removeBlock); rm.className += ' tf-danger'; tools.appendChild(rm);
         blockOnly = blockOnly.concat([upBtn, downBtn, hideBtn, cp, rm]);
         document.body.appendChild(tools);
-        tools.addEventListener('mouseleave', function () { /* stays until another block is hovered */ });
+        tools.addEventListener('mouseenter', function () { toolsHover = true; placeTools(); });
+        tools.addEventListener('mouseleave', function () { toolsHover = false; placeTools(); }); /* the tools stay until another block is hovered */
     }
     function showTools(block) {
         if (!block || !block.isConnected) { hideTools(); return; }
@@ -1213,24 +1213,28 @@
         tools.style.display = 'flex';
         placeTools();
     }
-    var blockBox = null;
+    var blockBox = null, toolsHover = false;
     function hideTools() { toolsFor = null; tools.style.display = 'none'; if (blockBox) blockBox.style.display = 'none'; }
     function placeTools() {
         if (!toolsFor || !toolsFor.isConnected) { hideTools(); return; }
         var r = toolsFor.getBoundingClientRect();
         if (columnOf(toolsFor)) { var pw = document.documentElement.clientWidth; r = { left: 0, right: pw, width: pw, top: r.top, bottom: r.bottom, height: r.height }; } /* a section is the band the eye sees, edge to edge */
         if (!blockBox) { blockBox = el('span', 'tf-block-box'); blockBox.setAttribute('data-tweakfast', ''); document.body.appendChild(blockBox); }
-        frame(blockBox, r, 6); blockBox.style.display = toolsFor.hasAttribute('data-tf-block') || sharedParts(document).indexOf(toolsFor) >= 0 ? 'block' : 'none'; blockBox.classList.toggle('tf-block-moving', dragging);
-        var w = tools.offsetWidth;
-        var left = Math.min(r.right - w - 4, window.innerWidth - w - 8);
+        /* the words or picture being worked on inside the block: the tools sit just by it, and its line is the only one
+           drawn; the block's own outline shows while the pointer is on the tools, to say what they act on */
+        var on = editing || held || picked, at = on && on !== toolsFor && toolsFor.contains(on) ? on.getBoundingClientRect() : null;
+        frame(blockBox, r, 6); blockBox.style.display = (toolsFor.hasAttribute('data-tf-block') || sharedParts(document).indexOf(toolsFor) >= 0) && (!at || toolsHover || dragging) ? 'block' : 'none'; blockBox.classList.toggle('tf-block-moving', dragging);
+        var w = tools.offsetWidth, own = toolsFor.getBoundingClientRect(); /* a band edge to edge: the tools keep to its content, not the window's edge */
+        var left = Math.min((at || own).right - w - 4, window.innerWidth - w - 8);
         var h = tools.offsetHeight, top = r.top - 14, floor = 8, cover = topCover();
         if (cover && !cover.contains(toolsFor)) { /* a menu fixed at the top: the tools and the outline stay below it, never on it */
             floor = cover.getBoundingClientRect().bottom + 8;
             if (r.top < floor - 8) { var cut = floor - 8 - r.top; r = { left: r.left, right: r.right, width: r.width, top: floor - 8, bottom: r.bottom, height: Math.max(0, r.height - cut) }; frame(blockBox, r, 6); }
         }
-        if (r.height < h * 2) { top = r.top - h - 6; if (top < floor) top = r.bottom + 6; } /* a small block, a button: the tools stand clear of it, so its words stay in reach */
+        if (at) { top = at.top - h - 10; if (top < floor) top = picked === on ? Math.max(floor, at.top + 8) : at.bottom + 10; } /* above it; no room: under the words, or inside the picture's top corner, clear of its description */
+        else if (r.height < h * 2) { top = r.top - h - 6; if (top < floor) top = r.bottom + 6; } /* a small block, a button: the tools stand clear of it, so its words stay in reach */
         top = Math.max(floor, top);
-        var gone = r.bottom < top + h; /* scrolled up under the menu: nothing left of it to work on */
+        var gone = at ? at.bottom < floor : r.bottom < top + h; /* scrolled up under the menu: nothing left of it to work on */
         tools.style.visibility = blockBox.style.visibility = gone ? 'hidden' : '';
         put(tools, Math.max(8, left), top);
     }
@@ -2247,10 +2251,18 @@
         var logo = document.querySelector('header a[href]');
         return logo && isPageLink(logo) ? pathOf(logo) : 'index.html';
     }
+    /* a page's name is its link's words; a logo's letter or picture is no name: its label, else Home or the file's name */
+    function pageName(a) {
+        var t = a.textContent.replace(/\s+/g, ' ').trim(); if (t.length > 2) return t;
+        var l = (a.getAttribute('aria-label') || a.getAttribute('title') || '').trim(); if (l.length > 2) return l;
+        var p = pathOf(a).split(/[?#]/)[0].replace(/\/$/, '').split('/').pop().replace(/\.html?$/, '');
+        if (!p || p === 'index') return 'Home';
+        p = p.replace(/[-_]+/g, ' '); return p.charAt(0).toUpperCase() + p.slice(1);
+    }
     function pageList() {
         var nav = menuOf(document), list = [];
         if (!nav) return list;
-        menuLinks(nav).forEach(function (a) { list.push({ path: pathOf(a), name: a.textContent.trim(), hidden: a.hasAttribute('data-tf-hidden'), link: a }); });
+        menuLinks(nav).forEach(function (a) { list.push({ path: pathOf(a), name: pageName(a), hidden: a.hasAttribute('data-tf-hidden'), link: a }); });
         return list;
     }
     /* the sheet shows one view at a time: the pages, or one page's words for Google, its versions, or Add a page */
@@ -2341,7 +2353,7 @@
             say('Working…');
             everyMenu(function (nav) {
                 var links = menuLinks(nav);
-                for (var i = 0; i < links.length; i++) if (pathOf(links[i]) === pg.path) links[i].textContent = to;
+                for (var i = 0; i < links.length; i++) if (pathOf(links[i]) === pg.path && links[i].textContent.replace(/\s+/g, ' ').trim().length > 2) links[i].textContent = to; /* a logo keeps its mark */
             }, function (failed) { if (!failed.length) say(''); });
         }
         function back() { if (done) return; done = true; row.replaceChild(name, field); }

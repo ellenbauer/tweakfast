@@ -17,7 +17,7 @@ console.log('one Undo takes it back:', await p.$eval('footer p', e => !/Everyone
 await p.keyboard.press('Shift+Meta+z'); await p.waitForTimeout(900);
 await edit('header .logo'); await p.waitForTimeout(100);
 console.log('text logo edits:', await p.evaluate(() => { const e = document.querySelector('[contenteditable]'); return e ? e.className : 'none'; }), '| no navigation:', /index\.html/.test(p.url()));
-await p.keyboard.press('End'); await p.keyboard.type('!'); await p.keyboard.press('Enter'); await p.waitForTimeout(900);
+await p.keyboard.press('Meta+ArrowDown'); await p.keyboard.type('!'); await p.keyboard.press('Enter'); await p.waitForTimeout(900);
 const files = await captured();
 console.log('Done writes every page:', Object.keys(files).sort().join(','), '| footer line on every page:', Object.values(files).every(h => /Everyone welcome/.test(h)), '| logo on every page:', Object.values(files).every(h => /class="logo"[^>]*>Elm Street Garden Club!<\/a>/.test(h)));
 await p.hover('nav a[href="about.html"]'); await p.waitForTimeout(100);
