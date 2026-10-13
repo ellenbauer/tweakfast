@@ -384,7 +384,7 @@
         if (panel) closePages(); if (pal) closePal();
         if (editing && editing.contains(e.target)) return;
         if (editing) commit();
-        if (tools && !textTarget(e.target)) { var blk = blockTarget(e.target); if (blk) showTools(blk); else hideTools(); } /* a tap works where there is no hover */
+        if (tools && !textTarget(e.target)) { var blk = toolTarget(e.target); if (blk) showTools(blk); else hideTools(); } /* a tap works where there is no hover */
         var link = e.target.closest('a[href]');
         if (link && freshPages[link.getAttribute('href')] && !editing && !held) {
             e.preventDefault(); e.stopPropagation();
@@ -407,7 +407,7 @@
     function hold(t) {
         hoverNone(); if (picked) unpick(); if (held && held !== t) unhold();
         held = t; showEditBox();
-        var b = blockTarget(t); if (tools) { if (b) showTools(b); else hideTools(); }
+        var b = toolTarget(t); if (tools) { if (b) showTools(b); else hideTools(); }
     }
     function unhold() { held = null; if (editBox && !editing && !picked) editBox.style.display = 'none'; giveRoom(); }
     /* a click on a fixed part (header, menu, footer) is answered once per visit; links there still work */
@@ -453,6 +453,14 @@
         if (n >= 3) return;
         try { sessionStorage.setItem('tweakfast:hints', n + 1); } catch (e) {}
         say('Enter keeps it, Shift+Enter starts a new line, Esc puts it back.');
+    }
+    /* Enter ending a title says how to start a new line instead, the first three times; never again once Shift+Enter was used */
+    function breakTip(t) {
+        var n = 0; try { n = +localStorage.getItem('tweakfast:breaktip') || 0; } catch (e) {}
+        if (!t) { try { localStorage.setItem('tweakfast:breaktip', 3); } catch (e) {} return; }
+        if (n >= 3 || coarse() || status.textContent || !t.matches('h1,h2,h3,h4,h5,h6')) return;
+        try { localStorage.setItem('tweakfast:breaktip', n + 1); } catch (e) {}
+        say('Kept. For a new line, press Shift+Enter while typing.');
     }
     var hrefBefore = null; /* the address of a link that is itself the edited text: part of the text's one step */
     function commit() {
@@ -565,7 +573,8 @@
             return;
         }
         if (e.key === 'Escape') { e.preventDefault(); var tc = editing; cancel(); hold(tc); }
-        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); var tk = editing; commit(); hold(tk); }
+        if (e.key === 'Enter' && e.shiftKey) breakTip(null);
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); var tk = editing; commit(); hold(tk); breakTip(tk); }
         if (e.key === 'Tab') {
             e.preventDefault();
             /* from a link's words, Tab walks into its Goes-to field first */
@@ -993,6 +1002,7 @@
     var upBtn = null, downBtn = null; /* the block tools' Move up and Move down; Move left and Move right when the block sits beside its own */
     var swapBtn = null; /* Swap sides, on a block of two big parts side by side */
     var lookBtn = null; /* Look: a button takes another button's look, a section another background, both from the site */
+    var blockOnly = []; /* the tools a block has and the header or a footer has not: they only take a Look */
     function isRepeated(node) {
         var p = node.parentElement; if (!p) return false;
         var kin = 0, sig = signature(node);
@@ -1000,6 +1010,12 @@
         return kin >= 2;
     }
     function signature(n) { return n.tagName + '.' + Array.prototype.slice.call(n.classList).filter(function (c) { return c.indexOf('tf-') !== 0; }).sort().join('.'); }
+    /* what the tools are for: a block, else the header or a footer the pointer is in */
+    function toolTarget(node) {
+        var b = blockTarget(node); if (b) return b;
+        if (!node || node.nodeType !== 1 || node.closest('[data-tweakfast],[data-tf="fixed"]')) return null;
+        return sharedRootOf(node);
+    }
     function blockTarget(node) {
         if (pinned(node)) return null;
         var main = document.querySelector('main') || document.body;
@@ -1052,7 +1068,7 @@
         document.addEventListener('mouseover', function (e) {
             if (previewing) return;
             if (tools.contains(e.target)) { clearTimeout(timer); pending = null; return; }
-            var b = blockTarget(e.target);
+            var b = toolTarget(e.target);
             if (!b || b === toolsFor || b === pending) return;
             pending = b; clearTimeout(timer);
             if (!towardTools()) { showTools(b); pending = null; return; }
@@ -1161,7 +1177,7 @@
     function buildTools() {
         tools = el('div', 'tf-tools');
         tools.setAttribute('data-tweakfast', '');
-        var grip = el('span', 'tf-grip'); grip.innerHTML = ICON.grip; grip.title = 'Drag to move'; grip.setAttribute('aria-label', 'Drag to move');
+        var grip = el('span', 'tf-grip'); blockOnly = [grip]; grip.innerHTML = ICON.grip; grip.title = 'Drag to move'; grip.setAttribute('aria-label', 'Drag to move');
         grip.addEventListener('pointerdown', startDrag);
         tools.appendChild(grip);
         lookBtn = button('Look', openLooks); lookBtn.className += ' tf-look-open'; lookBtn.title = 'Give it another look from this site'; tools.appendChild(lookBtn);
@@ -1170,14 +1186,19 @@
         swapBtn = iconButton('swap', 'Swap sides', swapSides); tools.appendChild(swapBtn);
         hideBtn = iconButton('eyeOff', 'Hide', toggleHidden); hideBtn.className += ' tf-hide';
         tools.appendChild(hideBtn);
-        tools.appendChild(iconButton('copy', 'Copy', copyBlock));
+        var cp = iconButton('copy', 'Copy', copyBlock); tools.appendChild(cp);
         var rm = iconButton('trash', 'Remove', removeBlock); rm.className += ' tf-danger'; tools.appendChild(rm);
+        blockOnly = blockOnly.concat([upBtn, downBtn, hideBtn, cp, rm]);
         document.body.appendChild(tools);
         tools.addEventListener('mouseleave', function () { /* stays until another block is hovered */ });
     }
     function showTools(block) {
         if (!block || !block.isConnected) { hideTools(); return; }
+        /* the header or a footer itself: it stays where it is, on every page; only its Look */
+        var part = !block.hasAttribute('data-tf-block'), ch = choicesFor(block);
+        if (part && !ch) { hideTools(); return; }
         toolsFor = block;
+        blockOnly.forEach(function (n) { n.style.display = part ? 'none' : ''; });
         var hidden = block.hasAttribute('data-tf-hidden'); relabel(hideBtn, hidden ? 'eye' : 'eyeOff', hidden ? 'Show' : 'Hide');
         var kin = kinOf(block), at = kin.indexOf(block); upBtn.disabled = at <= 0; downBtn.disabled = at >= kin.length - 1; /* at an end, that way is off */
         /* the arrows point the way the block's own sit: beside each other, left and right */
@@ -1187,8 +1208,8 @@
             var backLeft = (beside === prev) === (beside.getBoundingClientRect().left < block.getBoundingClientRect().left);
             relabel(upBtn, backLeft ? 'left' : 'right', backLeft ? 'Move left' : 'Move right'); relabel(downBtn, backLeft ? 'right' : 'left', backLeft ? 'Move right' : 'Move left');
         }
-        swapBtn.style.display = twoSides(block) ? '' : 'none';
-        lookBtn.style.display = choicesFor(block) ? '' : 'none';
+        swapBtn.style.display = !part && twoSides(block) ? '' : 'none';
+        lookBtn.style.display = ch ? '' : 'none';
         tools.style.display = 'flex';
         placeTools();
     }
@@ -1198,7 +1219,7 @@
         if (!toolsFor || !toolsFor.isConnected) { hideTools(); return; }
         var r = toolsFor.getBoundingClientRect();
         if (!blockBox) { blockBox = el('span', 'tf-block-box'); blockBox.setAttribute('data-tweakfast', ''); document.body.appendChild(blockBox); }
-        frame(blockBox, r, 6); blockBox.style.display = toolsFor.hasAttribute('data-tf-block') ? 'block' : 'none'; blockBox.classList.toggle('tf-block-moving', dragging);
+        frame(blockBox, r, 6); blockBox.style.display = toolsFor.hasAttribute('data-tf-block') || sharedParts(document).indexOf(toolsFor) >= 0 ? 'block' : 'none'; blockBox.classList.toggle('tf-block-moving', dragging);
         var w = tools.offsetWidth;
         var left = Math.min(r.right - w - 4, window.innerWidth - w - 8);
         var h = tools.offsetHeight, top = r.top - 14;
@@ -1299,21 +1320,68 @@
         if (!block) return null;
         var list;
         if (isButton(block)) { list = looks(block); return list.length > 1 ? { t: block, list: list } : null; }
-        list = grounds(block);
-        if (list.length > 1) return { t: block, list: list, ground: true };
-        /* a section of a site that has other grounds keeps its Look, which says why none fits here: nothing vanishes */
-        if (!groundClasses().length || !(block.parentElement && block.parentElement.matches('main') || block.matches('section,header,footer')) || !block.getClientRects().length) return null;
-        if (!list.length) { var g = groundLook(block); list = [{ cls: block.getAttribute('class'), look: g.look, ground: g.ground, plain: g.plain, now: true, word: g.plain ? 'plain' : groundWord(g.ground) }]; }
-        return { t: block, list: list, ground: true, note: covered(block) ? 'The parts inside cover this background, so it has nothing to show.' : 'No other background of this site keeps everything here readable.' };
+        if (!block.getClientRects().length || block.matches('li,tr,td,th,dt,dd')) return null;
+        var big = block.parentElement && block.parentElement.matches('main') || block.matches('section,header,footer') || sharedParts(document).indexOf(block) >= 0;
+        /* a big part (a section, the header, a footer) always has its Look; a card has one when another ground of the site fits it */
+        if (!big && !grounds(block, true).some(function (o) { return o.ok && !o.now; })) return null;
+        /* parts that cover the block's ground (two halves) are chosen for one by one */
+        if (covered(block)) { var sides = coverParts(block); return sides.length ? { t: block, sides: sides } : null; }
+        return { t: block, sides: [{ part: block }] };
     }
     function openLooks() {
         var b = toolsFor, ch = choicesFor(b); if (!ch) { lookBtn.style.display = 'none'; return; }
-        var t = ch.t, first = ch.ground ? mainText(t) : t;
-        var words = (first || t).textContent.replace(/\s+/g, ' ').trim(); if (words.length > 26) words = words.slice(0, 24).trim() + '\u2026';
-        var ground = groundOf(t.parentElement || t);
-        openMenu(lookBtn, ch.list.map(function (o) {
-            return { sample: lookSample(o.look, words, ch.ground ? o.ground : ground), word: o.word, now: o.now, fn: o.now ? function () {} : ch.ground ? function () { takeGround(t, o.cls); } : function () { takeLook(t, o.cls); } };
-        }).concat(ch.note ? ['gap', { note: ch.note }] : []));
+        var t = ch.t;
+        var wordsOf = function (n) { var w = (n || t).textContent.replace(/\s+/g, ' ').trim(); return !w ? 'Aa' : w.length > 26 ? w.slice(0, 24).trim() + '\u2026' : w; };
+        if (!ch.sides) {
+            var words = wordsOf(t), ground = groundOf(t.parentElement || t);
+            openMenu(lookBtn, ch.list.map(function (o) { return { sample: lookSample(o.look, words, ground), word: o.word, now: o.now, fn: o.now ? function () {} : function () { takeLook(t, o.cls); } }; }));
+            return;
+        }
+        var items = [];
+        ch.sides.forEach(function (s, n) {
+            if (s.label) { if (n) items.push('gap'); items.push({ label: s.label }); }
+            var words = wordsOf(mainText(s.part));
+            groundRows(s.part).forEach(function (r) {
+                items.push(r.off ? { off: r.off, word: r.word } : { sample: lookSample(r.o.look, words, r.o.ground), word: r.word, now: r.o.now, fn: r.o.now ? function () {} : function () { takeGround(s.part, r.o, t); } });
+            });
+        });
+        openMenu(lookBtn, items);
+    }
+    /* the Look of a ground is the same four rows everywhere: light, dark, colour and inverted. A row that cannot be had
+       here stays, greyed, and says why. Each of the first three is the site's own: the ground the block has now, else
+       the one it came with, else the first that keeps every word readable. */
+    var KINDS = ['light', 'dark', 'colour'];
+    function kindOf(bg) {
+        var c = rgbOf(bg); if (!c || c.a === 0) return null;
+        var mx = Math.max(c.r, c.g, c.b), mn = Math.min(c.r, c.g, c.b);
+        return mx - mn > 40 ? 'colour' : (0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b) / 255 > .5 ? 'light' : 'dark';
+    }
+    var WHY = { move: 'It would move things here.', read: 'Some words would be hard to read on it.' };
+    function groundRows(b) {
+        var list = grounds(b), now = list[0];
+        if (!now) return KINDS.concat('inverted').map(function (k) { return { word: k, off: 'This part cannot take another background.' }; });
+        var rows = KINDS.map(function (k) {
+            var here = list.filter(function (o) { return (!o.flip || o.now) && kindOf(o.ground) === k; }), ok = here.filter(function (o) { return o.ok; });
+            var pick = ok.filter(function (o) { return o.now; })[0] || ok.filter(function (o) { return o.orig; })[0] || ok[0];
+            if (pick) return { o: pick, word: k };
+            var bad = here.filter(function (o) { return o.why === 'read'; })[0] || here[0];
+            return { word: k, off: bad ? WHY[bad.why] : 'This site has no ' + (k === 'colour' ? 'coloured' : k) + ' background.' };
+        });
+        var f = list.filter(function (o) { return o.flip; })[0];
+        rows.push(f && f.ok ? { o: f, word: 'inverted' } : { word: 'inverted', off: f ? WHY[f.why] : list.flipWhy || 'The background here is a picture.' });
+        return rows;
+    }
+    /* the parts that cover a block's ground, named by where they sit */
+    function coverParts(b) {
+        var parts = Array.prototype.filter.call(b.children, function (c) { return !c.hasAttribute('data-tweakfast') && !/^(STYLE|SCRIPT|TEMPLATE)$/.test(c.tagName) && c.getClientRects().length && !seeThrough(getComputedStyle(c).backgroundColor) && !covered(c); });
+        if (parts.length === 2) {
+            var r = parts[0].getBoundingClientRect(), q = parts[1].getBoundingClientRect(), beside = sameRow(parts[0], parts[1]);
+            var firstLeads = beside ? r.left < q.left : r.top < q.top;
+            parts[0]._tfSide = beside ? (firstLeads ? 'Left side' : 'Right side') : (firstLeads ? 'Top' : 'Bottom');
+            parts[1]._tfSide = beside ? (firstLeads ? 'Right side' : 'Left side') : (firstLeads ? 'Bottom' : 'Top');
+            if (!firstLeads) parts.reverse();
+        } else parts.forEach(function (p, i) { p._tfSide = 'Part ' + (i + 1); });
+        return parts.map(function (p) { return { part: p, label: p._tfSide }; });
     }
     /* ---- grounds ---- */
     /* a block takes another ground the site's own style sheet has: a class that alone sets a background (.section-dark,
@@ -1487,44 +1555,94 @@
         }
         return r.width * r.height > 0 && area >= r.width * r.height * .9;
     }
-    function grounds(b) {
-        if (b._tfGrounds && b._tfGrounds.at === steps.length) return b._tfGrounds.list;
-        return still(function () { return groundsNow(b); });
+    /* the grounds a block can take, the one it has first; classOnly leaves out the site's colours laid on as a pair
+       (cheaper: enough to know whether a card has a Look at all) */
+    function grounds(b, classOnly) {
+        var at = classOnly ? '_tfGroundsC' : '_tfGrounds';
+        if (b[at] && b[at].at === steps.length) return b[at].list;
+        return still(function () { return groundsNow(b, classOnly); });
     }
-    function groundsNow(b) {
-        var list = [];
+    function groundsNow(b, classOnly) {
+        var list = [], off = [];
         if (!isButton(b) && !b.matches('li,tr,td,th,dt,dd') && b.getClientRects().length && !covered(b)) {
             var names = groundClasses(), own = names.filter(function (c) { return b.classList.contains(c); }), was = b.getAttribute('class'), base = layoutOf(b), now = groundLook(b), read = readings(b);
-            list.push({ cls: was, look: now.look, ground: now.ground, plain: now.plain, key: now.key, now: true });
+            var from = groundFrom(b), tintWas = tintState(b), held = tintPair(b), cs = getComputedStyle(b), ink = cs.color;
+            var choice = function (cls, pair, g, extra) { var o = { cls: cls, pair: pair, look: g.look, ground: g.ground, plain: g.plain, key: g.key, ok: true }; for (var k in extra) o[k] = extra[k]; return o; };
+            /* a choice that reads well is kept unless one like it is there; one that does not, only to say why its row is grey */
+            var put = function (o) {
+                if (o.flip) { list.push(o); return; }
+                if (same(o.ground) === same(now.ground) && !o.orig) return; /* it would change nothing */
+                if (o.ok) { if (!list.some(function (x) { return !x.flip && alike(x, o); })) list.push(o); } else off.push(o);
+            };
+            list.push(choice(was, held, now, { now: true, flip: !!(held && held.flip) }));
             var bare = Array.prototype.filter.call(b.classList, function (c) { return own.indexOf(c) < 0; });
             /* the ground it had when the page was opened is always a choice: the way back needs no checking */
-            var from = groundFrom(b), tintWas = tintState(b);
-            if (from !== was) {
+            if (from !== was || held) {
                 untint(b); putAttr(b, 'class', from); var back = groundLook(b); putAttr(b, 'class', was); setTint(b, tintWas);
-                list.push({ cls: from, look: back.look, ground: back.ground, plain: back.plain, key: back.key });
+                put(choice(from, null, back, { orig: true }));
             }
+            /* its own class without the colours laid on it (from inverted back to what the class gives) */
+            if (held && from !== was) { retint(b, from); var own_ = groundLook(b); setTint(b, tintWas); put(choice(was, null, own_)); }
             var tried = 0;
             [''].concat(names).forEach(function (c) {
-                if (c && own.indexOf(c) >= 0 || list.length >= 7 || tried >= 40) return;
+                if (c && own.indexOf(c) >= 0 || tried >= 40) return;
                 tried++;
                 if (!c && !own.length) return; /* plain: only when it has a ground class to take off */
                 /* in place of its own ground class; or, when that class also lays the block out (a footer, a strip), beside it */
-                var ink = c && inkWith(c), add = c ? [c].concat(ink && !b.classList.contains(ink) ? [ink] : []) : [], keep = bare.filter(function (k) { return !ink || inkNames.indexOf(k) < 0; }); /* its own text colour class makes way for the ground's */
-                var tries = [keep.concat(add).join(' ')]; if (c && own.length) tries.push(Array.prototype.slice.call(b.classList).filter(function (k) { return !ink || inkNames.indexOf(k) < 0; }).concat(add).join(' '));
-                tries.some(function (cls) {
+                var inkC = c && inkWith(c), add = c ? [c].concat(inkC && !b.classList.contains(inkC) ? [inkC] : []) : [], keep = bare.filter(function (k) { return !inkC || inkNames.indexOf(k) < 0; }); /* its own text colour class makes way for the ground's */
+                var tries = [keep.concat(add).join(' ')]; if (c && own.length) tries.push(Array.prototype.slice.call(b.classList).filter(function (k) { return !inkC || inkNames.indexOf(k) < 0; }).concat(add).join(' '));
+                tries.some(function (cls, n) {
                     b.setAttribute('class', cls); retint(b, from);
-                    var fits = layoutOf(b) === base, ok = fits && staysReadable(read, readings(b)), g = ok && groundLook(b); /* nothing moves, and every text still reads */
+                    var fits = layoutOf(b) === base, ok = fits && staysReadable(read, readings(b)), g = groundLook(b); /* nothing moves, and every text still reads */
                     putAttr(b, 'class', was); setTint(b, tintWas);
-                    if (ok && same(g.ground) !== same(now.ground) && !list.some(function (o) { return alike(o, g); })) /* a choice changes the ground, and is not one already there */ list.push({ cls: cls, look: g.look, ground: g.ground, plain: g.plain, key: g.key });
+                    if (fits || n === tries.length - 1) put(choice(cls, null, g, { ok: ok, why: fits ? 'read' : 'move' }));
                     return fits;
                 });
             });
-            list.forEach(function (o) { o.word = o.plain ? 'plain' : groundWord(o.ground); });
-            /* two of one name: the second says how it differs from the first */
-            for (var i = 1; i < list.length; i++) for (var j = 0; j < i; j++) if (list[j].word === list[i].word) { var d = howDiffers(list[i].ground, list[j].ground); list[i].word = d === 'other' ? list[i].word + ' 2' : d; j = -1; }
+            if (!classOnly) {
+                var picture = cs.backgroundImage !== 'none' || !rgbOf(now.ground);
+                /* the site's own colour pairs laid on the block as they are: no class, so nothing can move */
+                if (!picture) sitePairs().forEach(function (p) {
+                    if (list.some(function (x) { return x.ok && !x.flip && same(x.ground) === same(p.g); })) return; /* a class gives it already */
+                    retint(b, from, p); var ok = staysReadable(read, readings(b)), g = groundLook(b); setTint(b, tintWas);
+                    put(choice(was, p, g, { ok: ok, why: 'read' }));
+                });
+                /* inverted: its ground becomes its ink and its ink its ground */
+                var gv = rgbOf(now.ground), iv = rgbOf(ink);
+                if (held && held.flip) { /* inverted now: the first row in the list is it */ }
+                else if (picture || !gv || !iv) list.flipWhy = 'The background here is a picture.';
+                else if (contrast(blend(iv, gv), gv) < 3) list.flipWhy = 'Its words and background are too close to swap.';
+                else {
+                    var fp = { g: rgbText(blend(iv, gv)), i: rgbText(gv), flip: true };
+                    retint(b, from, fp); var okF = staysReadable(read, readings(b)), gF = groundLook(b); setTint(b, tintWas);
+                    put(choice(was, fp, gF, { ok: okF, why: 'read', flip: true }));
+                }
+            }
+            off.forEach(function (o, n) { if (!list.some(function (x) { return !x.flip && alike(x, o); }) && !off.slice(0, n).some(function (x) { return alike(x, o); })) list.push(o); });
         }
-        b._tfGrounds = { at: steps.length, list: list };
+        b[classOnly ? '_tfGroundsC' : '_tfGrounds'] = { at: steps.length, list: list };
         return list;
+    }
+    function rgbText(v) { return 'rgb(' + Math.round(v.r) + ', ' + Math.round(v.g) + ', ' + Math.round(v.b) + ')'; }
+    /* the colour pairs this site paints with: the page's own, and each ground class's background with the ink it brings */
+    var pairsSeen = null;
+    function sitePairs() {
+        if (pairsSeen) return pairsSeen;
+        pairsSeen = [];
+        var add = function (bg, ink) {
+            var g = rgbOf(bg), i = rgbOf(ink); if (!g || !i || g.a < 1) return;
+            i = blend(i, g); if (contrast(g, i) < 4.5) return; /* a pair the site reads its words on */
+            var p = { g: rgbText(g), i: rgbText(i) };
+            if (!pairsSeen.some(function (q) { return same(q.g) === same(p.g) && same(q.i) === same(p.i); })) pairsSeen.push(p);
+        };
+        var bs = getComputedStyle(document.body), hs = getComputedStyle(document.documentElement);
+        add(opaque(bs.backgroundColor) ? bs.backgroundColor : opaque(hs.backgroundColor) ? hs.backgroundColor : '#fff', bs.color);
+        groundClasses().forEach(function (c) {
+            var probe = document.createElement('div'), inkC = inkWith(c);
+            probe.setAttribute('data-tweakfast', ''); probe.style.display = 'none'; probe.className = c + (inkC ? ' ' + inkC : '');
+            document.body.appendChild(probe); var ps = getComputedStyle(probe); add(ps.backgroundImage === 'none' ? ps.backgroundColor : 'none', ps.color); probe.remove();
+        });
+        return pairsSeen;
     }
     /* two grounds the eye cannot tell apart (a white and an off-white, under the same ink) are one choice */
     function alike(a, b) {
@@ -1532,24 +1650,45 @@
         var x = rgbOf(a.ground), y = rgbOf(b.ground), ka = a.key.split('|')[1], kb = b.key.split('|')[1];
         return !!x && !!y && ka === kb && Math.abs(x.r - y.r) + Math.abs(x.g - y.g) + Math.abs(x.b - y.b) < 18;
     }
-    function howDiffers(a, b) {
-        var x = rgbOf(a), y = rgbOf(b); if (!x || !y) return 'other';
-        var dl = lum(x) - lum(y), dw = (x.r - x.b) - (y.r - y.b);
-        return Math.abs(dl) > .02 ? (dl > 0 ? 'lighter' : 'darker') : Math.abs(dw) > 6 ? (dw > 0 ? 'warmer' : 'cooler') : 'other';
-    }
-    function groundWord(bg) {
-        var c = rgbOf(bg); if (!c) return 'picture';
-        if (c.a === 0) return 'plain';
-        var v = [c.r, c.g, c.b], mx = Math.max(v[0], v[1], v[2]), mn = Math.min(v[0], v[1], v[2]), lum = (0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]) / 255;
-        if (mx - mn > 60) return lum < .35 ? 'dark colour' : 'colour';
-        return lum < .3 ? 'dark' : lum > .85 ? 'light' : 'grey';
-    }
-    function takeGround(b, cls) {
+    /* a ground taken: its class, and the colours laid on it when it is a pair (inverted, or a colour of the site);
+       holder is the block whose tools stay up (a section, when one of its halves took it) */
+    function takeGround(b, o, holder) {
         var was = b.getAttribute('class'), outerWas = cleanOuter(b), tintWas = tintState(b), from = groundFrom(b);
-        putAttr(b, 'class', cls); retint(b, from);
+        putAttr(b, 'class', o.cls); retint(b, from, o.pair);
         steps.push(function () { putAttr(b, 'class', was); setTint(b, tintWas); });
-        refresh(); mirror(b, outerWas); showTools(b);
-        once('ground', 'It takes that background from this site. Undo brings the old one back.');
+        refresh();
+        if (sharedParts(document).indexOf(b) >= 0) mirrorGround(b, was, tintWas); else mirror(b, outerWas);
+        showTools(holder || b);
+        once('ground', 'The colours come from this site. Undo brings the old ones back.');
+    }
+    /* the header or a footer took a ground: every other page's takes the same, when its ground was the same before
+       (its insides may differ, the menu marks another page as the current one) */
+    function mirrorGround(part, classWas, tintWas) {
+        var which = sharedParts(document).indexOf(part), cls = part.getAttribute('class'), st = tintStyle(part), id = part.getAttribute('data-tf-tint');
+        var marked = st ? ownMarks(part).map(function (n) { return { path: pathFrom(part, n), m: markOf(n, id) }; }) : [];
+        var paths = pageList().map(function (p) { return p.path; });
+        Object.keys(changes).forEach(function (p) { if (paths.indexOf(p) < 0) paths.push(p); });
+        paths = paths.filter(function (p) { return p !== here(); });
+        if (!paths.length) return;
+        var local = steps[steps.length - 1], changesBefore = copy(changes), left = paths.length, differ = [];
+        var tintText = function (n) { var t = tintStyle(n); return t ? t.textContent : ''; };
+        paths.forEach(function (path_) {
+            loadPage(path_, function (html) {
+                if (html !== null) {
+                    var doc = parse(html), there = sharedParts(doc)[which];
+                    if (there && (there.getAttribute('class') || '') === (classWas || '') && tintText(there) === (tintWas ? tintWas.style.textContent : '')) {
+                        untint(there); putAttr(there, 'class', cls);
+                        if (st) { there.appendChild(doc.importNode(st, true)); there.setAttribute('data-tf-tint', id); marked.forEach(function (x) { var n = walkPath(there, x.path); if (n) mark(n, x.m); }); }
+                        changes[path_] = serialize(doc);
+                    } else differ.push(path_);
+                }
+                if (--left) return;
+                var restore = function () { changes = changesBefore; };
+                if (steps[steps.length - 1] === local && local) { steps.pop(); steps.push(function () { local(); restore(); }); } else steps.push(restore);
+                refresh();
+                if (differ.length) say('Made on every page except ' + differ.map(function (p) { var pg = pageList().filter(function (q) { return q.path === p; })[0]; return pg ? pg.name : p; }).join(', ') + ', where this part is different.');
+            });
+        });
     }
     /* ---- tint: the parts of a block follow its new ground ----
        A site colours a section's parts for the ground it was made on: grey for quiet words, a faint ink for lines, a
@@ -1560,6 +1699,8 @@
     var TINT = { color: 'color', backgroundColor: 'background-color', borderTopColor: 'border-top-color', borderRightColor: 'border-right-color', borderBottomColor: 'border-bottom-color', borderLeftColor: 'border-left-color' };
     function tintStyle(b) { for (var c = b.firstElementChild; c; c = c.nextElementSibling) if (c.tagName === 'STYLE' && c.hasAttribute('data-tf-tint')) return c; return null; }
     /* the class the block's colours were made for: kept in its tint, so it lasts past a reload */
+    /* the colours laid on a block as a pair, kept in its tint: { g, i, flip } */
+    function tintPair(b) { var st = tintStyle(b), v = st && st.getAttribute('data-tf-pair'); if (!v) return null; v = v.split('|'); return { g: v[0], i: v[1], flip: st.hasAttribute('data-tf-flip') }; }
     function groundFrom(b) { var st = tintStyle(b); if (st) return st.getAttribute('data-tf-from'); if (b._tfGroundFrom === undefined) b._tfGroundFrom = b.getAttribute('class'); return b._tfGroundFrom; }
     function tintState(b) {
         var st = tintStyle(b); if (!st) return null;
@@ -1616,17 +1757,24 @@
         var c = at(hi);
         return 'rgba(' + Math.round(c.r) + ',' + Math.round(c.g) + ',' + Math.round(c.b) + ',' + alpha + ')';
     }
-    function retint(b, from) { still(function () { retintNow(b, from); }); }
-    function retintNow(b, from) {
+    /* pair: a ground and an ink laid on the block itself (inverted, or a colour of the site), past what its class gives */
+    function retint(b, from, pair) { still(function () { retintNow(b, from, pair); }); }
+    function retintNow(b, from, pair) {
         untint(b);
-        var to = b.getAttribute('class'); if (from === undefined || (from || '') === (to || '')) return;
+        var to = b.getAttribute('class'); if (from === undefined) { if (!pair) return; from = to; }
+        if (!pair && (from || '') === (to || '')) return;
         var parts = tintParts(b), A, B, HA, HB;
         putAttr(b, 'class', from || null); A = parts.map(tintRead); HA = tintHovers(b); var g0 = behind(b), i0 = rgbOf(getComputedStyle(b).color);
-        putAttr(b, 'class', to); B = parts.map(tintRead); HB = tintHovers(b); var g1 = behind(b), i1 = rgbOf(getComputedStyle(b).color);
-        if (!g0 || !g1 || !i0 || !i1 || contrast(g0, i0) < 2 || contrast(g1, i1) < 2) return; /* a picture ground, or no ink to read a mix from */
-        if (same('rgba(' + [g0.r, g0.g, g0.b, g0.a] + ')') === same('rgba(' + [g1.r, g1.g, g1.b, g1.a] + ')') && same(getComputedStyle(b).color) === same('rgba(' + [i0.r, i0.g, i0.b, i0.a] + ')')) return; /* the same pair: nothing to bring along */
+        putAttr(b, 'class', to);
+        var styleWas = b.getAttribute('style');
+        if (pair) { b.style.setProperty('background-color', pair.g, 'important'); b.style.setProperty('color', pair.i, 'important'); }
+        B = parts.map(tintRead); HB = tintHovers(b); var g1 = behind(b), i1 = rgbOf(getComputedStyle(b).color);
+        if (pair) putAttr(b, 'style', styleWas);
         var id = Math.random().toString(36).slice(2, 7), rules = [], own = [];
-        parts.forEach(function (n, j) {
+        if (pair) rules.push('[data-tf-tint="' + id + '"]{background-color:' + pair.g + '!important;color:' + pair.i + '!important}');
+        var mixes = g0 && g1 && i0 && i1 && contrast(g0, i0) >= 2 && contrast(g1, i1) >= 2 /* not a picture ground, and an ink to read a mix from */
+            && !(same('rgba(' + [g0.r, g0.g, g0.b, g0.a] + ')') === same('rgba(' + [g1.r, g1.g, g1.b, g1.a] + ')') && same('rgba(' + [i1.r, i1.g, i1.b, i1.a] + ')') === same('rgba(' + [i0.r, i0.g, i0.b, i0.a] + ')')); /* the same pair: nothing to bring along */
+        if (mixes) parts.forEach(function (n, j) {
             if (own.some(function (o) { return o.contains(n); })) return; /* inside a part with its own ground: that part keeps its ink */
             var a = A[j], z = B[j], set = [];
             var bgOwn = a.image || opaque(a.backgroundColor) && !remix(a.backgroundColor, g0, i0, g1, i1);
@@ -1646,7 +1794,7 @@
             }
             if (set.length) { mark(n, id + '-' + j); rules.push('[data-tf-t~="' + id + '-' + j + '"]{' + set.join(';') + '}'); }
         });
-        HA.forEach(function (a, j) {
+        if (mixes) HA.forEach(function (a, j) {
             var z = HB[j], h = a.h, set = []; if (!z || z.h !== h) return;
             var dec = function (p) { return h.style.getPropertyValue(p) || p === 'background-color' && h.style.getPropertyValue('background'); };
             if (dec('background-color') && opaque(a.backgroundColor)) {
@@ -1661,6 +1809,7 @@
         var seen = {}; rules = rules.filter(function (r) { return seen[r] ? false : (seen[r] = true); });
         if (!rules.length) return;
         var st = document.createElement('style'); st.setAttribute('data-tf-tint', ''); st.setAttribute('data-tf-from', from || ''); st.textContent = rules.join('\n');
+        if (pair) { st.setAttribute('data-tf-pair', pair.g + '|' + pair.i); if (pair.flip) st.setAttribute('data-tf-flip', ''); }
         b.setAttribute('data-tf-tint', id); b.appendChild(st);
     }
     function takeLook(t, cls) {
@@ -1989,6 +2138,11 @@
         items.forEach(function (it) {
             if (it === 'gap') { menu.appendChild(el('div', 'tf-gap')); return; }
             if (it.note) { menu.appendChild(el('div', 'tf-note', it.note)); return; }
+            if (it.label) { menu.appendChild(el('div', 'tf-menu-label', it.label)); return; }
+            if (it.off) { /* a look that cannot be had here: its name, greyed, and why in place of the sample */
+                var o = el('div', 'tf-item tf-look tf-off'); o.setAttribute('role', 'menuitem'); o.setAttribute('aria-disabled', 'true'); menu.className += ' tf-looks';
+                o.appendChild(el('span', 'tf-look-why', it.off)); o.appendChild(el('span', 'tf-look-word', it.word)); menu.appendChild(o); return;
+            }
             var b = el('button', 'tf-item' + (it.danger ? ' tf-danger' : '')); b.type = 'button'; b.setAttribute('role', 'menuitem');
             if (it.sample) { /* a look: drawn as it is, its plain name on the right, a tick on the one it has now */
                 b.className += ' tf-look'; menu.className += ' tf-looks'; b.appendChild(it.sample);
@@ -2005,7 +2159,7 @@
         menu.style.left = left + 'px'; menu.style.top = top + 'px';
         menu.row = row; if (row) row.classList.add('tf-open');
         setTimeout(function () { if (menu) { document.addEventListener('pointerdown', menuAway, true); window.addEventListener('scroll', closeMenu, true); } }, 0);
-        if (menu.firstChild) menu.firstChild.focus();
+        var first = menu.querySelector("button"); if (first) first.focus();
     }
     function menuAway(e) { if (menu && !menu.contains(e.target)) closeMenu(); }
     function closeMenu() {
@@ -2895,7 +3049,7 @@
             '.tf-row{position:relative;display:flex;align-items:center;gap:8px;min-height:40px;padding:0 6px 0 4px;border-radius:10px;font-size:14px;transition:background .12s}.tf-row:hover,.tf-row.tf-open,.tf-row:focus-within{background:var(--tf-fill)}.tf-row-grip{opacity:0;transition:opacity .12s}.tf-row:hover .tf-row-grip,.tf-row.tf-open .tf-row-grip,.tf-row-moving .tf-row-grip{opacity:1}.tf-row-moving{background:var(--tf-lift);box-shadow:0 8px 24px rgba(0,0,0,.35)}.tf-rename{flex:1;min-width:0;height:28px}.tf-row-note,.tf-row-tag{color:var(--tf-muted);flex:none;font-size:12px;padding:2px 8px;border-radius:999px;background:var(--tf-fill)}.tf-row-hidden .tf-row-name{color:var(--tf-muted)}' +
             '.tf-row-name{flex:0 1 auto;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:inherit;text-decoration:none;padding:2px 0}.tf-row-name:hover{text-decoration:underline}.tf-row-name:focus{outline:none}.tf-row-name:focus-visible{outline:2px solid var(--tf-accent);outline-offset:2px;border-radius:4px}.tf-row.tf-here{background:var(--tf-fill)}.tf-row.tf-here:hover{background:var(--tf-fill-hover)}.tf-row.tf-here .tf-row-name{font-weight:600}.tf-row-check{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin-left:auto;color:var(--tf-muted);flex:none}.tf-row-check svg{width:14px;height:14px}.tf-row-check+.tf-row-acts{margin-left:0}' +
             '.tf-row-acts{display:flex;gap:2px;align-items:center;flex:none;margin-left:auto;opacity:0;transition:opacity .12s}.tf-row:hover .tf-row-acts,.tf-row.tf-open .tf-row-acts,.tf-row:focus-within .tf-row-acts,.tf-versions .tf-row-acts{opacity:1}.tf-row-acts .tf-button{height:28px;padding:0 10px;font-size:13px}.tf-row-acts .tf-icon{width:28px}.tf-versions{padding:2px 0 0;font-size:13px}.tf-versions .tf-caption{margin-left:6px}.tf-menu{position:fixed;width:220px;padding:6px;border-radius:14px;font:13px/1 var(--tf-font);z-index:2147483001}.tf-item{appearance:none;display:flex;align-items:center;gap:10px;width:100%;height:32px;padding:0 10px;border:0;border-radius:8px;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}.tf-item:hover,.tf-item:focus-visible{background:var(--tf-fill);outline:0}.tf-item svg{width:15px;height:15px;color:var(--tf-muted);flex:none}.tf-item.tf-danger{color:var(--tf-bad-ink)}.tf-item.tf-danger svg{color:currentColor}.tf-gap{height:1px;background:var(--tf-hairline);margin:6px 4px}.tf-note{padding:6px 10px 4px;color:var(--tf-muted);font-size:12px;line-height:1.4}' +
-            '.tf-menu.tf-looks{width:min(340px,calc(100vw - 16px))}.tf-item.tf-look{height:auto;min-height:44px;padding:5px 6px;gap:12px}.tf-look-ground{flex:1 1 auto;min-width:0;display:flex;align-items:center;padding:8px 10px;border-radius:8px;overflow:hidden}.tf-look-sample{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.2;box-sizing:border-box}.tf-look-word{display:flex;align-items:center;justify-content:flex-end;gap:4px;flex:none;width:92px;color:var(--tf-muted);font-size:12px}.tf-look-word svg{width:13px;height:13px;color:var(--tf-primary)}' +
+            '.tf-menu.tf-looks{width:min(340px,calc(100vw - 16px))}.tf-item.tf-look{height:auto;min-height:44px;padding:5px 6px;gap:12px}.tf-look-ground{flex:1 1 auto;min-width:0;display:flex;align-items:center;padding:8px 10px;border-radius:8px;overflow:hidden}.tf-look-sample{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.2;box-sizing:border-box}.tf-look-word{display:flex;align-items:center;justify-content:flex-end;gap:4px;flex:none;width:92px;color:var(--tf-muted);font-size:12px}.tf-look-word svg{width:13px;height:13px;color:var(--tf-primary)}.tf-item.tf-off{cursor:default}.tf-item.tf-off:hover{background:none}.tf-look-why{flex:1 1 auto;min-width:0;padding:4px 10px;color:var(--tf-muted);font-size:12px;line-height:1.35}.tf-off .tf-look-word{opacity:.55}.tf-menu-label{padding:8px 10px 4px;color:var(--tf-muted);font-size:12px;font-weight:600}' +
             '.tf-pal-field{display:flex;align-items:center;gap:10px;flex:none;height:48px;padding:0 12px 0 16px;border-bottom:1px solid var(--tf-hairline)}.tf-pal-field svg{width:16px;height:16px;color:var(--tf-muted);flex:none}.tf-pal-input{flex:1;min-width:0;border:0;padding:0;background:none;color:inherit;font:15px/1 var(--tf-font);outline:0}.tf-pal-input::placeholder{color:var(--tf-muted)}' +
             '.tf-key{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;border-radius:5px;background:var(--tf-fill);color:var(--tf-muted);font:500 11px/1 var(--tf-font);box-shadow:inset 0 -1px 0 var(--tf-hairline);flex:none}.tf-keys{display:flex;gap:3px;margin-left:auto}' +
             '.tf-pal .tf-sheet-body{padding:8px 8px 10px}.tf-pal .tf-caption{margin:6px 0 4px 10px}.tf-pal-row{height:40px;padding:0 10px;border-radius:10px;font-size:14px}.tf-pal-row:hover{background:none}.tf-pal-row.tf-lit{background:var(--tf-fill)}.tf-pal-name{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tf-pal-row .tf-row-tag{margin-left:auto}.tf-pal-none{padding:10px 10px 6px;color:var(--tf-muted);font-size:13px}' +

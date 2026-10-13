@@ -10,7 +10,7 @@ console.log('at rest the bar says:', JSON.stringify(await status()), '| buttons:
 await edit('h1'); console.log('editing says:', await status());
 await p.keyboard.press('End'); await p.keyboard.type(' A'); await p.keyboard.press('Enter'); await p.waitForTimeout(100);
 const count = () => p.$eval('.tf-count', c => c.style.visibility === 'hidden' ? '-' : c.textContent);
-console.log('one edit, count on Done:', await count(), '| bubble gone at rest:', (await status()) === '' || await p.$eval('.tf-status', s => !s.classList.contains('tf-show')));
+console.log('one edit, count on Done:', await count(), '| bubble gone at rest:', ['', 'Kept. For a new line, press Shift+Enter while typing.'].includes(await status()) || await p.$eval('.tf-status', s => !s.classList.contains('tf-show')));
 await p.hover('.card:nth-child(3) h3'); await p.waitForTimeout(400); await p.click('.tf-tools button:has-text("Hide")'); await p.waitForTimeout(100);
 await p.click('body', { position: { x: 5, y: 700 } }); await p.waitForTimeout(100);
 console.log('two edits, count on Done:', await count());

@@ -78,7 +78,7 @@ await p.click('.tf-button:has-text("Done")');
 const html = await p.evaluate(() => window._blob.text());
 console.log('output clean:', !/\btf-(?!hidden|pos)|data-tf-block|data-tweakfast|contenteditable/.test(html), '| hidden card kept:', /<article class="card" data-tf-hidden="" hidden="" style="display: none;">/.test(html), '| cards in output:', (html.match(/<article class="card"/g) || []).length);
 await p.screenshot({ path: '/tmp/tweakfast-ring2.png' });
-/* touch: no hover on a phone; a tap on a block shows its tools, a tap outside hides them */
+/* touch: no hover on a phone; a tap on a block shows its tools, a tap in the header shows only its Look */
 const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 const m = await ctx.newPage();
 m.on('pageerror', e => console.log('PAGEERROR', e.message));
@@ -117,7 +117,7 @@ await m.keyboard.press('Escape'); await m.waitForTimeout(100); /* the synthetic 
 await tapAt('.card:nth-child(1) h3'); await m.waitForTimeout(100); await tapAt('.card:nth-child(1) h3'); await m.waitForTimeout(100); /* one tap picks, the second edits */
 console.log('tap on text: editing:', await m.evaluate(() => !!document.querySelector('[contenteditable]')), '| tools while typing:', await m.evaluate(() => getComputedStyle(document.querySelector('.tf-tools')).display));
 await tapAt('header .logo'); await m.waitForTimeout(100);
-console.log('tap outside: tools hidden:', await m.evaluate(() => getComputedStyle(document.querySelector('.tf-tools')).display), '| bar fits:', await m.evaluate(() => { const r = document.querySelector('.tf-bar').getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth; }));
+console.log('tap in the header: only its Look:', await m.evaluate(() => [...document.querySelectorAll('.tf-tools > *')].filter(e => getComputedStyle(e).display !== 'none').map(e => e.textContent).join(',') === 'Look'), '| bar fits:', await m.evaluate(() => { const r = document.querySelector('.tf-bar').getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth; }));
 /* a finger needs 40 px: tools, grip, plus, row buttons; the Site panel shows its buttons; the hint speaks of taps */
 await m.tap('.card:nth-child(1)', { position: { x: 6, y: 6 } }); await m.waitForTimeout(100);
 await m.waitForTimeout(350); /* the tools spring in first */ console.log('finger sizes: tools', await m.$$eval('.tf-tools button', bs => bs.every(x => x.getBoundingClientRect().height >= 40)), '| grip', await m.$eval('.tf-grip', e => e.getBoundingClientRect().height >= 40 && e.getBoundingClientRect().width >= 40), '| plus', await m.$eval('.tf-plus span', e => e.getBoundingClientRect().width >= 40), '| bar buttons', await m.$$eval('.tf-bar .tf-button', bs => bs.every(x => x.getBoundingClientRect().height >= 40)), '| bar fits', await m.evaluate(() => { const r = document.querySelector('.tf-bar').getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth; }));
