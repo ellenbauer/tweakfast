@@ -162,7 +162,7 @@
         try { localStorage.setItem('tweakfast:seen', '1'); } catch (e) {} /* once per computer, also after Leave */
         card.appendChild(el('span', 'tf-card-tip'));
         document.body.appendChild(card);
-        function placeCard() { var r = bar.getBoundingClientRect(); card.style.bottom = (window.innerHeight - r.top + 12) + 'px'; }
+        function placeCard() { if (!card) return; var r = bar.getBoundingClientRect(); card.style.bottom = (window.innerHeight - r.top + 12) + 'px'; }
         placeCard(); window.addEventListener('resize', placeCard); placeNote();
     }
     function setTab() { document.title = realTitle ? 'Edit \u00b7 ' + realTitle : 'Edit'; }
@@ -1321,13 +1321,15 @@
         var list;
         if (isButton(block)) { list = looks(block); return list.length > 1 ? { t: block, list: list } : null; }
         if (!block.getClientRects().length || block.matches('li,tr,td,th,dt,dd')) return null;
-        var big = block.parentElement && block.parentElement.matches('main') || block.matches('section,header,footer') || sharedParts(document).indexOf(block) >= 0;
+        var big = isBig(block);
         /* a big part (a section, the header, a footer) always has its Look; a card has one when another ground of the site fits it */
         if (!big && !grounds(block, true).some(function (o) { return o.ok && !o.now; })) return null;
         /* parts that cover the block's ground (two halves) are chosen for one by one */
         if (covered(block)) { var sides = coverParts(block); return sides.length ? { t: block, sides: sides } : null; }
         return { t: block, sides: [{ part: block }] };
     }
+    /* a big part: a section, the header, a footer, a block straight in main */
+    function isBig(b) { return !!(b.parentElement && b.parentElement.matches('main') || b.matches('section,header,footer') || sharedParts(document).indexOf(b) >= 0); }
     function openLooks() {
         var b = toolsFor, ch = choicesFor(b); if (!ch) { lookBtn.style.display = 'none'; return; }
         var t = ch.t;
@@ -1358,17 +1360,18 @@
     }
     var WHY = { move: 'It would move things here.', read: 'Some words would be hard to read on it.' };
     function groundRows(b) {
-        var list = grounds(b), now = list[0];
-        if (!now) return KINDS.concat('inverted').map(function (k) { return { word: k, off: 'This part cannot take another background.' }; });
+        var list = grounds(b);
+        if (!list.length) return KINDS.concat('inverted').map(function (k) { return { word: k, off: 'This part cannot take another background.' }; });
         var rows = KINDS.map(function (k) {
-            var here = list.filter(function (o) { return (!o.flip || o.now) && kindOf(o.ground) === k; }), ok = here.filter(function (o) { return o.ok; });
-            var pick = ok.filter(function (o) { return o.now; })[0] || ok.filter(function (o) { return o.orig; })[0] || ok[0];
+            var here = list.filter(function (o) { return !o.flip && kindOf(o.ground) === k; }), ok = here.filter(function (o) { return o.ok; });
+            var pick = ok.filter(function (o) { return o.orig; })[0] || ok[0]; /* the same every time: what it came with, else the site's first */
             if (pick) return { o: pick, word: k };
             var bad = here.filter(function (o) { return o.why === 'read'; })[0] || here[0];
             return { word: k, off: bad ? WHY[bad.why] : 'This site has no ' + (k === 'colour' ? 'coloured' : k) + ' background.' };
         });
         var f = list.filter(function (o) { return o.flip; })[0];
-        rows.push(f && f.ok ? { o: f, word: 'inverted' } : { word: 'inverted', off: f ? WHY[f.why] : list.flipWhy || 'The background here is a picture.' });
+        var twin = f && f.ok && rows.filter(function (r) { return r.o && alike(r.o, f); })[0]; /* swapped, it is a row already there */
+        rows.push(twin ? { word: 'inverted', off: 'Same as ' + twin.word + ' here.' } : f && f.ok ? { o: f, word: 'inverted' } : { word: 'inverted', off: f ? WHY[f.why] : list.flipWhy || 'The background here is a picture.' });
         return rows;
     }
     /* the parts that cover a block's ground, named by where they sit */
@@ -1408,6 +1411,7 @@
                 (r.selectorText || '').split(',').forEach(function (sel) {
                     var m = /^\s*\.((?:\\.|[\w-])+)\s*$/.exec(sel); /* one class alone, escapes allowed (.hover\:bg-x is not one, it has a colon state) */
                     if (!m) return; var name = m[1].replace(/\\(.)/g, '$1');
+                    if (ground && /destructive|danger|error|warning/.test(name)) return; /* a site's warning colour is not a background to choose */
                     if (list.indexOf(name) < 0) list.push(name);
                 });
             }
@@ -1562,27 +1566,24 @@
         if (b[at] && b[at].at === steps.length) return b[at].list;
         return still(function () { return groundsNow(b, classOnly); });
     }
+    /* the choices are worked out from the block as the page came, never from what it took since: the same rows every
+       time the menu opens, and the one it has now is ticked */
     function groundsNow(b, classOnly) {
         var list = [], off = [];
         if (!isButton(b) && !b.matches('li,tr,td,th,dt,dd') && b.getClientRects().length && !covered(b)) {
-            var names = groundClasses(), own = names.filter(function (c) { return b.classList.contains(c); }), was = b.getAttribute('class'), base = layoutOf(b), now = groundLook(b), read = readings(b);
-            var from = groundFrom(b), tintWas = tintState(b), held = tintPair(b), cs = getComputedStyle(b), ink = cs.color;
+            var was = b.getAttribute('class'), tintWas = tintState(b), held = tintPair(b), from = groundFrom(b);
+            untint(b); putAttr(b, 'class', from); /* as it came */
+            var names = groundClasses(), own = names.filter(function (c) { return b.classList.contains(c); }), base = layoutOf(b), first = groundLook(b), read = readings(b);
+            var cs = getComputedStyle(b), ink = cs.color;
             var choice = function (cls, pair, g, extra) { var o = { cls: cls, pair: pair, look: g.look, ground: g.ground, plain: g.plain, key: g.key, ok: true }; for (var k in extra) o[k] = extra[k]; return o; };
             /* a choice that reads well is kept unless one like it is there; one that does not, only to say why its row is grey */
             var put = function (o) {
                 if (o.flip) { list.push(o); return; }
-                if (same(o.ground) === same(now.ground) && !o.orig) return; /* it would change nothing */
                 if (o.ok) { if (!list.some(function (x) { return !x.flip && alike(x, o); })) list.push(o); } else off.push(o);
             };
-            list.push(choice(was, held, now, { now: true, flip: !!(held && held.flip) }));
+            /* the ground it came with is always a choice: the way back needs no checking */
+            put(choice(from, null, first, { orig: true }));
             var bare = Array.prototype.filter.call(b.classList, function (c) { return own.indexOf(c) < 0; });
-            /* the ground it had when the page was opened is always a choice: the way back needs no checking */
-            if (from !== was || held) {
-                untint(b); putAttr(b, 'class', from); var back = groundLook(b); putAttr(b, 'class', was); setTint(b, tintWas);
-                put(choice(from, null, back, { orig: true }));
-            }
-            /* its own class without the colours laid on it (from inverted back to what the class gives) */
-            if (held && from !== was) { retint(b, from); var own_ = groundLook(b); setTint(b, tintWas); put(choice(was, null, own_)); }
             var tried = 0;
             [''].concat(names).forEach(function (c) {
                 if (c && own.indexOf(c) >= 0 || tried >= 40) return;
@@ -1594,31 +1595,34 @@
                 tries.some(function (cls, n) {
                     b.setAttribute('class', cls); retint(b, from);
                     var fits = layoutOf(b) === base, ok = fits && staysReadable(read, readings(b)), g = groundLook(b); /* nothing moves, and every text still reads */
-                    putAttr(b, 'class', was); setTint(b, tintWas);
+                    untint(b); putAttr(b, 'class', from);
                     if (fits || n === tries.length - 1) put(choice(cls, null, g, { ok: ok, why: fits ? 'read' : 'move' }));
                     return fits;
                 });
             });
             if (!classOnly) {
-                var picture = cs.backgroundImage !== 'none' || !rgbOf(now.ground);
+                var picture = cs.backgroundImage !== 'none' || !rgbOf(first.ground);
                 /* the site's own colour pairs laid on the block as they are: no class, so nothing can move */
                 if (!picture) sitePairs().forEach(function (p) {
-                    if (list.some(function (x) { return x.ok && !x.flip && same(x.ground) === same(p.g); })) return; /* a class gives it already */
-                    retint(b, from, p); var ok = staysReadable(read, readings(b)), g = groundLook(b); setTint(b, tintWas);
-                    put(choice(was, p, g, { ok: ok, why: 'read' }));
+                    if (list.some(function (x) { return x.ok && same(x.ground) === same(p.g); })) return; /* a class gives it already */
+                    retint(b, from, p); var ok = staysReadable(read, readings(b)), g = groundLook(b); untint(b);
+                    put(choice(from, p, g, { ok: ok, why: 'read' }));
                 });
-                /* inverted: its ground becomes its ink and its ink its ground */
-                var gv = rgbOf(now.ground), iv = rgbOf(ink);
-                if (held && held.flip) { /* inverted now: the first row in the list is it */ }
-                else if (picture || !gv || !iv) list.flipWhy = 'The background here is a picture.';
+                /* inverted: the ground it came with becomes its ink, and that ink its ground */
+                var gv = rgbOf(first.ground), iv = rgbOf(ink);
+                if (picture || !gv || !iv) list.flipWhy = 'The background here is a picture.';
                 else if (contrast(blend(iv, gv), gv) < 3) list.flipWhy = 'Its words and background are too close to swap.';
                 else {
                     var fp = { g: rgbText(blend(iv, gv)), i: rgbText(gv), flip: true };
-                    retint(b, from, fp); var okF = staysReadable(read, readings(b)), gF = groundLook(b); setTint(b, tintWas);
-                    put(choice(was, fp, gF, { ok: okF, why: 'read', flip: true }));
+                    retint(b, from, fp); var okF = staysReadable(read, readings(b)), gF = groundLook(b); untint(b);
+                    put(choice(from, fp, gF, { ok: okF, why: 'read', flip: true }));
                 }
             }
+            putAttr(b, 'class', was); setTint(b, tintWas);
             off.forEach(function (o, n) { if (!list.some(function (x) { return !x.flip && alike(x, o); }) && !off.slice(0, n).some(function (x) { return alike(x, o); })) list.push(o); });
+            /* the tick: the choice that is what the block has now */
+            var samePair = function (x, y) { return !x && !y || !!x && !!y && !x.flip === !y.flip && same(x.g) === same(y.g) && same(x.i) === same(y.i); };
+            list.forEach(function (o) { o.now = o.ok && (o.cls || '') === (was || '') && samePair(o.pair, held); });
         }
         b[classOnly ? '_tfGroundsC' : '_tfGrounds'] = { at: steps.length, list: list };
         return list;
@@ -1629,9 +1633,11 @@
     function sitePairs() {
         if (pairsSeen) return pairsSeen;
         pairsSeen = [];
+        var lone = [], colours = [];
         var add = function (bg, ink) {
             var g = rgbOf(bg), i = rgbOf(ink); if (!g || !i || g.a < 1) return;
-            i = blend(i, g); if (contrast(g, i) < 4.5) return; /* a pair the site reads its words on */
+            i = blend(i, g); colours.push(g, i);
+            if (contrast(g, i) < 4.5) { lone.push(g); return; } /* a pair the site reads its words on; a ground alone waits for an ink */
             var p = { g: rgbText(g), i: rgbText(i) };
             if (!pairsSeen.some(function (q) { return same(q.g) === same(p.g) && same(q.i) === same(p.i); })) pairsSeen.push(p);
         };
@@ -1641,6 +1647,13 @@
             var probe = document.createElement('div'), inkC = inkWith(c);
             probe.setAttribute('data-tweakfast', ''); probe.style.display = 'none'; probe.className = c + (inkC ? ' ' + inkC : '');
             document.body.appendChild(probe); var ps = getComputedStyle(probe); add(ps.backgroundImage === 'none' ? ps.backgroundColor : 'none', ps.color); probe.remove();
+        });
+        /* a ground the site never writes on (its light ink used as a ground): the site's colour that reads best on it */
+        lone.forEach(function (g) {
+            var best = null; colours.forEach(function (c) { if (!best || contrast(g, c) > contrast(g, best)) best = c; });
+            if (!best || contrast(g, best) < 4.5) return;
+            var p = { g: rgbText(g), i: rgbText(best) };
+            if (!pairsSeen.some(function (q) { return same(q.g) === same(p.g); })) pairsSeen.push(p);
         });
         return pairsSeen;
     }
@@ -1689,6 +1702,61 @@
                 if (differ.length) say('Made on every page except ' + differ.map(function (p) { var pg = pageList().filter(function (q) { return q.path === p; })[0]; return pg ? pg.name : p; }).join(', ') + ', where this part is different.');
             });
         });
+    }
+    /* the page's ground: the first part around the page's content that paints one from edge to edge (a wrapper the maker
+       put around everything), else the body. Sections narrower than the page show it on both sides. */
+    function pageGround() {
+        var page = document.documentElement.clientWidth;
+        for (var n = document.querySelector('main') || document.querySelector('section'); n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+            var cs = getComputedStyle(n); if (cs.backgroundImage === 'none' && seeThrough(cs.backgroundColor)) continue;
+            if (n.getBoundingClientRect().width >= page - 1) return n;
+        }
+        return document.body;
+    }
+    /* the page's ground taken here, then on every other page whose ground was the same. Each other page is laid out
+       unseen (no scripts run in it), so its quiet words and lines follow the new ground as they do here. */
+    function takePageGround(b, o) {
+        var was = b.getAttribute('class'), tintWas = tintState(b), from = groundFrom(b), path = pathFrom(document.body, b);
+        var tintText = function (n) { var t = tintStyle(n); return t ? t.textContent : ''; }, before = tintText(b);
+        putAttr(b, 'class', o.cls); retint(b, from, o.pair);
+        var local = function () { putAttr(b, 'class', was); setTint(b, tintWas); };
+        steps.push(local);
+        refresh(); if (panel && view && view.kind === 'pages') renderPages();
+        once('ground', 'The colours come from this site. Undo brings the old ones back.');
+        var paths = pageList().map(function (p) { return p.path; });
+        Object.keys(changes).forEach(function (p) { if (paths.indexOf(p) < 0) paths.push(p); });
+        paths = paths.filter(function (p) { return p !== here(); });
+        if (!paths.length) return;
+        var changesBefore = copy(changes), differ = [], left = paths.length;
+        say('Working…');
+        paths.forEach(function (path_) {
+            loadPage(path_, function (html) {
+                if (html === null) { finish(); return; }
+                unseen(html, function (doc) {
+                    var there = doc && walkPath(doc.body, path);
+                    if (!there || there.tagName !== b.tagName || (there.getAttribute('class') || '') !== (was || '') || tintText(there) !== before) { differ.push(path_); return; }
+                    var calmIt = doc.createElement('style'); calmIt.textContent = '*,*::before,*::after{transition:none!important;animation:none!important}'; doc.head.appendChild(calmIt);
+                    var fromThere = groundFrom(there); putAttr(there, 'class', o.cls); retintNow(there, fromThere, o.pair);
+                    calmIt.remove(); scrub(doc.body);
+                    changes[path_] = serialize(doc);
+                }, finish);
+            });
+        });
+        function finish() {
+            if (--left) return;
+            var restore = function () { changes = changesBefore; };
+            if (steps[steps.length - 1] === local) { steps.pop(); steps.push(function () { local(); restore(); }); } else steps.push(restore);
+            refresh(); say('');
+            if (differ.length) say('Made on every page except ' + differ.map(function (p) { var pg = pageList().filter(function (q) { return q.path === p; })[0]; return pg ? pg.name : p; }).join(', ') + ', where the background is different.');
+        }
+    }
+    /* a page laid out out of sight, at this window's width, with the site's styles and none of its scripts */
+    function unseen(html, fn, after) {
+        var f = document.createElement('iframe'); f.setAttribute('data-tweakfast', ''); f.setAttribute('sandbox', 'allow-same-origin'); f.setAttribute('aria-hidden', 'true'); f.tabIndex = -1;
+        f.style.cssText = 'position:fixed;left:-20000px;top:0;width:' + window.innerWidth + 'px;height:' + window.innerHeight + 'px;border:0;visibility:hidden;pointer-events:none';
+        var done = false, end = function () { if (done) return; done = true; var d = null; try { d = f.contentDocument; } catch (e) {} try { fn(d && d.body ? d : null); } catch (e) { fn(null); } f.remove(); after(); };
+        f.addEventListener('load', end); setTimeout(end, 8000);
+        f.srcdoc = html; document.body.appendChild(f);
     }
     /* ---- tint: the parts of a block follow its new ground ----
        A site colours a section's parts for the ground it was made on: grey for quiet words, a faint ink for lines, a
@@ -1755,6 +1823,8 @@
         var at = function (u) { return { r: g1.r + u * (i1.r - g1.r), g: g1.g + u * (i1.g - g1.g), b: g1.b + u * (i1.b - g1.b), a: alpha }; }, lo = 0, hi = 1;
         for (var n = 0; n < 24; n++) { var mid = (lo + hi) / 2; if (contrast(blend(at(mid), g1), g1) < want) lo = mid; else hi = mid; }
         var c = at(hi);
+        /* faint words that the full ink cannot lift that far at their faintness: a little less faint */
+        if (alpha < 1 && contrast(blend(c, g1), g1) < want) { lo = alpha; hi = 1; for (n = 0; n < 16; n++) { c.a = (lo + hi) / 2; if (contrast(blend(c, g1), g1) < want) lo = c.a; else hi = c.a; } alpha = Math.round(hi * 100) / 100; c.a = alpha; }
         return 'rgba(' + Math.round(c.r) + ',' + Math.round(c.g) + ',' + Math.round(c.b) + ',' + alpha + ')';
     }
     /* pair: a ground and an ink laid on the block itself (inverted, or a colour of the site), past what its class gives */
@@ -1764,11 +1834,11 @@
         var to = b.getAttribute('class'); if (from === undefined) { if (!pair) return; from = to; }
         if (!pair && (from || '') === (to || '')) return;
         var parts = tintParts(b), A, B, HA, HB;
-        putAttr(b, 'class', from || null); A = parts.map(tintRead); HA = tintHovers(b); var g0 = behind(b), i0 = rgbOf(getComputedStyle(b).color);
+        putAttr(b, 'class', from || null); A = parts.map(tintRead); HA = tintHovers(b); var g0 = behind(b), i0 = rgbOf(getComputedStyle(b).color), bare0 = !A[0].image && seeThrough(A[0].backgroundColor);
         putAttr(b, 'class', to);
         var styleWas = b.getAttribute('style');
         if (pair) { b.style.setProperty('background-color', pair.g, 'important'); b.style.setProperty('color', pair.i, 'important'); }
-        B = parts.map(tintRead); HB = tintHovers(b); var g1 = behind(b), i1 = rgbOf(getComputedStyle(b).color);
+        B = parts.map(tintRead); HB = tintHovers(b); var g1 = behind(b), i1 = rgbOf(getComputedStyle(b).color), band = bare0 && bandOf(b);
         if (pair) putAttr(b, 'style', styleWas);
         var id = Math.random().toString(36).slice(2, 7), rules = [], own = [];
         if (pair) rules.push('[data-tf-tint="' + id + '"]{background-color:' + pair.g + '!important;color:' + pair.i + '!important}');
@@ -1806,11 +1876,28 @@
             if (dec('border-color') && z.borderTopColor === a.borderTopColor) { var mb = remix(a.borderTopColor, g0, i0, g1, i1); if (mb) set.push('border-color:' + mb + '!important'); }
             if (set.length) rules.push(':is([data-tf-tint="' + id + '"],[data-tf-tint="' + id + '"] *):is(' + h.sel + ',' + h.base + '[data-tf-hover]){' + set.join(';') + '}');
         });
+        if (band) rules.push('[data-tf-tint="' + id + '"]{box-shadow:0 0 0 100vw ' + band + '!important;clip-path:inset(0 -100vw)!important}');
         var seen = {}; rules = rules.filter(function (r) { return seen[r] ? false : (seen[r] = true); });
         if (!rules.length) return;
         var st = document.createElement('style'); st.setAttribute('data-tf-tint', ''); st.setAttribute('data-tf-from', from || ''); st.textContent = rules.join('\n');
         if (pair) { st.setAttribute('data-tf-pair', pair.g + '|' + pair.i); if (pair.flip) st.setAttribute('data-tf-flip', ''); }
         b.setAttribute('data-tf-tint', id); b.appendChild(st);
+    }
+    /* a section laid out as a column in the middle of the page, with no ground of its own, shows the page's ground on
+       both sides. Given a ground, it takes it from edge to edge as a band, the way a reader sees a section; its words stay
+       in their column. Drawn as a shadow outside its box, so nothing moves. Not when the page around it is itself a
+       column on a ground of its own, nor on a part with a shadow or a clip of its own. */
+    function bandOf(b) {
+        if (!isBig(b)) return null;
+        var cs = getComputedStyle(b), page = document.documentElement.clientWidth;
+        if (cs.backgroundImage !== 'none' || seeThrough(cs.backgroundColor) || cs.boxShadow !== 'none' || cs.clipPath !== 'none') return null;
+        if (b.getBoundingClientRect().width >= page - 1 && cs.maxWidth === 'none') return null; /* a column on a wide screen, even when a phone shows it full width */
+        for (var n = b.parentElement; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+            var ns = getComputedStyle(n); if (ns.backgroundImage === 'none' && seeThrough(ns.backgroundColor)) continue;
+            if (n.getBoundingClientRect().width < page - 1) return null;
+            break;
+        }
+        return cs.backgroundColor;
     }
     function takeLook(t, cls) {
         var was = t.getAttribute('class'), outerWas = cleanOuter(t);
@@ -2367,6 +2454,7 @@
             if (saver) oneItems.push({ icon: 'clock', word: 'Versions', fn: function () { openView({ kind: 'versions', pg: one }); } });
             more(only, oneItems);
             body.appendChild(only);
+            pageGroundRow(body);
             return;
         }
         list.forEach(function (pg) {
@@ -2396,6 +2484,21 @@
             more(row, items);
             body.appendChild(row);
         });
+        pageGroundRow(body);
+    }
+    /* the page's own ground, under the pages: the four rows of Look, made on every page */
+    function pageGroundRow(body) {
+        var b = pageGround(), now = kindOf(groundLook(b).ground);
+        body.appendChild(el('div', 'tf-caption tf-ground-caption', 'Every page'));
+        var row = el('div', 'tf-row'), name = el('a', 'tf-row-name', 'Page background'); name.href = '#';
+        row.appendChild(name);
+        if (now) row.appendChild(el('span', 'tf-row-note', now));
+        name.addEventListener('click', function (e) {
+            e.preventDefault();
+            var words = mainText(b), w = words ? words.textContent.replace(/\s+/g, ' ').trim() : 'Aa'; if (w.length > 26) w = w.slice(0, 24).trim() + '\u2026';
+            openMenu(name, groundRows(b).map(function (r) { return r.off ? { off: r.off, word: r.word } : { sample: lookSample(r.o.look, w || 'Aa', r.o.ground), word: r.word, now: r.o.now, fn: r.o.now ? function () {} : function () { takePageGround(b, r.o); } }; }), row);
+        });
+        body.appendChild(row);
     }
     /* Add a page: like one of the pages, with a name; the view the plus in the head opens */
     function renderAdd(body, list) {
