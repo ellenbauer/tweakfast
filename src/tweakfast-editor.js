@@ -951,18 +951,34 @@
         img.style.objectFit = 'cover';
         img.style.width = getComputedStyle(img).width;
     }
+    var PICTURE_ROOM = 4.5 * 1024 * 1024; /* under the site's 5 MB, with room to spare */
+    function bytesOf(dataUrl) { return Math.floor((dataUrl.length - dataUrl.indexOf(',') - 1) * 3 / 4); }
+    function hasClearPixels(c) {
+        var d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data, i;
+        for (i = 3; i < d.length; i += 16) if (d[i] < 255) return true; /* every fourth pixel is enough to tell */
+        return false;
+    }
     function shrink(file, maxW, cb) {
         if (file.type === 'image/gif' && file.size < 4 * 1024 * 1024) { /* a GIF may move: kept as it is */
             var fr = new FileReader(); fr.onload = function () { cb(fr.result); }; fr.onerror = function () { cb(null, 'This picture could not be read.'); }; fr.readAsDataURL(file); return;
         }
         var url = URL.createObjectURL(file), im = new Image();
         im.onload = function () {
-            var nw = im.naturalWidth || 1200, nh = im.naturalHeight || 800, s = Math.min(1, maxW / nw);
+            var nw = im.naturalWidth || 1200, nh = im.naturalHeight || 800, s = Math.min(1, maxW / nw), tries = 0;
+            var png = /png|gif|webp|svg/.test(file.type); /* what may be see-through stays see-through */
             var c = document.createElement('canvas');
-            c.width = Math.round(nw * s); c.height = Math.round(nh * s);
-            c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
             URL.revokeObjectURL(url);
-            cb(c.toDataURL(/png|gif|webp|svg/.test(file.type) ? 'image/png' : 'image/jpeg', 0.86)); /* what may be see-through stays see-through */
+            /* the site keeps pictures up to 5 MB: one that comes out larger is drawn smaller (a PNG with nothing
+               see-through becomes a JPEG first), so it is known now, not refused at Done */
+            (function draw() {
+                c.width = Math.max(1, Math.round(nw * s)); c.height = Math.max(1, Math.round(nh * s));
+                c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+                var out = c.toDataURL(png ? 'image/png' : 'image/jpeg', 0.86);
+                if (bytesOf(out) <= PICTURE_ROOM) { cb(out); return; }
+                if (png && !hasClearPixels(c)) { png = false; draw(); return; }
+                if (++tries > 6) { cb(null, 'This picture is too large to save, even made smaller. Choose a smaller one.'); return; }
+                s *= 0.7; draw();
+            })();
         };
         im.onerror = function () { URL.revokeObjectURL(url); cb(null, /hei[cf]/i.test(file.type + ' ' + file.name) ? 'This picture could not be read. HEIC photos may need to be saved as JPEG first.' : 'This picture could not be read. Try a JPEG or PNG.'); };
         im.src = url;
