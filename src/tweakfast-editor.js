@@ -82,6 +82,8 @@
         doneBtn = button('Done', function () { save(false); }); doneBtn.title = 'Done ' + (mac ? '\u2318S' : 'Ctrl+S');
         doneBtn.className += ' tf-primary';
         doneCount = el('span', 'tf-count', '0'); doneBtn.appendChild(doneCount); /* how many changes Done makes live */
+        doneCount.title = 'See the changes';
+        doneCount.addEventListener('click', function (e) { e.stopPropagation(); e.preventDefault(); toggleChanges(); }); /* the count opens the list; the rest of the button is Done */
         var leave = button('Leave', leave_);
         leave.className += ' tf-quiet';
         pagesBtn = button('Site', togglePages);
@@ -560,6 +562,10 @@
             if (meta && !e.shiftKey && (e.key === 'z' || e.key === 'Z') && !inField) { e.preventDefault(); undo(); return; }
             if (meta && e.shiftKey && (e.key === 'z' || e.key === 'Z') && !inField) { e.preventDefault(); redo(); return; }
             if (e.key === 'Enter' && held && !inField) { e.preventDefault(); begin(held); return; }
+            if (e.key === 'Tab' && !e.shiftKey && toolsFor && tools.style.display !== 'none' && !e.target.closest('[data-tweakfast]')) { /* from what is picked, Tab goes into its tools */
+                var tb = Array.prototype.filter.call(tools.querySelectorAll('button'), function (n) { return !n.disabled && n.getClientRects().length; })[0];
+                if (tb) { e.preventDefault(); tb.focus({ preventScroll: true }); return; }
+            }
             if (e.key === 'Escape' && !inField) { if (menu) closeMenu(); else if (panel) closePages(); else if (held) unhold(); else if (picked) unpick(); else { if (tools) hideTools(); hideAlt(); } say(''); }
             if (e.key === 'Escape' && asking) say('');
             return;
@@ -2276,8 +2282,9 @@
     function openView(v) { var back = view && view.kind !== 'pages' && v.kind === 'pages'; view = v; if (panel) renderPages(back ? 'back' : 'forward'); }
     /* More on a row: a small menu under the button; a click elsewhere, Esc or a scroll takes it away */
     function openMenu(anchor, items, row) {
+        var back = document.activeElement;
         closeMenu();
-        menu = el('div', 'tf-menu'); menu.setAttribute('data-tweakfast', ''); menu.setAttribute('role', 'menu');
+        menu = el('div', 'tf-menu'); menu.back = back; menu.setAttribute('data-tweakfast', ''); menu.setAttribute('role', 'menu');
         items.forEach(function (it) {
             if (it === 'gap') { menu.appendChild(el('div', 'tf-gap')); return; }
             if (it.note) { menu.appendChild(el('div', 'tf-note', it.note)); return; }
@@ -2312,12 +2319,13 @@
         setTimeout(function () { if (menu) { document.addEventListener('pointerdown', menuAway, true); window.addEventListener('scroll', closeMenu, true); } }, 0);
         var first = menu.querySelector("button"); if (first) first.focus();
     }
-    function menuAway(e) { if (menu && !menu.contains(e.target)) closeMenu(); }
+    function menuAway(e) { if (menu && !menu.contains(e.target) && e.target !== doneCount) closeMenu(); } /* the count toggles its own list */
     function closeMenu() {
         if (!menu) return;
         document.removeEventListener('pointerdown', menuAway, true); window.removeEventListener('scroll', closeMenu, true);
         if (menu.row) menu.row.classList.remove('tf-open');
-        fade(menu); menu = null;
+        var m = menu; fade(menu); menu = null;
+        if (m.contains(document.activeElement) && m.back && m.back.isConnected && m.back.getClientRects().length) m.back.focus({ preventScroll: true }); /* closed from the keyboard: back where it was opened */
     }
     function togglePages() {
         if (panel) { closePages(); return; }
@@ -2329,6 +2337,7 @@
         document.body.appendChild(panel);
         placePanel();
         pagesBtn.classList.add('tf-on');
+        var f = panel.querySelector('button,input'); if (f) f.focus({ preventScroll: true }); /* a keyboard goes straight on into the sheet */
     }
     /* the panel sits just above the bar, whatever the bar's height (two rows on a phone) */
     function placePanel() { if (panel) placeSheet(panel); if (pal) placeSheet(pal); }
@@ -2338,7 +2347,7 @@
         n.style.maxHeight = 'calc(100% - ' + (h + 16) + 'px)';
         placeNote();
     }
-    function closePages() { closeMenu(); if (panel) fade(panel); panel = null; pagesBtn.classList.remove('tf-on'); placeNote(); }
+    function closePages() { closeMenu(); var inside = panel && panel.contains(document.activeElement); if (panel) fade(panel); panel = null; if (inside) pagesBtn.focus({ preventScroll: true }); pagesBtn.classList.remove('tf-on'); placeNote(); }
     /* Rename: the name becomes a field in place; Enter keeps, Esc puts it back; the menu says the new name on every page */
     function renameRow(pg, row, name) {
         var field = el('input', 'tf-input tf-rename'); field.value = pg.name; field.autocomplete = 'off';
@@ -2429,6 +2438,7 @@
         });
         out.push({ group: 'Actions', icon: 'eye', word: 'Preview', fn: enterPreview });
         if (list.length) out.push({ group: 'Actions', icon: 'plus', word: 'Add a page', fn: function () { if (!panel) togglePages(); openView({ kind: 'add' }); } });
+        if (n) out.push({ group: 'Actions', icon: 'clock', word: n === 1 ? 'See the change' : 'See the ' + n + ' changes', fn: showChanges });
         if (n) out.push({ group: 'Actions', icon: 'undo', word: 'Undo', keys: [MAC ? '⌘' : 'Ctrl', 'Z'], fn: undo });
         if (n) out.push({ group: 'Actions', icon: 'check', word: 'Done, make ' + (n === 1 ? 'one change' : n + ' changes') + ' live', keys: [MAC ? '⌘' : 'Ctrl', 'S'], fn: function () { save(false); } });
         out.push({ group: 'Actions', icon: 'leave', word: 'Leave', fn: leave_ });
@@ -2491,8 +2501,20 @@
         if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (palRows.length) { palAt = (palAt + (e.key === 'ArrowDown' ? 1 : palRows.length - 1)) % palRows.length; litPal(); } return; }
         if (e.key === 'Enter') { e.preventDefault(); if (palRows[palAt]) palRows[palAt].click(); }
     }
+    /* a redraw keeps the keyboard where it was: the same button in the same view, else the sheet's first */
+    var drawnView = null;
     function renderPages(dir) {
         closeMenu();
+        var a = document.activeElement, had = panel.contains(a), same = view === drawnView;
+        var FOCUSABLE = 'button,input,a[href],[tabindex]', at = had ? Array.prototype.indexOf.call(panel.querySelectorAll(FOCUSABLE), a) : -1, word = had ? a.getAttribute('aria-label') || a.textContent : '';
+        drawPages(dir); drawnView = view;
+        if (!had || panel.contains(document.activeElement)) return;
+        var all = panel.querySelectorAll(FOCUSABLE), to = null, i;
+        if (same && all[at] && (all[at].getAttribute('aria-label') || all[at].textContent) === word) to = all[at];
+        for (i = 0; !to && same && i < all.length; i++) if ((all[i].getAttribute('aria-label') || all[i].textContent) === word) to = all[i];
+        to = to || all[0]; if (to) to.focus({ preventScroll: true });
+    }
+    function drawPages(dir) {
         panel.innerHTML = '';
         var list = pageList(), home = homePath();
         var head = el('div', 'tf-sheet-head'), body = el('div', 'tf-sheet-body' + (dir ? ' tf-' + dir : ''));
@@ -2956,8 +2978,138 @@
         undoBtn.disabled = saving || (!steps.length && !saves.length);
         doneBtn.disabled = saving || !steps.length;
         doneCount.textContent = steps.length; doneCount.style.visibility = steps.length ? 'visible' : 'hidden';
+        noteSteps();
+        if (menu && menu.classList.contains('tf-changes')) { if (steps.length) showChanges(); else closeMenu(); }
         if (panel) renderPages();
         laterDraft();
+    }
+    /* ---- the changes list ----
+       The count on Done opens a list of what is not live yet, newest first: each change named by what it did, Show
+       goes to it, Undo takes back that one alone. Undo steps are plain functions, so each one is named here by
+       comparing the page before and after it: the smallest part that changed, and how. */
+    var notes = [], lastHtml = null, lastChanges = '';
+    function changesSig() { return Object.keys(changes).sort().map(function (k) { return k + '\u0000' + changes[k]; }).join('\u0001'); }
+    function noteSteps() {
+        if (notes.length > steps.length) notes.length = steps.length;
+        if (!steps.length) { notes.length = 0; lastHtml = quietHtml(); lastChanges = changesSig(); return; } /* where the next change starts from */
+        var now = quietHtml(), nowCh = changesSig(), i;
+        if (lastHtml === null) lastHtml = now;
+        var top = notes[notes.length - 1];
+        if (notes.length === steps.length && top && top.fn !== steps[steps.length - 1]) { /* the last step took in more (merged): named again from where it began */
+            notes[notes.length - 1] = noteOf(top.from, now, top.fromCh !== nowCh, steps[steps.length - 1], top.fromCh);
+        }
+        for (i = notes.length; i < steps.length; i++) notes.push(noteOf(lastHtml, now, lastChanges !== nowCh, steps[i], lastChanges));
+        lastHtml = now; lastChanges = nowCh;
+    }
+    function snippet(n) {
+        var h = n.querySelector && n.querySelector('h1,h2,h3,h4,h5,h6'); /* a card or section goes by its heading */
+        var t = ((h || n).textContent || '').replace(/\s+/g, ' ').trim();
+        if (t) return '“' + (t.length > 34 ? t.slice(0, 33).trim() + '…' : t) + '”';
+        if (n.tagName === 'IMG' || n.querySelector && n.querySelector('img')) return 'a picture';
+        return /^(SECTION|HEADER|FOOTER|ARTICLE|MAIN|ASIDE)$/.test(n.tagName) ? 'a section' : 'a part';
+    }
+    function ownSig(n) {
+        var a = [], i;
+        for (i = 0; i < n.attributes.length; i++) a.push(n.attributes[i].name + '=' + n.attributes[i].value);
+        for (i = 0; i < n.childNodes.length; i++) if (n.childNodes[i].nodeType === 3) a.push('#' + n.childNodes[i].data);
+        return a.join('\u0000');
+    }
+    function noteOf(fromHtml, toHtml, others, fn, fromCh) {
+        var note = { fn: fn, from: fromHtml, fromCh: fromCh, others: others, label: others ? 'Changed other pages' : 'Changed the page', area: null, before: null, show: null };
+        var a = parse(fromHtml).body, b = parse(toHtml).body;
+        if (!a || !b || a.outerHTML === b.outerHTML) return note;
+        var ak, bk, diff, i;
+        for (;;) {
+            ak = a.children; bk = b.children;
+            if (ak.length !== bk.length || ownSig(a) !== ownSig(b)) break;
+            diff = [];
+            for (i = 0; i < ak.length; i++) if (ak[i].outerHTML !== bk[i].outerHTML) diff.push(i);
+            if (diff.length !== 1) break;
+            a = ak[diff[0]]; b = bk[diff[0]];
+        }
+        note.area = b.outerHTML; note.before = a.outerHTML; note.tag = b.tagName; note.show = note.area; note.showTag = b.tagName;
+        var label;
+        if (ak.length !== bk.length && ownSig(a) === ownSig(b)) {
+            for (i = 0; i < Math.min(ak.length, bk.length) && ak[i].outerHTML === bk[i].outerHTML; i++) {}
+            if (bk.length > ak.length) { label = 'Added ' + snippet(bk[i]); note.show = bk[i].outerHTML; note.showTag = bk[i].tagName; }
+            else label = 'Removed ' + snippet(ak[i]);
+        } else if (diff && diff.length > 1 && ownSig(a) === ownSig(b) && Array.prototype.map.call(ak, function (n) { return n.outerHTML; }).sort().join() === Array.prototype.map.call(bk, function (n) { return n.outerHTML; }).sort().join()) {
+            label = 'Moved ' + snippet(bk[diff[0]]); note.show = bk[diff[0]].outerHTML; note.showTag = bk[diff[0]].tagName;
+        } else {
+            var srcs = function (n) { return Array.prototype.map.call(n.tagName === 'IMG' ? [n] : n.querySelectorAll('img'), function (m) { return m.getAttribute('src') + '|' + m.getAttribute('alt'); }); };
+            var sa = srcs(a), sb = srcs(b), hidden = b.hasAttribute('hidden') && !a.hasAttribute('hidden');
+            if (hidden) label = 'Removed ' + snippet(b);
+            else if (a.textContent.replace(/\s+/g, ' ') !== b.textContent.replace(/\s+/g, ' ')) label = 'Changed words ' + snippet(b);
+            else if (sa.map(function (x) { return x.split('|')[0]; }).join() !== sb.map(function (x) { return x.split('|')[0]; }).join()) label = 'New picture';
+            else if (sa.join() !== sb.join()) label = 'Picture description';
+            else if (Array.prototype.map.call(a.querySelectorAll('a'), function (n) { return n.getAttribute('href'); }).join() !== Array.prototype.map.call(b.querySelectorAll('a'), function (n) { return n.getAttribute('href'); }).join() || a.getAttribute('href') !== b.getAttribute('href')) label = 'New link on ' + snippet(b);
+            else label = 'New look on ' + snippet(b);
+        }
+        note.label = label;
+        return note;
+    }
+    /* the live element that is this clean HTML, found by its tag; null when it is not there, or not once */
+    function liveOf(outer, tag) {
+        if (!outer) return null;
+        var all = document.body.getElementsByTagName(tag), hit = null, i;
+        for (i = 0; i < all.length; i++) if (!all[i].closest('[data-tweakfast]') && cleanOuter(all[i]) === outer) { if (hit) return null; hit = all[i]; }
+        return hit;
+    }
+    function toggleChanges() { if (menu && menu.classList.contains('tf-changes')) closeMenu(); else showChanges(); }
+    function showChanges() {
+        if (!steps.length) return;
+        if (editing) commit();
+        noteSteps();
+        var keep = menu && menu.classList.contains('tf-changes') ? menu.scrollTop : 0;
+        closeMenu(); closePal();
+        menu = el('div', 'tf-menu tf-changes'); menu.back = doneBtn; menu.setAttribute('data-tweakfast', ''); menu.setAttribute('role', 'dialog'); menu.setAttribute('aria-label', 'Changes not live yet');
+        menu.appendChild(el('div', 'tf-menu-label', steps.length === 1 ? 'One change, not live yet' : steps.length + ' changes, not live yet'));
+        for (var k = notes.length - 1; k >= 0; k--) (function (k) {
+            var note = notes[k], row = el('div', 'tf-row'), acts = el('span', 'tf-row-acts');
+            var name = el('span', 'tf-row-name', note.label); name.title = note.label; row.appendChild(name);
+            if (note.show) acts.appendChild(button('Show', function () { showChange(note); }));
+            acts.appendChild(button('Undo', function () { undoOne(k); }));
+            row.appendChild(acts); menu.appendChild(row);
+        })(k);
+        document.body.appendChild(menu);
+        var r = doneBtn.getBoundingClientRect(), w = menu.offsetWidth, h = menu.offsetHeight;
+        menu.style.left = Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8)) + 'px';
+        menu.style.top = Math.max(8, bar.getBoundingClientRect().top - h - 8) + 'px';
+        menu.scrollTop = keep;
+        setTimeout(function () { if (menu) { document.addEventListener('pointerdown', menuAway, true); window.addEventListener('scroll', closeMenu, true); } }, 0);
+        var first = menu.querySelector('button'); if (first && !keep) first.focus();
+    }
+    function showChange(note) {
+        closeMenu();
+        var t = liveOf(note.show, note.showTag) || liveOf(note.area, note.tag);
+        if (!t || t === document.body) { say(t ? 'That change is the whole page.' : 'That part has changed again since.', t ? '' : 'error'); return; }
+        while (t.parentElement && t.parentElement !== document.body && !t.getClientRects().length) t = t.parentElement; /* a hidden part: its place */
+        t.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+        var box = el('span', 'tf-hover-box tf-flash'); box.setAttribute('data-tweakfast', ''); document.body.appendChild(box);
+        var tick = function () { if (box.parentNode) { frame(box, t.getBoundingClientRect(), 3); box.style.display = 'block'; } };
+        tick(); var iv = setInterval(tick, 50);
+        setTimeout(function () { clearInterval(iv); fade(box); }, 1600);
+    }
+    /* Undo on a row: the newest is a plain Undo; an older one alone, when its part is as it left it and only this page changed */
+    function undoOne(k) {
+        if (k === steps.length - 1) { undo(); return; }
+        var note = notes[k], after = steps.length - 1 - k;
+        var cur = note.area && !note.others && note.tag !== 'BODY' ? parse(pageHtml()) : null, hit = null, all, i;
+        if (cur) { all = cur.body.getElementsByTagName(note.tag); for (i = 0; i < all.length; i++) if (all[i].outerHTML === note.area) { if (hit) { hit = null; break; } hit = all[i]; } }
+        if (!hit) {
+            closeMenu();
+            say(note.others ? 'That change also reached other pages, so it goes back with the ' + (after === 1 ? 'change' : after + ' changes') + ' after it.' : 'A later change touched the same part, so it goes back with the ' + (after === 1 ? 'change' : after + ' changes') + ' after it.', 'stay');
+            offer('Undo ' + (after + 1) + ' changes', function () { for (var n = 0; n <= after; n++) undo(); });
+            asking = true;
+            return;
+        }
+        var tmp = cur.createElement('template'); tmp.innerHTML = note.before; hit.parentNode.replaceChild(cur.importNode(tmp.content, true), hit);
+        var now = snapshot();
+        restore({ html: serialize(cur), words: now.words, changes: now.changes });
+        steps.splice(k, 1); notes.splice(k, 1); redos.length = 0; stepsSeen = steps.length;
+        lastHtml = quietHtml();
+        refresh(); say('Taken back: ' + note.label.charAt(0).toLowerCase() + note.label.slice(1) + '.');
+        if (steps.length) showChanges();
     }
     var afterSave = null;      /* what to do once a save has gone through (Leave) */
     var saving = false;        /* Done and Undo rest while a save is in flight */
@@ -3091,8 +3243,8 @@
         }
         return out;
     }
-    function pageHtml() {
-        finishTransients();
+    function pageHtml() { finishTransients(); return quietHtml(); }
+    function quietHtml() { /* the page as it is, without finishing a move mid-way */
         var doc = document.documentElement.cloneNode(true);
         scrub(doc);
         var junk = doc.querySelectorAll('[data-tweakfast],[contenteditable]');
@@ -3220,7 +3372,7 @@
             '.tf-panel-title{flex:1;min-width:0;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:600 15px/1.2 var(--tf-font)}' +
             '.tf-row{position:relative;display:flex;align-items:center;gap:8px;min-height:40px;padding:0 6px 0 4px;border-radius:10px;font-size:14px;transition:background .12s}.tf-row:hover,.tf-row.tf-open,.tf-row:focus-within{background:var(--tf-fill)}.tf-row-grip{opacity:0;transition:opacity .12s}.tf-row:hover .tf-row-grip,.tf-row.tf-open .tf-row-grip,.tf-row-moving .tf-row-grip{opacity:1}.tf-row-moving{background:var(--tf-lift);box-shadow:0 8px 24px rgba(0,0,0,.35)}.tf-rename{flex:1;min-width:0;height:28px}.tf-row-note,.tf-row-tag{color:var(--tf-muted);flex:none;font-size:12px;padding:2px 8px;border-radius:999px;background:var(--tf-fill)}.tf-row-hidden .tf-row-name{color:var(--tf-muted)}' +
             '.tf-row-name{flex:0 1 auto;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:inherit;text-decoration:none;padding:2px 0}.tf-row-name:hover{text-decoration:underline}.tf-row-name:focus{outline:none}.tf-row-name:focus-visible{outline:2px solid var(--tf-accent);outline-offset:2px;border-radius:4px}.tf-row.tf-here{background:var(--tf-fill)}.tf-row.tf-here:hover{background:var(--tf-fill-hover)}.tf-row.tf-here .tf-row-name{font-weight:600}.tf-row-check{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin-left:auto;color:var(--tf-muted);flex:none}.tf-row-check svg{width:14px;height:14px}.tf-row-check+.tf-row-acts{margin-left:0}' +
-            '.tf-row-acts{display:flex;gap:2px;align-items:center;flex:none;margin-left:auto;opacity:0;transition:opacity .12s}.tf-row:hover .tf-row-acts,.tf-row.tf-open .tf-row-acts,.tf-row:focus-within .tf-row-acts,.tf-versions .tf-row-acts{opacity:1}.tf-row-acts .tf-button{height:28px;padding:0 10px;font-size:13px}.tf-row-acts .tf-icon{width:28px}.tf-versions{padding:2px 0 0;font-size:13px}.tf-versions .tf-caption{margin-left:6px}.tf-menu{position:fixed;width:220px;padding:6px;border-radius:14px;font:13px/1 var(--tf-font);z-index:2147483001}.tf-item{appearance:none;display:flex;align-items:center;gap:10px;width:100%;height:32px;padding:0 10px;border:0;border-radius:8px;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}.tf-item:hover,.tf-item:focus-visible{background:var(--tf-fill);outline:0}.tf-item svg{width:15px;height:15px;color:var(--tf-muted);flex:none}.tf-item.tf-danger{color:var(--tf-bad-ink)}.tf-item.tf-danger svg{color:currentColor}.tf-gap{height:1px;background:var(--tf-hairline);margin:6px 4px}.tf-note{padding:6px 10px 4px;color:var(--tf-muted);font-size:12px;line-height:1.4}' +
+            '.tf-row-acts{display:flex;gap:2px;align-items:center;flex:none;margin-left:auto;opacity:0;transition:opacity .12s}.tf-row:hover .tf-row-acts,.tf-row.tf-open .tf-row-acts,.tf-row:focus-within .tf-row-acts,.tf-versions .tf-row-acts{opacity:1}.tf-row-acts .tf-button{height:28px;padding:0 10px;font-size:13px}.tf-row-acts .tf-icon{width:28px}.tf-versions{padding:2px 0 0;font-size:13px}.tf-versions .tf-caption{margin-left:6px}.tf-menu{position:fixed;width:220px;padding:6px;border-radius:14px;font:13px/1 var(--tf-font);z-index:2147483001}.tf-item{appearance:none;display:flex;align-items:center;gap:10px;width:100%;height:32px;padding:0 10px;border:0;border-radius:8px;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}.tf-item:hover,.tf-item:focus-visible{background:var(--tf-fill);outline:0}.tf-item:focus-visible{box-shadow:inset 0 0 0 2px var(--tf-accent)}.tf-item svg{width:15px;height:15px;color:var(--tf-muted);flex:none}.tf-item.tf-danger{color:var(--tf-bad-ink)}.tf-item.tf-danger svg{color:currentColor}.tf-changes{width:340px;max-width:calc(100vw - 16px);max-height:50vh;overflow:auto}.tf-changes .tf-row{min-height:36px;padding:0 2px 0 10px;font-size:13px}.tf-changes .tf-row-name{flex:1 1 auto;font-weight:400;color:inherit}.tf-changes .tf-row-acts{opacity:1}.tf-count{cursor:pointer}.tf-gap{height:1px;background:var(--tf-hairline);margin:6px 4px}.tf-note{padding:6px 10px 4px;color:var(--tf-muted);font-size:12px;line-height:1.4}' +
             '.tf-menu.tf-looks{width:min(340px,calc(100vw - 16px))}.tf-item.tf-look{height:auto;min-height:44px;padding:5px 6px;gap:12px}.tf-look-ground{flex:1 1 auto;min-width:0;display:flex;align-items:center;padding:8px 10px;border-radius:8px;overflow:hidden}.tf-look-sample{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.2;box-sizing:border-box}.tf-look-word{display:flex;align-items:center;justify-content:flex-end;gap:4px;flex:none;width:92px;color:var(--tf-muted);font-size:12px}.tf-look-word svg{width:13px;height:13px;color:var(--tf-primary)}.tf-item.tf-off{cursor:default}.tf-item.tf-off:hover{background:none}.tf-look-why{flex:1 1 auto;min-width:0;padding:4px 10px;color:var(--tf-muted);font-size:12px;line-height:1.35}.tf-menu.tf-grounds{width:min(280px,calc(100vw - 16px))}.tf-swatch-row{height:auto;min-height:52px;padding:4px;gap:10px}.tf-swatch{flex:1 1 auto;min-width:0;display:flex;align-items:center;height:44px;padding:0 14px;border-radius:9px;box-shadow:inset 0 0 0 1px rgba(127,127,127,.28);font:500 14px/1 var(--tf-font)}.tf-swatch{justify-content:space-between}.tf-swatch-tick{flex:none;display:flex}.tf-swatch-tick svg{width:15px;height:15px;color:currentColor}.tf-off .tf-look-word{opacity:.55}.tf-menu-label{padding:8px 10px 4px;color:var(--tf-muted);font-size:12px;font-weight:600}' +
             '.tf-pal-field{display:flex;align-items:center;gap:10px;flex:none;height:48px;padding:0 12px 0 16px;border-bottom:1px solid var(--tf-hairline)}.tf-pal-field svg{width:16px;height:16px;color:var(--tf-muted);flex:none}.tf-pal-input{flex:1;min-width:0;border:0;padding:0;background:none;color:inherit;font:15px/1 var(--tf-font);outline:0}.tf-pal-input::placeholder{color:var(--tf-muted)}' +
             '.tf-key{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;border-radius:5px;background:var(--tf-fill);color:var(--tf-muted);font:500 11px/1 var(--tf-font);box-shadow:inset 0 -1px 0 var(--tf-hairline);flex:none}.tf-keys{display:flex;gap:3px;margin-left:auto}' +
