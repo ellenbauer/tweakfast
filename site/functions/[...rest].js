@@ -155,7 +155,7 @@ async function history(request, env) {
     if (!env.TWEAKFAST_KEY || !same(body.key, env.TWEAKFAST_KEY)) return answer(403, 'This link no longer works. Ask the person who set up the site for a new one.');
     if (!pagePath(body.path)) return answer(400, 'A page had a bad name.');
     if (demo(env)) { /* a demo has no saved copies: only the original, and nothing is written */
-        if (body.list) return Response.json({ ok: true, saved: [], original: true });
+        if (body.list) return Response.json({ ok: true, demo: true, saved: [], original: true });
         if (body.get) {
             var d = await fetch(new URL(request.url).origin + '/_site/' + body.path, { headers: { 'x-tweakfast': 'origin' } });
             return d.status === 200 ? Response.json({ ok: true, html: hostClean(await d.text()), updated: '' }) : answer(404, 'The original could not be read.');

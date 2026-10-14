@@ -2671,6 +2671,11 @@
                 box.textContent = '';
                 if (!j.ok) { box.textContent = j.message || 'Could not read the versions.'; return; }
                 var times = j.saved || [];
+                if (demo || j.demo) { /* a demo saves nothing: no versions, but the original can always come back */
+                    box.appendChild(el('div', 'tf-caption', 'This demo saves nothing, so there are no versions.'));
+                    entry('The original', false, function () { putBack(pg, null, box); });
+                    return;
+                }
                 if (!times.length && j.original !== false) { box.textContent = 'No saved versions yet; this is the original.'; return; }
                 var seen = {}; /* saves in the same minute fold into one entry, the newest */
                 times = times.filter(function (t) { var m = String(t).slice(0, 16); if (seen[m]) return false; seen[m] = true; return true; });
