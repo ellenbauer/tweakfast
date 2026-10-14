@@ -17,7 +17,7 @@ await p.keyboard.press('Tab'); console.log('Tab again:', await focus());
 await p.keyboard.press('Escape'); await p.keyboard.press('Escape');
 await p.focus('.tf-bar .tf-button:has-text("Site")'); await p.keyboard.press('Enter'); await p.waitForTimeout(250);
 console.log('Site opened by keyboard, focus:', await focus(), '| ring', await ring());
-await p.keyboard.press('Tab'); await p.keyboard.press('Tab'); const more = await focus(); console.log('Tab into a row:', more);
+for (let i = 0; i < 8 && (await focus()) !== 'sheet:More'; i++) await p.keyboard.press('Tab'); console.log('Tab into a row:', await focus());
 await p.keyboard.press('Enter'); await p.waitForTimeout(150); console.log('More opened, focus:', await focus(), '| ring', await ring());
 await p.keyboard.press('Escape'); await p.waitForTimeout(250); console.log('Esc closes menu, focus back:', await focus());
 await p.keyboard.press('Escape'); await p.waitForTimeout(250); console.log('Esc closes sheet, focus:', await focus());

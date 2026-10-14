@@ -48,10 +48,15 @@
         back: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M10.4 2.2l1.4 1.4L7.4 8l4.4 4.4-1.4 1.4L4.6 8z"/></svg>',
         plus: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M7.1 2.5h1.8v4.6h4.6v1.8H8.9v4.6H7.1V8.9H2.5V7.1h4.6z"/></svg>',
         page: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.5h5l3.5 3.5v9.5H4zm1.6 1.6v9.8h5.3V6.1H8.4V3.1zM10 3.4v1.2h1.2z"/></svg>',
+        share: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1l3.2 3.2-1.1 1.1-1.3-1.3v6.3H7.2V4L5.9 5.3 4.8 4.2z"/><path d="M3 6.8h2.6v1.6H4.6v5.1h6.8V8.4h-1V6.8H13V15H3z"/></svg>',
         help: '<svg viewBox="0 0 16 16" aria-hidden="true"><mask id="tf-help-cut"><rect width="16" height="16" fill="#fff"/><path d="M5.9 6.1a2.1 2.1 0 1 1 3 1.9c-.6.3-.9.7-.9 1.3v.5" fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round"/><circle cx="8" cy="11.8" r="1" fill="#000"/></mask><circle cx="8" cy="8" r="7.2" fill="currentColor" mask="url(#tf-help-cut)"/></svg>',
         undo: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5.6 2.6 7 4 5.3 5.7H9a4.1 4.1 0 1 1 0 8.2H5v-1.9h4a2.2 2.2 0 1 0 0-4.4H5.3L7 9.3 5.6 10.7 1.5 6.6z"/></svg>',
         leave: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M2 2h6v1.8H3.8v8.4H8V14H2zm8.1 2.2 1.3-1.3L15.5 7 11.4 11.1l-1.3-1.3L12 7.9H6V6.1h6z"/></svg>',
-        check: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M6.3 12.6 2 8.3l1.4-1.4 2.9 2.9 6.3-6.3L14 4.9z"/></svg>'
+        check: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M6.3 12.6 2 8.3l1.4-1.4 2.9 2.9 6.3-6.3L14 4.9z"/></svg>',
+        picture: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M3 2.5h10A1.5 1.5 0 0 1 14.5 4v8a1.5 1.5 0 0 1-1.5 1.5H3A1.5 1.5 0 0 1 1.5 12V4A1.5 1.5 0 0 1 3 2.5zm.4 9.1h9.2L9.5 7.4l-2.1 2.7-1.5-1.4zM5.3 4.4a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4z"/></svg>',
+        link: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6.9 9.1a2.7 2.7 0 0 0 3.9 0l2.3-2.3a2.7 2.7 0 0 0-3.9-3.9l-1 1M9.1 6.9a2.7 2.7 0 0 0-3.9 0L2.9 9.2a2.7 2.7 0 0 0 3.9 3.9l1-1"/></svg>',
+        keys: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M2.5 3.5h11A1.5 1.5 0 0 1 15 5v6a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 11V5a1.5 1.5 0 0 1 1.5-1.5zM3.3 5.6v1.5h1.5V5.6zm2.6 0v1.5h1.5V5.6zm2.7 0v1.5h1.5V5.6zm2.6 0v1.5h1.5V5.6zM4.6 9.1v1.5h6.8V9.1z"/></svg>',
+        bookmark: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4.5 1.5h7A1 1 0 0 1 12.5 2.5v12L8 11.2 3.5 14.5v-12a1 1 0 0 1 1-1z"/></svg>'
     };
     /* a maker's overrides: data-tf="fixed" (never editable), data-tf="text" (edit this), data-tf="block" (a block with its own tools) */
 
@@ -247,7 +252,7 @@
                 var restore = function () { changes = changesBefore; };
                 if (steps[steps.length - 1] === local && local) { steps.pop(); steps.push(function () { local(); restore(); }); } else steps.push(restore);
                 refresh();
-                if (differ.length) say('Made on every page except ' + differ.map(function (p) { var pg = pageList().filter(function (q) { return q.path === p; })[0]; return pg ? pg.name : p; }).join(', ') + ', where this part is different.');
+                if (differ.length) say(exceptPages(differ, 'this part'));
             });
         });
     }
@@ -941,6 +946,12 @@
         mirror(box, wasOuter);
     }
     /* a sentence said once per visit */
+    /* pages answer in the order they load; the sentence names them in the menu's order, the same every time */
+    function exceptPages(differ, what) {
+        var list = pageList(), at = function (p) { for (var i = 0; i < list.length; i++) if (list[i].path === p) return i; return list.length; };
+        var names = differ.slice().sort(function (a, b) { return at(a) - at(b) || (a < b ? -1 : 1); }).map(function (p) { var i = at(p); return i < list.length ? list[i].name : p; });
+        return 'Made on every page except ' + names.join(', ') + ', where ' + what + ' is different.';
+    }
     function once(name, text) {
         try { if (sessionStorage.getItem('tweakfast:' + name)) return; sessionStorage.setItem('tweakfast:' + name, '1'); } catch (e) {}
         say(text);
@@ -1754,7 +1765,7 @@
                 var restore = function () { changes = changesBefore; };
                 if (steps[steps.length - 1] === local && local) { steps.pop(); steps.push(function () { local(); restore(); }); } else steps.push(restore);
                 refresh();
-                if (differ.length) say('Made on every page except ' + differ.map(function (p) { var pg = pageList().filter(function (q) { return q.path === p; })[0]; return pg ? pg.name : p; }).join(', ') + ', where this part is different.');
+                if (differ.length) say(exceptPages(differ, 'this part'));
             });
         });
     }
@@ -1812,7 +1823,7 @@
             var restore = function () { changes = changesBefore; };
             if (steps[steps.length - 1] === local) { steps.pop(); steps.push(function () { local(); restore(); }); } else steps.push(restore);
             refresh(); say('');
-            if (differ.length) say('Made on every page except ' + differ.map(function (p) { var pg = pageList().filter(function (q) { return q.path === p; })[0]; return pg ? pg.name : p; }).join(', ') + ', where the background is different.');
+            if (differ.length) say(exceptPages(differ, 'the background'));
         }
     }
     /* a page laid out out of sight, at this window's width, with the site's styles and none of its scripts */
@@ -2455,6 +2466,7 @@
         });
         out.push({ group: 'Actions', icon: 'eye', word: 'Preview', fn: enterPreview });
         if (list.length) out.push({ group: 'Actions', icon: 'plus', word: 'Add a page', fn: function () { if (!panel) togglePages(); openView({ kind: 'add' }); } });
+        out.push({ group: 'Actions', icon: 'share', word: 'Share the site', fn: function () { if (!panel) togglePages(); if (panel) openView({ kind: 'share' }); } });
         out.push({ group: 'Actions', icon: 'help', word: 'Help', fn: function () { if (!panel) togglePages(); if (panel) openView({ kind: 'help' }); } });
         if (n) out.push({ group: 'Actions', icon: 'clock', word: n === 1 ? 'See the change' : 'See the ' + n + ' changes', fn: showChanges });
         if (n) out.push({ group: 'Actions', icon: 'undo', word: 'Undo', keys: [MAC ? '⌘' : 'Ctrl', 'Z'], fn: undo });
@@ -2500,7 +2512,9 @@
         pal = el('div', 'tf-panel tf-pal'); pal.setAttribute('data-tweakfast', ''); pal.setAttribute('role', 'dialog'); pal.setAttribute('aria-label', 'Search pages and actions');
         var f = el('div', 'tf-pal-field'); f.innerHTML = ICON.search;
         palField = el('input', 'tf-pal-input'); palField.placeholder = 'Search pages and actions'; palField.autocomplete = 'off'; palField.spellcheck = false;
-        f.appendChild(palField); f.appendChild(el('span', 'tf-key', 'esc'));
+        f.appendChild(palField);
+        if (coarse()) { var cancel = button('Cancel', function () { closePal(true); }); cancel.className += ' tf-quiet tf-pal-cancel'; f.appendChild(cancel); } /* no Esc key on a phone */
+        else f.appendChild(el('span', 'tf-key', 'esc'));
         pal.appendChild(f); pal.appendChild(el('div', 'tf-sheet-body'));
         palField.addEventListener('input', renderPal);
         document.body.appendChild(pal); placeSheet(pal); renderPal(); palField.focus();
@@ -2539,8 +2553,9 @@
         panel.appendChild(head); panel.appendChild(body);
         if (view.kind !== 'pages') { /* a page's view: a chevron back to the list, the page's name as the title */
             head.appendChild(iconButton('back', 'Back', function () { openView({ kind: 'pages' }); }));
-            head.appendChild(el('h3', 'tf-panel-title', view.kind === 'add' ? 'Add a page' : view.kind === 'help' ? 'Help' : view.pg.name));
+            head.appendChild(el('h3', 'tf-panel-title', view.kind === 'add' ? 'Add a page' : view.kind === 'help' ? 'Help' : view.kind === 'share' ? 'Share the site' : view.pg.name));
             if (view.kind === 'help') showHelp(body);
+            else if (view.kind === 'share') showShare(body);
             else if (view.kind === 'words') showWords(view.pg, body);
             else if (view.kind === 'versions') showVersions(view.pg, body);
             else renderAdd(body, list);
@@ -2548,6 +2563,8 @@
         }
         head.appendChild(el('h3', 'tf-panel-title', 'Pages'));
         if (list.length) head.appendChild(iconButton('plus', 'Add a page', function () { openView({ kind: 'add' }); }));
+        if (coarse()) head.appendChild(iconButton('search', 'Search', function () { openPal(); })); /* Cmd+K needs a keyboard; on a phone the search is here */
+        head.appendChild(iconButton('share', 'Share the site', function () { openView({ kind: 'share' }); }));
         var helpBtn = iconButton('help', 'Help', function () { openView({ kind: 'help' }); }); head.appendChild(helpBtn);
         function more(row, items) {
             var acts = el('span', 'tf-row-acts'), b = iconButton('more', 'More', function () { openMenu(b, items, row); });
@@ -2623,21 +2640,121 @@
         body.appendChild(add);
         name.focus();
     }
+    /* Share: the address readers use, to copy or to scan; never the editing link */
+    function showShare(body) {
+        var url = location.origin + '/';
+        body.appendChild(el('div', 'tf-caption', 'Address'));
+        var line = el('div', 'tf-share-line'), field = el('input', 'tf-input'); field.readOnly = true; field.value = url; field.setAttribute('aria-label', 'Address');
+        field.addEventListener('focus', function () { field.select(); });
+        var copyBtn = button('Copy', function () {
+            var ok = function () { copyBtn.textContent = 'Copied'; setTimeout(function () { copyBtn.textContent = 'Copy'; }, 1600); };
+            if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(url).then(ok, function () { field.select(); say('Press ' + (MAC ? '⌘' : 'Ctrl+') + 'C to copy.'); });
+            else { field.select(); try { if (document.execCommand('copy')) ok(); } catch (e) {} }
+        });
+        line.appendChild(field); line.appendChild(copyBtn); body.appendChild(line);
+        var code = qrSvg(url);
+        if (code) { body.appendChild(el('div', 'tf-caption', 'For phones')); var box = el('div', 'tf-qr'); box.innerHTML = code; body.appendChild(box); }
+        body.appendChild(el('p', 'tf-share-note', 'This is the address readers use. Keep the address of this editing page to yourself: anyone with it can change the site.'));
+    }
+    /* ---- a QR code, drawn here: byte mode, error level M, sizes 1 to 10 (up to 213 letters), mask 0 ---- */
+    var QR_M = [null, [10, 1, 16, 0, 0], [16, 1, 28, 0, 0], [26, 1, 44, 0, 0], [18, 2, 32, 0, 0], [24, 2, 43, 0, 0], [16, 4, 27, 0, 0], [18, 4, 31, 0, 0], [22, 2, 38, 2, 39], [22, 3, 36, 2, 37], [26, 4, 43, 1, 44]]; /* ecc per block, blocks and data of group 1, of group 2 */
+    var QR_ALIGN = [null, [], [6, 18], [6, 22], [6, 26], [6, 30], [6, 34], [6, 22, 38], [6, 24, 42], [6, 26, 46], [6, 28, 50]];
+    function gfMul(x, y) { var z = 0; for (var i = 7; i >= 0; i--) { z = (z << 1) ^ ((z >>> 7) * 0x11D); z ^= ((y >>> i) & 1) * x; } return z; }
+    function rsGen(deg) {
+        var r = [], i, j, root = 1;
+        for (i = 0; i < deg - 1; i++) r.push(0); r.push(1);
+        for (i = 0; i < deg; i++) { for (j = 0; j < r.length; j++) { r[j] = gfMul(r[j], root); if (j + 1 < r.length) r[j] ^= r[j + 1]; } root = gfMul(root, 2); }
+        return r;
+    }
+    function rsRem(data, gen) {
+        var r = gen.map(function () { return 0; });
+        data.forEach(function (b) { var f = b ^ r.shift(); r.push(0); gen.forEach(function (c, i) { r[i] ^= gfMul(c, f); }); });
+        return r;
+    }
+    function qrMatrix(text) {
+        var data = Array.prototype.map.call(unescape(encodeURIComponent(text)), function (c) { return c.charCodeAt(0); });
+        var ver, t, cap, i, j, x, y;
+        for (ver = 1; ver <= 10; ver++) { t = QR_M[ver]; cap = t[1] * t[2] + t[3] * t[4]; if (4 + (ver < 10 ? 8 : 16) + data.length * 8 <= cap * 8) break; }
+        if (ver > 10) return null;
+        var bits = [], put = function (v, n) { for (var k = n - 1; k >= 0; k--) bits.push((v >>> k) & 1); };
+        put(4, 4); put(data.length, ver < 10 ? 8 : 16); data.forEach(function (b) { put(b, 8); });
+        put(0, Math.min(4, cap * 8 - bits.length)); while (bits.length % 8) bits.push(0);
+        for (var pad = 0xEC; bits.length < cap * 8; pad ^= 0xEC ^ 0x11) put(pad, 8);
+        var cw = []; for (i = 0; i < bits.length; i += 8) { var v = 0; for (j = 0; j < 8; j++) v = (v << 1) | bits[i + j]; cw.push(v); }
+        var blocks = [], eccs = [], at = 0, gen = rsGen(t[0]);
+        for (i = 0; i < t[1] + t[3]; i++) { var len = i < t[1] ? t[2] : t[4]; blocks.push(cw.slice(at, at + len)); at += len; eccs.push(rsRem(blocks[i], gen)); }
+        var out = [];
+        for (i = 0; i < Math.max(t[2], t[4]); i++) blocks.forEach(function (bl) { if (i < bl.length) out.push(bl[i]); });
+        for (i = 0; i < t[0]; i++) eccs.forEach(function (ec) { out.push(ec[i]); });
+        var size = ver * 4 + 17, m = [], fn = [];
+        for (i = 0; i < size * size; i++) { m.push(0); fn.push(false); }
+        var set = function (px, py, d) { m[py * size + px] = d ? 1 : 0; fn[py * size + px] = true; };
+        for (i = 0; i < size; i++) { set(6, i, i % 2 === 0); set(i, 6, i % 2 === 0); }
+        [[3, 3], [size - 4, 3], [3, size - 4]].forEach(function (c) {
+            for (var dy = -4; dy <= 4; dy++) for (var dx = -4; dx <= 4; dx++) { var px = c[0] + dx, py = c[1] + dy, d = Math.max(Math.abs(dx), Math.abs(dy)); if (px >= 0 && px < size && py >= 0 && py < size) set(px, py, d !== 2 && d !== 4); }
+        });
+        var al = QR_ALIGN[ver], last = al.length - 1;
+        al.forEach(function (a, ai) { al.forEach(function (b, bi) {
+            if ((ai === 0 && bi === 0) || (ai === 0 && bi === last) || (ai === last && bi === 0)) return;
+            for (var dy = -2; dy <= 2; dy++) for (var dx = -2; dx <= 2; dx++) set(a + dx, b + dy, Math.max(Math.abs(dx), Math.abs(dy)) !== 1);
+        }); });
+        var format = function (mask) {
+            var k, rem = mask; for (k = 0; k < 10; k++) rem = (rem << 1) ^ ((rem >>> 9) * 0x537); /* level M is 00 */
+            var f = ((mask << 10) | rem) ^ 0x5412, bit = function (n) { return (f >>> n) & 1; };
+            for (k = 0; k <= 5; k++) set(8, k, bit(k));
+            set(8, 7, bit(6)); set(8, 8, bit(7)); set(7, 8, bit(8));
+            for (k = 9; k < 15; k++) set(14 - k, 8, bit(k));
+            for (k = 0; k < 8; k++) set(size - 1 - k, 8, bit(k));
+            for (k = 8; k < 15; k++) set(8, size - 15 + k, bit(k));
+            set(8, size - 8, 1);
+        };
+        format(0);
+        if (ver >= 7) {
+            var vr = ver; for (i = 0; i < 12; i++) vr = (vr << 1) ^ ((vr >>> 11) * 0x1F25);
+            var vb = (ver << 12) | vr;
+            for (i = 0; i < 18; i++) { var bt = (vb >>> i) & 1, a = size - 11 + i % 3, b = Math.floor(i / 3); set(a, b, bt); set(b, a, bt); }
+        }
+        var n = 0;
+        for (var right = size - 1; right >= 1; right -= 2) {
+            if (right === 6) right = 5;
+            for (var vert = 0; vert < size; vert++) for (j = 0; j < 2; j++) {
+                x = right - j; y = ((right + 1) & 2) === 0 ? size - 1 - vert : vert;
+                if (!fn[y * size + x] && n < out.length * 8) { m[y * size + x] = (out[n >>> 3] >>> (7 - (n & 7))) & 1; n++; }
+            }
+        }
+        for (y = 0; y < size; y++) for (x = 0; x < size; x++) if (!fn[y * size + x] && (x + y) % 2 === 0) m[y * size + x] ^= 1;
+        format(0);
+        return { size: size, dark: function (px, py) { return m[py * size + px] === 1; } };
+    }
+    function qrSvg(text) {
+        var q = qrMatrix(text); if (!q) return '';
+        var d = '', w = q.size + 8;
+        for (var y = 0; y < q.size; y++) for (var x = 0; x < q.size; x++) if (q.dark(x, y)) d += 'M' + (x + 4) + ' ' + (y + 4) + 'h1v1h-1z';
+        return '<svg viewBox="0 0 ' + w + ' ' + w + '" shape-rendering="crispEdges" role="img" aria-label="QR code of the address"><rect width="' + w + '" height="' + w + '" fill="#fff"/><path d="' + d + '" fill="#000"/></svg>';
+    }
     /* Yesterday's version: the saved copies of a page, and the original */
     /* Words for Google: a page's title and description, what a search result and a shared link show. The
        current page is changed in place; another page is loaded, changed and kept in `changes` until Done. */
-    /* Help: what the editor does, in a minute's reading; the keys as this computer writes them */
+    /* Help: what the editor does, in a minute's reading, one row a topic (icon, name, the sentence); the keys as this computer writes them, drawn as keycaps */
     function showHelp(body) {
-        var mod = MAC ? '\u2318' : 'Ctrl+', shift = MAC ? '\u21e7\u2318' : 'Ctrl+Shift+';
-        [['Words', 'Click any text to type. Enter keeps it, Shift+Enter starts a new line, Esc puts it back. Tab goes on to the next text.'],
-         ['Blocks', 'Point at a part of the page to see its tools: Look, Move, Hide, Copy, Remove. Drag the dots to move it anywhere.'],
-         ['Pictures', 'Click a picture once to describe it, twice to choose a new one. Drag inside it to pick the part that shows.'],
-         ['Links', 'While you type in a link, the Goes to field below it says where it leads.'],
-         ['Pages', 'Site lists your pages. Use More on a page to rename it, hide it, remove it, set its words for Google, or bring back an older version.'],
-         ['Making it live', 'Nothing changes for readers until you press Done. The number on Done shows your changes; click it to see them. Undo takes back the last one, even after Done.'],
-         ['Keys', mod + 'Z Undo \u00b7 ' + shift + 'Z Redo \u00b7 ' + mod + 'S Done \u00b7 ' + mod + 'K Search everything'],
-         ['Coming back', 'Bookmark this page. Its address is your key; there is no login. If the tab closes, your changes wait here for you.']
-        ].forEach(function (h) { body.appendChild(el('div', 'tf-caption', h[0])); body.appendChild(el('p', 'tf-help', h[1])); });
+        var mod = MAC ? '\u2318' : 'Ctrl+', shift = MAC ? '\u21e7\u2318' : 'Ctrl+Shift+', list = el('div', 'tf-helps');
+        [['pencil', 'Words', 'Click any text to type. Enter keeps it, Shift+Enter starts a new line, Esc puts it back. Tab goes on to the next text.'],
+         ['grip', 'Blocks', 'Point at a part of the page to see its tools: Look, Move, Hide, Copy, Remove. Drag the dots to move it anywhere.'],
+         ['picture', 'Pictures', 'Click a picture once to describe it, twice to choose a new one. Drag inside it to pick the part that shows.'],
+         ['link', 'Links', 'While you type in a link, the Goes to field below it says where it leads.'],
+         ['page', 'Pages', 'Site lists your pages. Use More on a page to rename it, hide it, remove it, set its words for Google, or bring back an older version.'],
+         ['check', 'Making it live', 'Nothing changes for readers until you press Done. The number on Done shows your changes; click it to see them. Undo takes back the last one, even after Done.'],
+         ['keys', 'Keys', [[mod + 'Z', 'Undo'], [shift + 'Z', 'Redo'], [mod + 'S', 'Done'], [mod + 'K', 'Search everything']]],
+         ['bookmark', 'Coming back', 'Bookmark this page. Its address is your key; there is no login. If the tab closes, your changes wait here for you.']
+        ].forEach(function (h) {
+            var row = el('div', 'tf-help-row'), mark = el('span', 'tf-help-icon'), words = el('div', 'tf-help-words');
+            mark.innerHTML = ICON[h[0]]; row.appendChild(mark);
+            words.appendChild(el('div', 'tf-help-title', h[1]));
+            if (typeof h[2] === 'string') words.appendChild(el('p', 'tf-help', h[2]));
+            else { var keys = el('p', 'tf-help tf-keys'); h[2].forEach(function (k) { var one = el('span'); one.appendChild(el('kbd', 'tf-kbd', k[0])); one.appendChild(document.createTextNode(k[1])); keys.appendChild(one); }); words.appendChild(keys); }
+            row.appendChild(words); list.appendChild(row);
+        });
+        body.appendChild(list);
     }
     function showWords(pg, body) {
         var box = el('div', 'tf-words');
@@ -3405,7 +3522,7 @@
             '.tf-panel-title{flex:1;min-width:0;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:600 15px/1.2 var(--tf-font)}' +
             '.tf-row{position:relative;display:flex;align-items:center;gap:8px;min-height:40px;padding:0 6px 0 4px;border-radius:10px;font-size:14px;transition:background .12s}.tf-row:hover,.tf-row.tf-open,.tf-row:focus-within{background:var(--tf-fill)}.tf-row-grip{opacity:0;transition:opacity .12s}.tf-row:hover .tf-row-grip,.tf-row.tf-open .tf-row-grip,.tf-row-moving .tf-row-grip{opacity:1}.tf-row-moving{background:var(--tf-lift);box-shadow:0 8px 24px rgba(0,0,0,.35)}.tf-rename{flex:1;min-width:0;height:28px}.tf-row-note,.tf-row-tag{color:var(--tf-muted);flex:none;font-size:12px;padding:2px 8px;border-radius:999px;background:var(--tf-fill)}.tf-row-hidden .tf-row-name{color:var(--tf-muted)}' +
             '.tf-row-name{flex:0 1 auto;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:inherit;text-decoration:none;padding:2px 0}.tf-row-name:hover{text-decoration:underline}.tf-row-name:focus{outline:none}.tf-row-name:focus-visible{outline:2px solid var(--tf-accent);outline-offset:2px;border-radius:4px}.tf-row.tf-here{background:var(--tf-fill)}.tf-row.tf-here:hover{background:var(--tf-fill-hover)}.tf-row.tf-here .tf-row-name{font-weight:600}.tf-row-check{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin-left:auto;color:var(--tf-muted);flex:none}.tf-row-check svg{width:14px;height:14px}.tf-row-check+.tf-row-acts{margin-left:0}' +
-            '.tf-row-acts{display:flex;gap:2px;align-items:center;flex:none;margin-left:auto;opacity:0;transition:opacity .12s}.tf-row:hover .tf-row-acts,.tf-row.tf-open .tf-row-acts,.tf-row:focus-within .tf-row-acts,.tf-versions .tf-row-acts{opacity:1}.tf-row-acts .tf-button{height:28px;padding:0 10px;font-size:13px}.tf-row-acts .tf-icon{width:28px}.tf-versions{padding:2px 0 0;font-size:13px}.tf-versions .tf-caption{margin-left:6px}.tf-menu{position:fixed;width:220px;padding:6px;border-radius:14px;font:13px/1 var(--tf-font);z-index:2147483001}.tf-item{appearance:none;display:flex;align-items:center;gap:10px;width:100%;height:32px;padding:0 10px;border:0;border-radius:8px;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}.tf-item:hover,.tf-item:focus-visible{background:var(--tf-fill);outline:0}.tf-item:focus-visible{box-shadow:inset 0 0 0 2px var(--tf-accent)}.tf-item svg{width:15px;height:15px;color:var(--tf-muted);flex:none}.tf-item.tf-danger{color:var(--tf-bad-ink)}.tf-item.tf-danger svg{color:currentColor}.tf-help{margin:0 2px 4px;font-size:13px;line-height:1.45}.tf-changes{width:340px;max-width:calc(100vw - 16px);max-height:50vh;overflow:auto}.tf-changes .tf-row{min-height:36px;padding:0 2px 0 10px;font-size:13px}.tf-changes .tf-row-name{flex:1 1 auto;font-weight:400;color:inherit}.tf-changes .tf-row-acts{opacity:1}.tf-count{cursor:pointer}.tf-gap{height:1px;background:var(--tf-hairline);margin:6px 4px}.tf-note{padding:6px 10px 4px;color:var(--tf-muted);font-size:12px;line-height:1.4}' +
+            '.tf-row-acts{display:flex;gap:2px;align-items:center;flex:none;margin-left:auto;opacity:0;transition:opacity .12s}.tf-row:hover .tf-row-acts,.tf-row.tf-open .tf-row-acts,.tf-row:focus-within .tf-row-acts,.tf-versions .tf-row-acts{opacity:1}.tf-row-acts .tf-button{height:28px;padding:0 10px;font-size:13px}.tf-row-acts .tf-icon{width:28px}.tf-versions{padding:2px 0 0;font-size:13px}.tf-versions .tf-caption{margin-left:6px}.tf-menu{position:fixed;width:220px;padding:6px;border-radius:14px;font:13px/1 var(--tf-font);z-index:2147483001}.tf-item{appearance:none;display:flex;align-items:center;gap:10px;width:100%;height:32px;padding:0 10px;border:0;border-radius:8px;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}.tf-item:hover,.tf-item:focus-visible{background:var(--tf-fill);outline:0}.tf-item:focus-visible{box-shadow:inset 0 0 0 2px var(--tf-accent)}.tf-item svg{width:15px;height:15px;color:var(--tf-muted);flex:none}.tf-item.tf-danger{color:var(--tf-bad-ink)}.tf-item.tf-danger svg{color:currentColor}.tf-helps{display:grid;gap:16px;padding:10px 8px 8px}.tf-help-row{display:grid;grid-template-columns:30px 1fr;gap:12px;align-items:start}.tf-help-icon{display:grid;place-items:center;width:30px;height:30px;border-radius:8px;background:var(--tf-fill);color:var(--tf-accent)}.tf-help-icon svg{width:16px;height:16px}.tf-help-title{font:600 13.5px/1.3 var(--tf-font);margin:1px 0 3px}.tf-help{margin:0;font-size:13px;line-height:1.45;color:var(--tf-muted)}.tf-keys{display:flex;flex-wrap:wrap;gap:6px 14px}.tf-keys span{display:inline-flex;align-items:center;gap:6px}.tf-kbd{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:20px;padding:0 6px;border-radius:5px;background:var(--tf-fill);box-shadow:0 0 0 1px var(--tf-hairline),0 1px 0 var(--tf-hairline);font:500 11.5px/1 var(--tf-font);color:inherit}.tf-share-line{display:flex;gap:6px;align-items:center}.tf-share-line .tf-input{flex:1;min-width:0}.tf-qr{width:168px;margin:2px 0 10px;border-radius:12px;overflow:hidden;line-height:0}.tf-qr svg{width:100%;height:auto;display:block}.tf-share-note{margin:4px 2px 2px;font-size:13px;line-height:1.45;color:var(--tf-muted)}.tf-changes{width:340px;max-width:calc(100vw - 16px);max-height:50vh;overflow:auto}.tf-changes .tf-row{min-height:36px;padding:0 2px 0 10px;font-size:13px}.tf-changes .tf-row-name{flex:1 1 auto;font-weight:400;color:inherit}.tf-changes .tf-row-acts{opacity:1}.tf-count{cursor:pointer}.tf-gap{height:1px;background:var(--tf-hairline);margin:6px 4px}.tf-note{padding:6px 10px 4px;color:var(--tf-muted);font-size:12px;line-height:1.4}' +
             '.tf-menu.tf-looks{width:min(340px,calc(100vw - 16px))}.tf-item.tf-look{height:auto;min-height:44px;padding:5px 6px;gap:12px}.tf-look-ground{flex:1 1 auto;min-width:0;display:flex;align-items:center;padding:8px 10px;border-radius:8px;overflow:hidden}.tf-look-sample{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.2;box-sizing:border-box}.tf-look-word{display:flex;align-items:center;justify-content:flex-end;gap:4px;flex:none;width:92px;color:var(--tf-muted);font-size:12px}.tf-look-word svg{width:13px;height:13px;color:var(--tf-primary)}.tf-item.tf-off{cursor:default}.tf-item.tf-off:hover{background:none}.tf-look-why{flex:1 1 auto;min-width:0;padding:4px 10px;color:var(--tf-muted);font-size:12px;line-height:1.35}.tf-menu.tf-grounds{width:min(280px,calc(100vw - 16px))}.tf-swatch-row{height:auto;min-height:52px;padding:4px;gap:10px}.tf-swatch{flex:1 1 auto;min-width:0;display:flex;align-items:center;height:44px;padding:0 14px;border-radius:9px;box-shadow:inset 0 0 0 1px rgba(127,127,127,.28);font:500 14px/1 var(--tf-font)}.tf-swatch{justify-content:space-between}.tf-swatch-tick{flex:none;display:flex}.tf-swatch-tick svg{width:15px;height:15px;color:currentColor}.tf-off .tf-look-word{opacity:.55}.tf-menu-label{padding:8px 10px 4px;color:var(--tf-muted);font-size:12px;font-weight:600}' +
             '.tf-pal-field{display:flex;align-items:center;gap:10px;flex:none;height:48px;padding:0 12px 0 16px;border-bottom:1px solid var(--tf-hairline)}.tf-pal-field svg{width:16px;height:16px;color:var(--tf-muted);flex:none}.tf-pal-input{flex:1;min-width:0;border:0;padding:0;background:none;color:inherit;font:15px/1 var(--tf-font);outline:0}.tf-pal-input::placeholder{color:var(--tf-muted)}' +
             '.tf-key{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;border-radius:5px;background:var(--tf-fill);color:var(--tf-muted);font:500 11px/1 var(--tf-font);box-shadow:inset 0 -1px 0 var(--tf-hairline);flex:none}.tf-keys{display:flex;gap:3px;margin-left:auto}' +
