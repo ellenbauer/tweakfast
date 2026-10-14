@@ -48,6 +48,7 @@
         back: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M10.4 2.2l1.4 1.4L7.4 8l4.4 4.4-1.4 1.4L4.6 8z"/></svg>',
         plus: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M7.1 2.5h1.8v4.6h4.6v1.8H8.9v4.6H7.1V8.9H2.5V7.1h4.6z"/></svg>',
         page: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.5h5l3.5 3.5v9.5H4zm1.6 1.6v9.8h5.3V6.1H8.4V3.1zM10 3.4v1.2h1.2z"/></svg>',
+        help: '<svg viewBox="0 0 16 16" aria-hidden="true"><mask id="tf-help-cut"><rect width="16" height="16" fill="#fff"/><path d="M5.9 6.1a2.1 2.1 0 1 1 3 1.9c-.6.3-.9.7-.9 1.3v.5" fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round"/><circle cx="8" cy="11.8" r="1" fill="#000"/></mask><circle cx="8" cy="8" r="7.2" fill="currentColor" mask="url(#tf-help-cut)"/></svg>',
         undo: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5.6 2.6 7 4 5.3 5.7H9a4.1 4.1 0 1 1 0 8.2H5v-1.9h4a2.2 2.2 0 1 0 0-4.4H5.3L7 9.3 5.6 10.7 1.5 6.6z"/></svg>',
         leave: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M2 2h6v1.8H3.8v8.4H8V14H2zm8.1 2.2 1.3-1.3L15.5 7 11.4 11.1l-1.3-1.3L12 7.9H6V6.1h6z"/></svg>',
         check: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M6.3 12.6 2 8.3l1.4-1.4 2.9 2.9 6.3-6.3L14 4.9z"/></svg>'
@@ -2454,6 +2455,7 @@
         });
         out.push({ group: 'Actions', icon: 'eye', word: 'Preview', fn: enterPreview });
         if (list.length) out.push({ group: 'Actions', icon: 'plus', word: 'Add a page', fn: function () { if (!panel) togglePages(); openView({ kind: 'add' }); } });
+        out.push({ group: 'Actions', icon: 'help', word: 'Help', fn: function () { if (!panel) togglePages(); if (panel) openView({ kind: 'help' }); } });
         if (n) out.push({ group: 'Actions', icon: 'clock', word: n === 1 ? 'See the change' : 'See the ' + n + ' changes', fn: showChanges });
         if (n) out.push({ group: 'Actions', icon: 'undo', word: 'Undo', keys: [MAC ? '⌘' : 'Ctrl', 'Z'], fn: undo });
         if (n) out.push({ group: 'Actions', icon: 'check', word: 'Done, make ' + (n === 1 ? 'one change' : n + ' changes') + ' live', keys: [MAC ? '⌘' : 'Ctrl', 'S'], fn: function () { save(false); } });
@@ -2537,14 +2539,16 @@
         panel.appendChild(head); panel.appendChild(body);
         if (view.kind !== 'pages') { /* a page's view: a chevron back to the list, the page's name as the title */
             head.appendChild(iconButton('back', 'Back', function () { openView({ kind: 'pages' }); }));
-            head.appendChild(el('h3', 'tf-panel-title', view.kind === 'add' ? 'Add a page' : view.pg.name));
-            if (view.kind === 'words') showWords(view.pg, body);
+            head.appendChild(el('h3', 'tf-panel-title', view.kind === 'add' ? 'Add a page' : view.kind === 'help' ? 'Help' : view.pg.name));
+            if (view.kind === 'help') showHelp(body);
+            else if (view.kind === 'words') showWords(view.pg, body);
             else if (view.kind === 'versions') showVersions(view.pg, body);
             else renderAdd(body, list);
             return;
         }
         head.appendChild(el('h3', 'tf-panel-title', 'Pages'));
         if (list.length) head.appendChild(iconButton('plus', 'Add a page', function () { openView({ kind: 'add' }); }));
+        var helpBtn = iconButton('help', 'Help', function () { openView({ kind: 'help' }); }); head.appendChild(helpBtn);
         function more(row, items) {
             var acts = el('span', 'tf-row-acts'), b = iconButton('more', 'More', function () { openMenu(b, items, row); });
             acts.appendChild(b); row.appendChild(acts); return acts;
@@ -2622,6 +2626,19 @@
     /* Yesterday's version: the saved copies of a page, and the original */
     /* Words for Google: a page's title and description, what a search result and a shared link show. The
        current page is changed in place; another page is loaded, changed and kept in `changes` until Done. */
+    /* Help: what the editor does, in a minute's reading; the keys as this computer writes them */
+    function showHelp(body) {
+        var mod = MAC ? '\u2318' : 'Ctrl+', shift = MAC ? '\u21e7\u2318' : 'Ctrl+Shift+';
+        [['Words', 'Click any text to type. Enter keeps it, Shift+Enter starts a new line, Esc puts it back. Tab goes on to the next text.'],
+         ['Blocks', 'Point at a part of the page to see its tools: Look, Move, Hide, Copy, Remove. Drag the dots to move it anywhere.'],
+         ['Pictures', 'Click a picture once to describe it, twice to choose a new one. Drag inside it to pick the part that shows.'],
+         ['Links', 'While you type in a link, the Goes to field below it says where it leads.'],
+         ['Pages', 'Site lists your pages. Use More on a page to rename it, hide it, remove it, set its words for Google, or bring back an older version.'],
+         ['Making it live', 'Nothing changes for readers until you press Done. The number on Done shows your changes; click it to see them. Undo takes back the last one, even after Done.'],
+         ['Keys', mod + 'Z Undo \u00b7 ' + shift + 'Z Redo \u00b7 ' + mod + 'S Done \u00b7 ' + mod + 'K Search everything'],
+         ['Coming back', 'Bookmark this page. Its address is your key; there is no login. If the tab closes, your changes wait here for you.']
+        ].forEach(function (h) { body.appendChild(el('div', 'tf-caption', h[0])); body.appendChild(el('p', 'tf-help', h[1])); });
+    }
     function showWords(pg, body) {
         var box = el('div', 'tf-words');
         body.appendChild(box);
@@ -3388,7 +3405,7 @@
             '.tf-panel-title{flex:1;min-width:0;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:600 15px/1.2 var(--tf-font)}' +
             '.tf-row{position:relative;display:flex;align-items:center;gap:8px;min-height:40px;padding:0 6px 0 4px;border-radius:10px;font-size:14px;transition:background .12s}.tf-row:hover,.tf-row.tf-open,.tf-row:focus-within{background:var(--tf-fill)}.tf-row-grip{opacity:0;transition:opacity .12s}.tf-row:hover .tf-row-grip,.tf-row.tf-open .tf-row-grip,.tf-row-moving .tf-row-grip{opacity:1}.tf-row-moving{background:var(--tf-lift);box-shadow:0 8px 24px rgba(0,0,0,.35)}.tf-rename{flex:1;min-width:0;height:28px}.tf-row-note,.tf-row-tag{color:var(--tf-muted);flex:none;font-size:12px;padding:2px 8px;border-radius:999px;background:var(--tf-fill)}.tf-row-hidden .tf-row-name{color:var(--tf-muted)}' +
             '.tf-row-name{flex:0 1 auto;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:inherit;text-decoration:none;padding:2px 0}.tf-row-name:hover{text-decoration:underline}.tf-row-name:focus{outline:none}.tf-row-name:focus-visible{outline:2px solid var(--tf-accent);outline-offset:2px;border-radius:4px}.tf-row.tf-here{background:var(--tf-fill)}.tf-row.tf-here:hover{background:var(--tf-fill-hover)}.tf-row.tf-here .tf-row-name{font-weight:600}.tf-row-check{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin-left:auto;color:var(--tf-muted);flex:none}.tf-row-check svg{width:14px;height:14px}.tf-row-check+.tf-row-acts{margin-left:0}' +
-            '.tf-row-acts{display:flex;gap:2px;align-items:center;flex:none;margin-left:auto;opacity:0;transition:opacity .12s}.tf-row:hover .tf-row-acts,.tf-row.tf-open .tf-row-acts,.tf-row:focus-within .tf-row-acts,.tf-versions .tf-row-acts{opacity:1}.tf-row-acts .tf-button{height:28px;padding:0 10px;font-size:13px}.tf-row-acts .tf-icon{width:28px}.tf-versions{padding:2px 0 0;font-size:13px}.tf-versions .tf-caption{margin-left:6px}.tf-menu{position:fixed;width:220px;padding:6px;border-radius:14px;font:13px/1 var(--tf-font);z-index:2147483001}.tf-item{appearance:none;display:flex;align-items:center;gap:10px;width:100%;height:32px;padding:0 10px;border:0;border-radius:8px;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}.tf-item:hover,.tf-item:focus-visible{background:var(--tf-fill);outline:0}.tf-item:focus-visible{box-shadow:inset 0 0 0 2px var(--tf-accent)}.tf-item svg{width:15px;height:15px;color:var(--tf-muted);flex:none}.tf-item.tf-danger{color:var(--tf-bad-ink)}.tf-item.tf-danger svg{color:currentColor}.tf-changes{width:340px;max-width:calc(100vw - 16px);max-height:50vh;overflow:auto}.tf-changes .tf-row{min-height:36px;padding:0 2px 0 10px;font-size:13px}.tf-changes .tf-row-name{flex:1 1 auto;font-weight:400;color:inherit}.tf-changes .tf-row-acts{opacity:1}.tf-count{cursor:pointer}.tf-gap{height:1px;background:var(--tf-hairline);margin:6px 4px}.tf-note{padding:6px 10px 4px;color:var(--tf-muted);font-size:12px;line-height:1.4}' +
+            '.tf-row-acts{display:flex;gap:2px;align-items:center;flex:none;margin-left:auto;opacity:0;transition:opacity .12s}.tf-row:hover .tf-row-acts,.tf-row.tf-open .tf-row-acts,.tf-row:focus-within .tf-row-acts,.tf-versions .tf-row-acts{opacity:1}.tf-row-acts .tf-button{height:28px;padding:0 10px;font-size:13px}.tf-row-acts .tf-icon{width:28px}.tf-versions{padding:2px 0 0;font-size:13px}.tf-versions .tf-caption{margin-left:6px}.tf-menu{position:fixed;width:220px;padding:6px;border-radius:14px;font:13px/1 var(--tf-font);z-index:2147483001}.tf-item{appearance:none;display:flex;align-items:center;gap:10px;width:100%;height:32px;padding:0 10px;border:0;border-radius:8px;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}.tf-item:hover,.tf-item:focus-visible{background:var(--tf-fill);outline:0}.tf-item:focus-visible{box-shadow:inset 0 0 0 2px var(--tf-accent)}.tf-item svg{width:15px;height:15px;color:var(--tf-muted);flex:none}.tf-item.tf-danger{color:var(--tf-bad-ink)}.tf-item.tf-danger svg{color:currentColor}.tf-help{margin:0 2px 4px;font-size:13px;line-height:1.45}.tf-changes{width:340px;max-width:calc(100vw - 16px);max-height:50vh;overflow:auto}.tf-changes .tf-row{min-height:36px;padding:0 2px 0 10px;font-size:13px}.tf-changes .tf-row-name{flex:1 1 auto;font-weight:400;color:inherit}.tf-changes .tf-row-acts{opacity:1}.tf-count{cursor:pointer}.tf-gap{height:1px;background:var(--tf-hairline);margin:6px 4px}.tf-note{padding:6px 10px 4px;color:var(--tf-muted);font-size:12px;line-height:1.4}' +
             '.tf-menu.tf-looks{width:min(340px,calc(100vw - 16px))}.tf-item.tf-look{height:auto;min-height:44px;padding:5px 6px;gap:12px}.tf-look-ground{flex:1 1 auto;min-width:0;display:flex;align-items:center;padding:8px 10px;border-radius:8px;overflow:hidden}.tf-look-sample{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.2;box-sizing:border-box}.tf-look-word{display:flex;align-items:center;justify-content:flex-end;gap:4px;flex:none;width:92px;color:var(--tf-muted);font-size:12px}.tf-look-word svg{width:13px;height:13px;color:var(--tf-primary)}.tf-item.tf-off{cursor:default}.tf-item.tf-off:hover{background:none}.tf-look-why{flex:1 1 auto;min-width:0;padding:4px 10px;color:var(--tf-muted);font-size:12px;line-height:1.35}.tf-menu.tf-grounds{width:min(280px,calc(100vw - 16px))}.tf-swatch-row{height:auto;min-height:52px;padding:4px;gap:10px}.tf-swatch{flex:1 1 auto;min-width:0;display:flex;align-items:center;height:44px;padding:0 14px;border-radius:9px;box-shadow:inset 0 0 0 1px rgba(127,127,127,.28);font:500 14px/1 var(--tf-font)}.tf-swatch{justify-content:space-between}.tf-swatch-tick{flex:none;display:flex}.tf-swatch-tick svg{width:15px;height:15px;color:currentColor}.tf-off .tf-look-word{opacity:.55}.tf-menu-label{padding:8px 10px 4px;color:var(--tf-muted);font-size:12px;font-weight:600}' +
             '.tf-pal-field{display:flex;align-items:center;gap:10px;flex:none;height:48px;padding:0 12px 0 16px;border-bottom:1px solid var(--tf-hairline)}.tf-pal-field svg{width:16px;height:16px;color:var(--tf-muted);flex:none}.tf-pal-input{flex:1;min-width:0;border:0;padding:0;background:none;color:inherit;font:15px/1 var(--tf-font);outline:0}.tf-pal-input::placeholder{color:var(--tf-muted)}' +
             '.tf-key{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;border-radius:5px;background:var(--tf-fill);color:var(--tf-muted);font:500 11px/1 var(--tf-font);box-shadow:inset 0 -1px 0 var(--tf-hairline);flex:none}.tf-keys{display:flex;gap:3px;margin-left:auto}' +
