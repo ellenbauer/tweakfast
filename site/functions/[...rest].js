@@ -13,7 +13,8 @@
    uploaded to the space's storage and served at /pictures/<name>.
 
    One environment variable: TWEAKFAST_KEY, the secret after #edit= in the
-   owner's link. No Spacefast credentials are needed.
+   owner's link. No Spacefast credentials are needed. Without it the site is
+   served as usual, and the editing routes say the site is not set up yet.
    A public demo also sets TWEAKFAST_DEMO=1: Done answers as usual but writes
    nothing, and every page is served as the maker published it, so each
    visitor starts fresh. */
@@ -25,16 +26,21 @@ export default {
     async fetch(request, env, ctx) {
         var url = new URL(request.url), path = url.pathname;
         try {
-            if (path === '/api/save') return request.method === 'POST' ? save(request, env) : Response.json({ tweakfast: 'save' });
-            if (path === '/api/history') return request.method === 'POST' ? history(request, env) : notFound(path);
-            if (path === '/api/pages') return request.method === 'POST' ? pages(request, env) : notFound(path);
-            if (path === '/api/check') return request.method === 'POST' ? check(request, env) : notFound(path);
+            /* awaited here, so a failure inside lands in the catch below */
+            if (path === '/api/save') return request.method === 'POST' ? await save(request, env) : Response.json({ tweakfast: 'save' });
+            if (path === '/api/history') return request.method === 'POST' ? await history(request, env) : notFound(path);
+            if (path === '/api/pages') return request.method === 'POST' ? await pages(request, env) : notFound(path);
+            if (path === '/api/check') return request.method === 'POST' ? await check(request, env) : notFound(path);
             if (request.method !== 'GET' && request.method !== 'HEAD') return new Response('Method not allowed', { status: 405 });
-            if (path === '/' || /^\/[\w-]+\.html$/.test(path)) return page(path === '/' ? 'index.html' : path.slice(1), url, env);
-            if (/^\/pictures\/tf-[\w-]+\.(jpe?g|png|gif|webp)$/i.test(path)) return picture(path.slice(1), env);
+            if (path === '/' || /^\/[\w-]+\.html$/.test(path)) return await page(path === '/' ? 'index.html' : path.slice(1), url, env);
+            if (/^\/pictures\/tf-[\w-]+\.(jpe?g|png|gif|webp)$/i.test(path)) return await picture(path.slice(1), env);
             return notFound(path);
         } catch (e) {
-            if (path.indexOf('/api/') === 0) return answer(500, 'The site could not save right now. Wait a moment, then press Done again.');
+            console.error('Tweakfast ' + path + ': ' + (e && e.stack || e));
+            if (path === '/api/save') return answer(500, 'The site could not save right now. Wait a moment, then press Done again.');
+            if (path === '/api/history') return answer(500, 'The saved versions could not be reached right now. Wait a moment, then try again.');
+            if (path === '/api/pages') return answer(500, 'The list of saved pages could not be read right now. Wait a moment, then run the command again.');
+            if (path === '/api/check') return answer(500, 'The site could not check the link right now. Wait a moment, then reload the page.');
             return new Response('Tweakfast: ' + (e && e.message || e), { status: 500 });
         }
     }
@@ -81,7 +87,7 @@ function escape(s) { return String(s).replace(/[&<>"]/g, function (c) { return {
 async function check(request, env) {
     var body;
     try { body = await request.json(); } catch (e) { return answer(400, 'The request was not readable.'); }
-    if (!env.TWEAKFAST_KEY || !same(body.key, env.TWEAKFAST_KEY)) return answer(403, 'This link no longer works. Ask the person who set up the site for a new one.');
+    var no = locked(body, env); if (no) return no;
     return demo(env) ? Response.json({ ok: true, demo: true }) : Response.json({ ok: true });
 }
 
@@ -89,7 +95,7 @@ async function check(request, env) {
 async function save(request, env) {
     var body;
     try { body = await request.json(); } catch (e) { return answer(400, 'The request was not readable.'); }
-    if (!env.TWEAKFAST_KEY || !same(body.key, env.TWEAKFAST_KEY)) return answer(403, 'This link no longer works. Ask the person who set up the site for a new one.');
+    var no = locked(body, env); if (no) return no;
     var files = body.files || {}, pictures = body.pictures || {}, path;
     for (path in files) {
         if (!pagePath(path) || typeof files[path] !== 'string') return answer(400, 'A page had a bad name: ' + path);
@@ -97,53 +103,113 @@ async function save(request, env) {
     }
     for (path in pictures) if (!picturePath(path)) return answer(400, 'A picture had a bad name: ' + path);
     var drop = Array.isArray(body.drop) ? body.drop : [];
-    for (var i = 0; i < drop.length; i++) if (!pagePath(drop[i])) return answer(400, 'A page had a bad name: ' + drop[i]);
+    for (var i = 0; i < drop.length; i++) {
+        if (!pagePath(drop[i])) return answer(400, 'A page had a bad name: ' + drop[i]);
+        if (drop[i] === 'index.html') return answer(400, 'The home page cannot be removed.');
+    }
     if (!Object.keys(files).length && !Object.keys(pictures).length && !drop.length) return answer(400, 'Nothing to save.');
+    var bytes = {};
+    for (path in pictures) {
+        bytes[path] = fromBase64(pictures[path]);
+        if (!bytes[path]) return answer(400, 'A picture could not be read: ' + path);
+        if (bytes[path].length > MAX_PICTURE) return answer(413, 'A picture is too large: ' + path);
+    }
     if (demo(env)) return Response.json({ ok: true, demo: true, saved: { pages: Object.keys(files).length, pictures: Object.keys(pictures).length }, at: new Date().toISOString() });
     await ready(env);
-    if (!body.force) { /* a page saved from elsewhere since the editor opened it is not overwritten in silence */
-        var seen = body.updated || {}, conflicts = [];
-        for (path in files) {
-            var cur = await env.DB.prepare('select updated from tf_pages where path = ?').bind(path).first();
-            if (cur && cur.updated !== (seen[path] || '')) conflicts.push(path);
+    /* each page carries the stamp the editor saw: '' for a page it never saw saved. A removal is checked the same way
+       when the editor sends its stamp; without one (or with force) it goes through. */
+    var seen = body.updated || {}, force = !!body.force, conflicts = [];
+    function checked(p) { return !force && Object.prototype.hasOwnProperty.call(seen, p); }
+    function expected(p) { return typeof seen[p] === 'string' ? seen[p] : ''; }
+    var asked = Object.keys(files).concat(drop.filter(checked));
+    if (!force) { /* told early and in one sentence; the writes below check again, so a save in between is caught too */
+        for (i = 0; i < asked.length; i++) {
+            var cur = await env.DB.prepare('select html, updated from tf_pages where path = ?').bind(asked[i]).first();
+            if ((cur && cur.html ? cur.updated : '') !== expected(asked[i])) conflicts.push(asked[i]); /* a removed page (an empty row) counts as no page */
         }
-        if (conflicts.length) return Response.json({ ok: false, conflict: true, pages: conflicts, message: conflicts.length === 1 && conflicts[0] === Object.keys(files)[0]
-            ? 'This page was changed elsewhere since you opened it.'
-            : 'Changed elsewhere since you opened this: ' + conflicts.join(', ') + '.' }, { status: 409 });
+        if (conflicts.length) return changedElsewhere(conflicts, Object.keys(files), {}, '');
     }
-    var now = new Date().toISOString(), saved = { pages: 0, pictures: 0 };
+    /* pictures first: storage is not the database, and a picture nobody points to yet harms nothing */
+    var now = new Date().toISOString(), steps = [];
     for (path in pictures) {
-        var bytes = fromBase64(pictures[path]);
-        if (!bytes) return answer(400, 'A picture could not be read: ' + path);
-        if (bytes.length > MAX_PICTURE) return answer(413, 'A picture is too large: ' + path);
-        var type = typeOf(path);
-        var obj = await env.STORAGE.upload(new Blob([bytes], { type: type }));
-        await env.DB.prepare('insert into tf_pictures (path, object_id, content_type, created) values (?, ?, ?, ?) on duplicate key update object_id = values(object_id), content_type = values(content_type), created = values(created)')
-            .bind(path, obj.id, type, now).run();
-        saved.pictures++;
+        var type = typeOf(path), obj = await env.STORAGE.upload(new Blob([bytes[path]], { type: type }));
+        steps.push({ picture: path, stmts: [env.DB.prepare('insert into tf_pictures (path, object_id, content_type, created) values (?, ?, ?, ?) on duplicate key update object_id = values(object_id), content_type = values(content_type), created = values(created)')
+            .bind(path, obj.id, type, now)] });
     }
-    /* pages the owner removed: gone with their history; a page the maker shipped keeps its original in _site/ and is marked gone (an empty row), so it is not served again */
-    var origin = new URL(request.url).origin;
-    for (i = 0; i < drop.length; i++) {
-        await env.DB.prepare('delete from tf_pages where path = ?').bind(drop[i]).run();
-        await env.DB.prepare('delete from tf_history where path = ?').bind(drop[i]).run();
-        var orig = await fetch(origin + '/_site/' + drop[i], { method: 'HEAD', headers: { 'x-tweakfast': 'origin' } });
-        if (orig.status === 200) await env.DB.prepare('insert into tf_pages (path, html, updated) values (?, ?, ?)').bind(drop[i], '', now).run();
+    /* a removed page keeps its saved versions and is marked gone (an empty row), so it is not served again; Versions can bring it back */
+    for (i = 0; i < drop.length; i++) steps.push(pageWrite(env, drop[i], '', now, checked(drop[i]) ? expected(drop[i]) : null));
+    for (path in files) steps.push(pageWrite(env, path, files[path], now, force ? null : expected(path)));
+    var failed = await apply(env, steps);
+    var written = {}, lost = [], saved = { pages: 0, pictures: 0 };
+    steps.forEach(function (st) {
+        if (!st.done) return;
+        if (st.picture) { saved.pictures++; return; }
+        if (!landed(st)) { lost.push(st.page); return; }
+        written[st.page] = now;
+        if (st.html) saved.pages++;
+    });
+    if (failed) { /* with a batch nothing went through; one by one, what did is said with its stamp, so the next Done is not taken for a change made elsewhere */
+        console.error('Tweakfast /api/save: ' + (failed && failed.stack || failed));
+        return Response.json({ ok: false, message: 'The site could not save right now. Wait a moment, then press Done again.', written: written, at: now }, { status: 500 });
     }
-    for (path in files) {
-        await env.DB.prepare('insert into tf_history (path, html, saved) values (?, ?, ?)').bind(path, files[path], now).run();
-        await env.DB.prepare('insert into tf_pages (path, html, updated) values (?, ?, ?) on duplicate key update html = values(html), updated = values(updated)')
-            .bind(path, files[path], now).run();
-        saved.pages++;
+    if (lost.length) return changedElsewhere(lost, Object.keys(files), written, now);
+    return Response.json({ ok: true, saved: saved, written: written, at: now });
+}
+function changedElsewhere(pages, sent, written, at) {
+    return Response.json({ ok: false, conflict: true, pages: pages, written: written, at: at, message: pages.length === 1 && pages[0] === sent[0]
+        ? 'This page was changed elsewhere since you opened it.'
+        : 'Changed elsewhere since you opened this: ' + pages.join(', ') + '.' }, { status: 409 });
+}
+/* One page's write, '' html for a removal. With a stamp it lands only on the row the editor saw, so a save made
+   elsewhere in between is never overwritten: a stamp of '' lands only where there is no page (or a removed one);
+   null writes whatever is there. The saved copy is taken from the row only when the write landed. */
+function pageWrite(env, path, html, now, stamp) {
+    var stmts;
+    if (stamp === null) stmts = [env.DB.prepare('insert into tf_pages (path, html, updated) values (?, ?, ?) on duplicate key update html = values(html), updated = values(updated)').bind(path, html, now)];
+    else if (stamp === '') stmts = [
+        env.DB.prepare("update tf_pages set html = ?, updated = ? where path = ? and html = ''").bind(html, now, path),
+        env.DB.prepare('insert ignore into tf_pages (path, html, updated) values (?, ?, ?)').bind(path, html, now)];
+    else stmts = [env.DB.prepare('update tf_pages set html = ?, updated = ? where path = ? and updated = ?').bind(html, now, path, stamp)];
+    var writes = stmts.length;
+    if (html) stmts.push(env.DB.prepare('insert into tf_history (path, html, saved) select path, html, updated from tf_pages where path = ? and updated = ?').bind(path, now));
+    return { page: path, html: html, stmts: stmts, writes: writes };
+}
+/* Rows changed by a statement, or null when the host does not say (then the check before the writes stands). */
+function changes(r) {
+    var m = r && (r.meta || r);
+    return m && typeof m.changes === 'number' ? m.changes : m && typeof m.affectedRows === 'number' ? m.affectedRows : m && typeof m.rows_written === 'number' ? m.rows_written : null;
+}
+function landed(st) {
+    if (st.picture) return true;
+    var sum = 0;
+    for (var i = 0; i < st.writes; i++) { var n = changes(st.results[i]); if (n === null) return true; sum += n; }
+    return sum > 0;
+}
+/* All writes in one batch when the host has one (one transaction: all or nothing); otherwise one by one, and the
+   steps that went through are marked done. Returns the error that stopped it, or null. */
+async function apply(env, steps) {
+    var all = [];
+    steps.forEach(function (st) { st.stmts.forEach(function (x) { all.push(x); }); });
+    if (typeof env.DB.batch === 'function') {
+        var res, k = 0;
+        try { res = await env.DB.batch(all); } catch (e) { return e; } /* nothing went through */
+        steps.forEach(function (st) { st.results = (res || []).slice(k, k += st.stmts.length); st.done = true; });
+        return null;
     }
-    return Response.json({ ok: true, saved: saved, at: now });
+    for (var i = 0; i < steps.length; i++) {
+        var st = steps[i]; st.results = [];
+        try { for (var j = 0; j < st.stmts.length; j++) st.results.push(await st.stmts[j].run()); }
+        catch (e) { if (st.results.length >= st.writes) st.done = true; return e; } /* the page itself went through, only its saved copy did not */
+        st.done = true;
+    }
+    return null;
 }
 /* Yesterday's version: {key, path, list:true} lists saved times; {key, path, at} puts back that saved copy; {key, path, before} the newest one older than that time; {key, path} alone the original. */
 /* for the maker's command: which pages the owner has saved (their version is the one shown) */
 async function pages(request, env) {
     var body;
     try { body = await request.json(); } catch (e) { return answer(400, 'The request was not readable.'); }
-    if (!env.TWEAKFAST_KEY || !same(body.key, env.TWEAKFAST_KEY)) return answer(403, 'This link no longer works. Ask the person who set up the site for a new one.');
+    var no = locked(body, env); if (no) return no;
     if (demo(env)) return Response.json({ ok: true, pages: [] });
     await ready(env);
     var rows = await env.DB.prepare("select path, updated from tf_pages where html <> '' order by path").all(); /* an empty row is a page the owner removed */
@@ -152,7 +218,7 @@ async function pages(request, env) {
 async function history(request, env) {
     var body;
     try { body = await request.json(); } catch (e) { return answer(400, 'The request was not readable.'); }
-    if (!env.TWEAKFAST_KEY || !same(body.key, env.TWEAKFAST_KEY)) return answer(403, 'This link no longer works. Ask the person who set up the site for a new one.');
+    var no = locked(body, env); if (no) return no;
     if (!pagePath(body.path)) return answer(400, 'A page had a bad name.');
     if (demo(env)) { /* a demo has no saved copies: only the original, and nothing is written */
         if (body.list) return Response.json({ ok: true, demo: true, saved: [], original: true });
@@ -232,6 +298,12 @@ function ready(env) {
 }
 
 /* ---- small helpers ---- */
+/* the owner's key: a site without one is not set up for editing yet; a wrong one is a stopped link */
+function locked(body, env) {
+    if (!env.TWEAKFAST_KEY) return answer(503, 'This site is not set up for editing yet.');
+    if (!same(body && body.key, env.TWEAKFAST_KEY)) return answer(403, 'This link no longer works. Ask the person who set up the site for a new one.');
+    return null;
+}
 function demo(env) { return env.TWEAKFAST_DEMO === '1' || env.TWEAKFAST_DEMO === 'true'; }
 function answer(status, message) { return Response.json({ ok: false, message: message }, { status: status }); }
 function same(a, b) {

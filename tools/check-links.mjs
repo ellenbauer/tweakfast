@@ -56,6 +56,7 @@ await p.fill('.tf-link input', 'hello@shop.com'); await p.keyboard.press('Enter'
 console.log('mail address: href', await p.$eval('a.btn', a => a.getAttribute('href')), '| undo enabled', await p.$eval('.tf-button:has-text("Undo")', e => !e.disabled));
 await p.click('.tf-button:has-text("Undo")'); await p.waitForTimeout(100);
 console.log('after Undo: href', await p.$eval('a.btn', a => a.getAttribute('href')));
+await p.keyboard.press('Escape'); await p.keyboard.press('Escape'); /* Enter in Goes to keeps the button picked, as Enter in its words does: let go, then close its tools */
 await edit('main p', { position: { x: 4, y: 8 } }); await p.waitForTimeout(200);
 console.log('caret on plain words: field', await field());
 await edit('main p a'); await p.waitForTimeout(200);

@@ -3,7 +3,7 @@
    carries #edit=<key>, or a key from an earlier visit is kept in this browser. "#view" is the page as
    readers see it, even there. */
 (function () {
-    var BUILD = 'dev'; /* the bundler writes the commit here, so a new editor is never an old one from a cache */
+    var BUILD = 'dev'; /* the bundler writes a short hash of the editor here, so a new editor is never an old one from a cache */
     /* titles end their lines about evenly at every width, so no word is left alone; a site that sets its own wrapping wins */
     var bal = document.createElement('style');
     bal.setAttribute('data-tweakfast', '');

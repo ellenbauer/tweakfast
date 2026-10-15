@@ -1,0 +1,15 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Sweep</title>
+<style>body{margin:0;font:16px/1.5 sans-serif}main{padding:40px}button,input{text-transform:uppercase;letter-spacing:4px;margin:20px}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:12px}.card{display:flex;gap:8px;padding:12px;background:#eee}
+.ticker{overflow:hidden;white-space:nowrap;background:#def;padding:12px 0}.ticker span{display:inline-block;animation:marquee 20s linear infinite}@keyframes marquee{to{transform:translateX(-50%)}}</style></head>
+<body><main><h1>Sweep</h1><p>Some words so the page is a page with enough text in it to count as a plain page for the check, more words here.</p>
+<ul class="feats"><li><svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5"/></svg> <span>Fast roasting</span></li><li><svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5"/></svg> <span>Fresh beans</span></li></ul>
+<div class="cards"><article class="card" style="display:flex"><h3>One</h3><p>First card words.</p></article><article class="card"><h3>Two</h3><p>Second card words.</p></article></div>
+<p><img class="resp" src="pictures/hero.svg" srcset="pictures/hero.svg 1x, pictures/hero.svg 2x" alt="Hero" width="200" height="100"></p>
+<div class="ticker" data-tf="block"><span>
+    OPEN DAILY ✦
+    ESPRESSO ✦
+    OPEN DAILY ✦
+    ESPRESSO ✦
+</span></div></main>
+<script src="../src/tweakfast.js"></script></body></html>

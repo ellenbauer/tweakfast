@@ -8,7 +8,7 @@
 (function () {
     'use strict';
     var STORE = 'tweakfast:key';
-    var BUILD = 'dev';         /* the bundler writes the commit here */
+    var BUILD = 'dev';         /* the bundler writes a hash of this file here */
     var firstVisit = false;
     var key = readKey();
     /* the owner's bookmark opened while this page is already showing: only the address changes, so load again with it */
@@ -109,12 +109,15 @@
         document.addEventListener('dragleave', function (e) { if (!e.relatedTarget) { dropOn = null; hoverNone(); } }, true);
         document.addEventListener('drop', onDrop, true);
         document.addEventListener('mousemove', onMove, true);
-        document.addEventListener('mouseleave', function () { hoverNone(); });
-        window.addEventListener('beforeunload', function (e) { if (steps.length) { e.preventDefault(); e.returnValue = ''; } });
+        document.addEventListener('mouseout', function (e) { if (!e.relatedTarget) hoverNone(); }); /* the pointer left the window */
+        window.addEventListener('beforeunload', function (e) { if (steps.length && !carrying) { e.preventDefault(); e.returnValue = ''; } });
+        /* a page of the site opened by its link: what is not live yet goes along, as from the Site sheet */
+        document.addEventListener('click', function (e) { var a = !e.defaultPrevented && e.target.closest && e.target.closest('a[href]'); if (a && isPageLink(a) && !a.target && !locked && !editing && !held && !a.closest('[contenteditable]')) carry(); });
         document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') stillCurrent(); else keepDraft(); });
         window.addEventListener('pagehide', keepDraft);
         document.addEventListener('input', function () { if (editing) laterDraft(); }, true); /* words being typed are kept too */
         scrub(document.documentElement); /* heals a page an earlier build left marks on */
+        liveHidden(document.body);
         markPictures();
         markBlocks();
         if (firstVisit) welcome();
@@ -125,24 +128,29 @@
 
     /* ---- nothing is lost ----
        What is not live yet is kept in this browser as it is made: a tab closed, a reload, a crash, and the next visit
-       brings it back as one change, said so, with a way to throw it away. Done, Undo, Leave anyway and Go anyway end it. */
-    var DRAFT = 'tweakfast:draft', draftTimer = 0;
+       brings it back as one change, said so, with a way to throw it away. Done, Undo and Leave anyway end it; going to another page of the site carries it along quietly. */
+    var DRAFT = 'tweakfast:draft', draftTimer = 0, carrying = false;
+    var TAB = (function () { try { var t = sessionStorage.getItem('tweakfast:tab'); if (!t) { t = Math.random().toString(36).slice(2); sessionStorage.setItem('tweakfast:tab', t); } return t; } catch (e) { return ''; } })();
+    /* going to another page of the site in this tab: the changes are kept for it, and it carries on with them quietly */
+    function carry() { carrying = true; keepDraft(); try { sessionStorage.setItem('tweakfast:carry', '1'); } catch (e) {} }
     function laterDraft() { clearTimeout(draftTimer); draftTimer = setTimeout(keepDraft, 400); }
     function keepDraft() {
         clearTimeout(draftTimer);
         if (!bar || locked) return;
         try {
             var typing = editing && editing.innerHTML !== before ? 1 : 0; /* words being typed, not yet kept, count too */
-            if (!steps.length && !typing) { localStorage.removeItem(DRAFT); return; }
+            if (!steps.length && !typing) { /* only this tab's own: another tab's unsaved work stays */
+                var old = JSON.parse(localStorage.getItem(DRAFT) || 'null'); if (old && (!old.tab || old.tab === TAB)) localStorage.removeItem(DRAFT); return;
+            }
             var pages = {}, k;
             for (k in changes) if (!drops[k]) pages[k] = changes[k];
             var h = pageHtml();
             if (h !== loaded[here()]) { var d = parse(h); putMeta(d, 'meta[name="tweakfast-updated"]', 'name', 'tweakfast-updated', pageUpdated); pages[here()] = serialize(d); } /* with its stamp, so a page saved elsewhere meanwhile is still asked about at Done */
-            localStorage.setItem(DRAFT, JSON.stringify({ at: new Date().toISOString(), n: steps.length + typing, pages: pages, drops: Object.keys(drops), fresh: Object.keys(freshPages) }));
+            localStorage.setItem(DRAFT, JSON.stringify({ at: new Date().toISOString(), tab: TAB, n: steps.length + typing, pages: pages, drops: Object.keys(drops), fresh: Object.keys(freshPages) }));
         } catch (e) { once('draftfull', 'These changes are too large to keep if this tab closes. Press Done to be safe.'); }
     }
     function bringBack() {
-        var d; try { d = JSON.parse(localStorage.getItem(DRAFT) || 'null'); } catch (e) { d = null; }
+        var d, carried = false; try { d = JSON.parse(localStorage.getItem(DRAFT) || 'null'); carried = !!sessionStorage.getItem('tweakfast:carry'); sessionStorage.removeItem('tweakfast:carry'); } catch (e) { d = null; }
         if (!d || !d.pages || (!Object.keys(d.pages).length && !(d.drops || []).length)) return;
         var now = snapshot(), wasUpdated = pageUpdated, wasDrops = copy(drops), wasFresh = copy(freshPages), path;
         var next = copy(changes);
@@ -153,10 +161,12 @@
         } else changes = next;
         (d.drops || []).forEach(function (x) { drops[x] = true; });
         (d.fresh || []).forEach(function (x) { freshPages[x] = true; });
-        steps.push(function () { restore(now); pageUpdated = wasUpdated; drops = wasDrops; freshPages = wasFresh; });
+        var mine = function () { restore(now); pageUpdated = wasUpdated; drops = wasDrops; freshPages = wasFresh; };
+        steps.push(mine);
         refresh();
+        if (carried && d.tab === TAB) return; /* came along from the page before: the count on Done says it */
         say((d.n === 1 ? 'A change' : d.n + ' changes') + ' from ' + when(d.at).replace(/^Today/, 'today') + ' came back. ' + (d.n === 1 ? 'It is' : 'They are') + ' not live yet.', 'stay');
-        offer('Throw away', function () { undo(); say(''); });
+        offer('Throw away', function () { if (steps[steps.length - 1] === mine) undo(); else { var i = steps.lastIndexOf(mine); if (i >= 0) undoOne(i); } say(''); });
     }
 
     /* the first arrival on this computer: one card above the bar with the one thing the owner cannot find out by trying */
@@ -227,31 +237,70 @@
             n.classList.remove('tf-picture', 'tf-editing', 'tf-hover', 'tf-moving'); if (!n.className) n.removeAttribute('class');
             if (n.getAttribute('style') === '') n.removeAttribute('style');
         }
-        scrub(c);
+        scrub(c); savedHidden(c);
         return c.outerHTML;
+    }
+    /* ---- work on the other pages ----
+       A change made here that reaches other pages (a shared part, the menu, the page's background, a version put back)
+       loads them one after another. Such jobs run one at a time, each on what the one before wrote, and while one runs
+       Undo, Redo and Done wait, so a change is never half on the other pages. Each job writes through its own ledger,
+       and its Undo puts back only the pages it wrote, never what other changes did meanwhile. */
+    var busy = 0, jobs = [];
+    function job(fn) {
+        jobs.push(fn); busy++; refresh();
+        if (jobs.length === 1) fn(nextJob);
+    }
+    function nextJob() {
+        jobs.shift(); busy--; refresh();
+        if (jobs.length) jobs[0](nextJob);
+    }
+    function waitWork() { if (!busy) return false; say('One moment: the other pages are still being changed.'); return true; }
+    function ledger() {
+        var was = {};
+        return {
+            put: function (path, html) { if (!(path in was)) was[path] = changes[path]; changes[path] = html; },
+            back: function () { for (var p in was) { if (was[p] === undefined) delete changes[p]; else changes[p] = was[p]; } },
+            wrote: function () { return Object.keys(was).length > 0; }
+        };
+    }
+    /* the step made here takes the other pages' Undo with it, wherever it now sits among the steps */
+    function fold(local, back) {
+        var i = local ? steps.lastIndexOf(local) : -1;
+        if (i >= 0) { steps[i] = function () { local(); back(); }; if (notes[i] && notes[i].fn === local) notes[i].fn = steps[i]; }
+        else steps.push(back);
+    }
+    function otherPages() {
+        var paths = pageList().map(function (p) { return p.path; });
+        Object.keys(changes).forEach(function (p) { if (paths.indexOf(p) < 0) paths.push(p); });
+        return paths.filter(function (p) { return p !== here() && !drops[p]; });
+    }
+    /* each path loaded in turn, fn(path, html, missing) on each, then end() */
+    function eachPage(paths, fn, end) {
+        var i = 0;
+        (function next() {
+            if (i >= paths.length) { end(); return; }
+            var path = paths[i++];
+            loadPage(path, function (html, missing) { try { fn(path, html, missing); } catch (e) { console.error(e); } next(); });
+        })();
     }
     /* a change inside a shared part, made on every other page whose part still matches; the page's own step
        takes the mirrored changes with it, so one Undo takes everything back */
-    function mirror(el, beforeOuter) {
+    function mirror(el, beforeOuter, local) {
         var part = sharedRootOf(el); if (!part) return;
         var parts = sharedParts(document), which = parts.indexOf(part), path = pathFrom(part, el), afterOuter = cleanOuter(el);
         if (beforeOuter === afterOuter) return;
-        var paths = pageList().map(function (p) { return p.path; });
-        Object.keys(changes).forEach(function (p) { if (paths.indexOf(p) < 0) paths.push(p); });
-        paths = paths.filter(function (p) { return p !== here(); });
-        if (!paths.length) return;
-        var local = steps[steps.length - 1], changesBefore = copy(changes), left = paths.length, differ = [];
-        paths.forEach(function (path_) {
-            loadPage(path_, function (html) {
-                if (html !== null) {
-                    var doc = parse(html), there = sharedParts(doc)[which], target = there && walkPath(there, path);
-                    if (target && target.outerHTML === beforeOuter) { target.outerHTML = afterOuter; changes[path_] = serialize(doc); }
-                    else differ.push(path_);
-                }
-                if (--left) return;
-                var restore = function () { changes = changesBefore; };
-                if (steps[steps.length - 1] === local && local) { steps.pop(); steps.push(function () { local(); restore(); }); } else steps.push(restore);
-                refresh();
+        var paths = otherPages(); if (!paths.length) return;
+        local = local || steps[steps.length - 1];
+        job(function (finish) {
+            var led = ledger(), differ = [];
+            eachPage(paths, function (path_, html) {
+                if (html === null) return;
+                var doc = parse(html), there = sharedParts(doc)[which], target = there && walkPath(there, path);
+                if (target && target.outerHTML === beforeOuter) { target.outerHTML = afterOuter; led.put(path_, serialize(doc)); }
+                else differ.push(path_);
+            }, function () {
+                if (led.wrote()) fold(local, led.back);
+                finish();
                 if (differ.length) say(exceptPages(differ, 'this part'));
             });
         });
@@ -519,7 +568,7 @@
             if (joined.join(' ') === html) { unit = body; sep = ' '; k = n; }
             else if (joined.join('') === html) { unit = body; sep = ''; k = n; }
         }
-        strip = { el: m, k: k, sep: sep, width: t.offsetWidth, time: parseFloat(cs.animationDuration) || 0, inline: t.style.animation, dur: t.style.animationDuration };
+        strip = { el: m, k: k, sep: sep, orig: t.innerHTML, unit: unit, width: t.offsetWidth, time: parseFloat(cs.animationDuration) || 0, inline: t.style.animation, dur: t.style.animationDuration };
         t.style.animation = 'none';
         if (k > 1) t.innerHTML = unit;
     }
@@ -541,7 +590,8 @@
         var st = strip; strip = null; if (!st) return;
         var outer = t; t = st.el;
         t.style.animation = st.inline; if (!t.style.animation) t.style.removeProperty('animation'); if (st.dur) t.style.animationDuration = st.dur;
-        if (outer.innerHTML !== before && st.k > 1) {
+        if (st.k > 1 && t.innerHTML.trim() === st.unit) t.innerHTML = st.orig; /* not changed: exactly as it was, spaces and all */
+        else if (outer.innerHTML !== before && st.k > 1) {
             var unit = t.innerHTML.trim(), copies = []; for (var i = 0; i < st.k; i++) copies.push(unit);
             t.innerHTML = copies.join(st.sep);
         }
@@ -560,6 +610,7 @@
     function onKey(e) {
         if (e.isComposing || e.keyCode === 229) return; /* Enter that chooses a word in Japanese or Chinese input is not ours */
         if (previewing) { if (e.key === 'Escape') { e.preventDefault(); leavePreview(); } return; }
+        if (dragging) return; /* Esc while a block is held puts it back, and only that (the drag's own listener) */
         var meta = e.metaKey || e.ctrlKey, inField = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
         if (meta && !e.shiftKey && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); openPal(); return; }
         if (pal) { palKey(e); return; }
@@ -578,7 +629,7 @@
         }
         if (linkBox && linkBox.contains(e.target)) {
             if (e.key === 'Escape') { e.preventDefault(); linkInput.value = linkFor ? linkFor.getAttribute('href') || '' : ''; editing.focus(); }
-            if (e.key === 'Enter') { e.preventDefault(); commit(); }
+            if (e.key === 'Enter') { e.preventDefault(); var tl = editing; commit(); hold(tl); } /* as Enter in the words: kept, still picked */
             if (e.key === 'Tab' && e.shiftKey) { e.preventDefault(); applyLink(); editing.focus(); }
             else if (e.key === 'Tab') { e.preventDefault(); applyLink(); moveOn(1); }
             return;
@@ -613,13 +664,14 @@
        Nothing is shown over fixed parts, so the owner never guesses; on a phone there is no hover and
        nothing changes. */
     var hoverEl = null, tag = null, moveTick = false;
-    var ptPrev = null, ptNow = null;
-    function onMove(e) {
+    var ptPrev = null, ptNow = null, lastMove = null;
+    function onMove(ev) {
         if (previewing) return;
-        ptPrev = ptNow; ptNow = { x: e.clientX, y: e.clientY };
+        ptPrev = ptNow; ptNow = { x: ev.clientX, y: ev.clientY }; lastMove = ev;
         if (moveTick) return; moveTick = true;
         requestAnimationFrame(function () {
             moveTick = false;
+            var e = lastMove; /* the newest position in this frame, not the first */
             if (dragging || locked) return;
             var t = e.target;
             if (!t || t.nodeType !== 1 || editing || bar.contains(t) || (tools && tools.contains(t)) || (panel && panel.contains(t)) || (menu && menu.contains(t)) || (linkBox && linkBox.contains(t)) || (altBox && altBox.contains(t)) || t.closest('.tf-plus')) { hoverNone(); return; }
@@ -841,7 +893,7 @@
         room.style.background = ground;
         room.style.height = (bar.offsetHeight + 32) + 'px';
         var r = t.getBoundingClientRect(), top = bar.getBoundingClientRect().top - 8;
-        if (r.bottom > top && r.top > 8) window.scrollBy({ top: Math.min(r.bottom - top, r.top - 8), behavior: 'smooth' });
+        if (r.bottom > top && r.top > 8) window.scrollBy({ top: Math.min(r.bottom - top, r.top - 8), behavior: motion() });
     }
     function giveRoom() { if (room && !editing && !picked) room.style.height = '0'; }
     function unpick() { picked = null; if (editBox && !editing) editBox.style.display = 'none'; hideAlt(); giveRoom(); }
@@ -871,6 +923,7 @@
     function fileDrag(e) {
         var dt = e.dataTransfer; if (!dt || !dt.types || Array.prototype.indexOf.call(dt.types, 'Files') < 0) return null;
         e.preventDefault();
+        if (locked || previewing || saving) return null; /* nothing changes while the link is dead, in Preview or while saving */
         var t = e.target && e.target.nodeType === 1 ? e.target : null;
         return t && !bar.contains(t) ? (pictureTarget(t) || pictureUnder(e) || artTarget(t) || svgTarget(t)) : null;
     }
@@ -889,12 +942,24 @@
     function onDrop(e) {
         var pic = fileDrag(e); if (!e.defaultPrevented) return;
         dropOn = null; hoverNone();
+        if (locked || previewing || saving) return;
         if (!pic) { say('Drop it on a picture to replace that one.'); return; }
         var file = e.dataTransfer.files[0];
-        if (!/^image\//.test(file.type)) { say('That is not a picture.', 'error'); return; }
+        if (!file || !/^image\//.test(file.type)) { say('That is not a picture.', 'error'); return; }
         if (editing) commit(); if (held) unhold();
         if (picked !== pic) { if (picked) unpick(); pick(pic); }
         usePicture(pic, file);
+    }
+    /* the other sizes of a picture (srcset, sizes, a <picture>'s sources) taken away, so the new one is what shows;
+       the function given back puts them back */
+    function loseSets(img) {
+        var at = { srcset: img.getAttribute('srcset'), sizes: img.getAttribute('sizes') }, box = img.parentElement, srcs = [];
+        if (box && box.tagName === 'PICTURE') Array.prototype.forEach.call(box.querySelectorAll(':scope > source'), function (n) { srcs.push({ n: n, next: n.nextSibling }); n.remove(); });
+        img.removeAttribute('srcset'); img.removeAttribute('sizes');
+        return function () {
+            putAttr(img, 'srcset', at.srcset); putAttr(img, 'sizes', at.sizes);
+            srcs.slice().reverse().forEach(function (x) { box.insertBefore(x.n, x.next && x.next.parentNode === box ? x.next : img); });
+        };
     }
     function usePicture(img, file) {
         var wasOuter = cleanOuter(img);
@@ -902,15 +967,18 @@
             say('Reading the picture…');
             shrink(file, (img.getBoundingClientRect().width || img.clientWidth || 400) * 2, function (url, err) {
                 if (err) { say(err, 'error'); return; }
+                if (!img.isConnected || saving || locked) { say(''); return; } /* taken away (an Undo) or saving meanwhile */
                 if (img.tagName === 'svg') { fillSvg(img, url, wasOuter); return; }
                 if (isArt(img)) { fillArt(img, url, wasOuter); return; }
                 var was = { src: img.getAttribute('src'), style: img.getAttribute('style'), pos: img.getAttribute('data-tf-pos'), alt: img.getAttribute('alt') };
+                var sets = loseSets(img); /* a srcset or a <picture>'s sources would keep showing the old photo */
                 keepFrame(img);
                 img.src = url;
                 img.setAttribute('alt', ''); /* the old words no longer fit; one step with the picture */
                 img.setAttribute('data-tf-pos', '50% 50%');
                 img.style.objectPosition = '50% 50%';
                 steps.push(function () {
+                    sets();
                     img.setAttribute('src', was.src);
                     putAttr(img, 'style', was.style);
                     putAttr(img, 'data-tf-pos', was.pos);
@@ -999,22 +1067,25 @@
         if (img._tfDrag) return; img._tfDrag = true;
         var startX, startY, startPos, moved;
         img.addEventListener('pointerdown', function (e) {
-            if (e.button !== 0) return;
+            if (e.button !== 0 || locked || previewing || saving || editing) return;
             startX = e.clientX; startY = e.clientY; moved = false;
             startPos = (img.style.objectPosition || '50% 50%').split(' ').map(parseFloat);
             img.setPointerCapture(e.pointerId);
             img.addEventListener('pointermove', move);
-            img.addEventListener('pointerup', up, { once: true });
+            img.addEventListener('pointerup', up);
+            img.addEventListener('pointercancel', cancel); /* a phone scroll that took over: the picture stays as it was */
         });
         function move(e) {
+            if (!moved && Math.abs(e.clientX - startX) + Math.abs(e.clientY - startY) < 5) return; /* a hand's jitter is a click, not a move */
+            moved = true;
             var dx = (e.clientX - startX) / img.clientWidth * 100, dy = (e.clientY - startY) / img.clientHeight * 100;
-            if (Math.abs(dx) + Math.abs(dy) > 1) moved = true;
-            var x = clamp(startPos[0] - dx), y = clamp(startPos[1] - dy);
-            img.style.objectPosition = x + '% ' + y + '%';
+            img.style.objectPosition = clamp(startPos[0] - dx) + '% ' + clamp(startPos[1] - dy) + '%';
         }
+        function stop() { img.removeEventListener('pointermove', move); img.removeEventListener('pointerup', up); img.removeEventListener('pointercancel', cancel); }
+        function cancel() { stop(); if (moved) img.style.objectPosition = startPos[0] + '% ' + startPos[1] + '%'; moved = false; }
         function up(e) {
-            img.removeEventListener('pointermove', move);
-            if (moved) {
+            stop();
+            if (moved && img.style.objectPosition !== startPos[0] + '% ' + startPos[1] + '%') {
                 var was = startPos[0] + '% ' + startPos[1] + '%', now = img.style.objectPosition;
                 var wasOuter = (function () { var keep = img.style.objectPosition; img.style.objectPosition = was; img.setAttribute('data-tf-pos', was); var o = cleanOuter(img); img.style.objectPosition = keep; return o; })();
                 img.setAttribute('data-tf-pos', now);
@@ -1107,9 +1178,28 @@
             if (!towardTools()) { showTools(b); pending = null; return; }
             timer = setTimeout(function () { if (pending) showTools(pending); pending = null; }, 350);
         });
-        document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !editing && !held && !picked) hideTools(); });
-        window.addEventListener('scroll', function () { if (toolsFor) placeTools(); placeTag(); placeEdit(); }, { passive: true });
-        window.addEventListener('resize', function () { if (toolsFor) placeTools(); placeTag(); placeEdit(); });
+        document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !editing && !held && !picked && !menu && !dragging) hideTools(); });
+        /* the lines and tools follow the page once a frame, however many scroll events the frame brings */
+        var placeTick = false, placeAll = function () { if (placeTick) return; placeTick = true; requestAnimationFrame(function () { placeTick = false; if (toolsFor) placeTools(); placeTag(); placeEdit(); }); };
+        window.addEventListener('scroll', placeAll, { passive: true });
+        window.addEventListener('resize', placeAll);
+        /* the page's own motion (a card lifting on hover, a fade, a slide) carries the words away from our lines:
+           while a transition or animation runs on what we frame, or on anything holding it, the lines follow it each frame */
+        var moving = [], following = false;
+        var framed = function (t) { return [editing, picked, held, hoverEl, toolsFor].some(function (x) { return x && x.isConnected && (t === x || t.contains(x)); }); };
+        var follow = function (e) {
+            var t = e.target; if (!t || !t.contains || !framed(t)) return;
+            moving.push(t);
+            if (following) return; following = true;
+            requestAnimationFrame(function tick() {
+                moving = moving.filter(function (n) { return n.isConnected && framed(n); });
+                if (toolsFor) placeTools(); placeTag(); placeEdit();
+                if (moving.length) requestAnimationFrame(tick); else following = false;
+            });
+        };
+        var still = function (e) { var i = moving.indexOf(e.target); if (i >= 0) moving.splice(i, 1); placeAll(); };
+        ['transitionrun', 'animationstart'].forEach(function (k) { document.addEventListener(k, follow, true); });
+        ['transitionend', 'transitioncancel', 'animationend', 'animationcancel'].forEach(function (k) { document.addEventListener(k, still, true); });
         document.addEventListener('input', function (e) { if (editing && editing.contains(e.target)) { placeEdit(); if (toolsFor) placeTools(); } }, true);
         window.addEventListener('resize', function () { if (toolsFor) placeTools(); placePanel(); });
     }
@@ -1137,7 +1227,7 @@
         mirror(parent, parentWas);
         refresh();
         showTools(twin);
-        twin.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        twin.scrollIntoView({ block: 'nearest', behavior: motion() });
         /* the new one is ready to type: its first words open at once */
         var first = firstText(twin);
         if (first) begin(first);
@@ -1155,8 +1245,7 @@
             own[j].remove();
         }
         twin.removeAttribute('id');
-        twin.removeAttribute('hidden'); twin.removeAttribute('data-tf-hidden'); twin.style.display = '';
-        if (twin.getAttribute('style') === '') twin.removeAttribute('style');
+        twin.removeAttribute('data-tf-hidden');
         /* a moving strip keeps its words: its loop needs the sentence repeated, a placeholder would break it */
         var m = keepsWords(block), keep = null;
         if (m) { var all = block.querySelectorAll('*'), at = Array.prototype.indexOf.call(all, m); keep = at < 0 ? twin : twin.querySelectorAll('*')[at]; if (keep) keep.setAttribute('data-tf-keep', ''); }
@@ -1168,16 +1257,16 @@
     function fillPlaceholders(root) {
         if (root.hasAttribute('data-tf-keep')) return;
         var texts = Array.prototype.slice.call(root.querySelectorAll(TEXT)).filter(function (t) { return !t.closest('[data-tf-keep]'); });
-        if (root.matches(TEXT)) { /* a list item: its inner parts get placeholders, its own words one too */
-            var parts = Array.prototype.slice.call(root.children).filter(function (c) { return c.matches(TEXT); });
-            root.textContent = '';
-            parts.forEach(function (c) { c.textContent = placeholder(c); root.appendChild(c); root.appendChild(document.createTextNode(' ')); });
-            root.appendChild(document.createTextNode(placeholder(root)));
-            texts = [];
+        if (root.matches(TEXT)) { /* a list item: its inner parts get placeholders, its own words one too; icons, pictures and wrappers stay */
+            Array.prototype.forEach.call(root.children, function (c) { if (c.matches(TEXT) && !c.querySelector('img,svg')) c.textContent = placeholder(c); });
+            var own = Array.prototype.filter.call(root.childNodes, function (n) { return n.nodeType === 3 && n.data.trim(); });
+            own.forEach(function (n, i) { n.data = i ? '' : placeholder(root); });
+            texts = Array.prototype.slice.call(root.querySelectorAll(TEXT)).filter(function (t) { return t.parentElement !== root && !t.closest('[data-tf-keep]'); });
         }
         for (var i = 0; i < texts.length; i++) {
             var t = texts[i];
-            if (t !== root && t.parentElement && t.parentElement.closest(TEXT) && root.contains(t.parentElement.closest(TEXT))) continue; /* inner spans follow their block */
+            var up = t.parentElement && t.parentElement.closest(TEXT);
+            if (t !== root && up && up !== root && root.contains(up)) continue; /* inner spans follow their block */
             var inner = t.querySelector(TEXT);
             if (inner) { /* keep a link inside, blank the rest */
                 for (var k = t.childNodes.length - 1; k >= 0; k--) if (t.childNodes[k].nodeType === 3) t.removeChild(t.childNodes[k]);
@@ -1191,7 +1280,7 @@
         var imgs = root.querySelectorAll('img');
         for (i = 0; i < imgs.length; i++) {
             var im = imgs[i], w = im.clientWidth || im.width || 400, h = im.clientHeight || im.height || 300;
-            im.setAttribute('src', PLACEHOLDER); im.removeAttribute('srcset'); im.removeAttribute('sizes'); im.setAttribute('alt', '');
+            im.setAttribute('src', PLACEHOLDER); im.removeAttribute('srcset'); im.removeAttribute('sizes'); if (im.parentElement && im.parentElement.tagName === 'PICTURE') Array.prototype.forEach.call(im.parentElement.querySelectorAll(':scope > source'), function (n) { n.remove(); }); im.setAttribute('alt', '');
             im.removeAttribute('data-tf-pos'); im.style.objectPosition = '';
             if (!im.style.aspectRatio) im.style.aspectRatio = w + ' / ' + h;
             im.style.objectFit = 'cover';
@@ -1229,7 +1318,7 @@
     function showTools(block) {
         if (!block || !block.isConnected) { hideTools(); return; }
         /* the header or a footer itself: it stays where it is, on every page; only its Look */
-        var part = !block.hasAttribute('data-tf-block'), ch = choicesFor(block);
+        var part = !block.hasAttribute('data-tf-block'), ch = part ? choicesFor(block) : lookKnown(block);
         if (part && !ch) { hideTools(); return; }
         toolsFor = block;
         blockOnly.forEach(function (n) { n.style.display = part ? 'none' : ''; });
@@ -1246,6 +1335,18 @@
         lookBtn.style.display = ch ? '' : 'none';
         tools.style.display = 'flex';
         placeTools();
+        clearTimeout(lookTimer);
+        if (ch === undefined) lookTimer = setTimeout(function () { /* not yet known: worked out once the pointer rests, so a pass over many cards stays smooth */
+            if (toolsFor !== block || !block.isConnected) return;
+            lookBtn.style.display = lookKnown(block, true) ? '' : 'none'; placeTools();
+        }, coarse() ? 0 : 120);
+    }
+    /* whether a block has a Look, remembered until the next change; undefined when not yet worked out and not asked to */
+    var lookTimer = 0;
+    function lookKnown(block, work) {
+        if (block._tfLook && block._tfLook.at === era) return block._tfLook.has;
+        if (!work) return undefined;
+        var has = !!choicesFor(block); block._tfLook = { at: era, has: has }; return has;
     }
     var blockBox = null, toolsHover = false;
     function hideTools() { toolsFor = null; tools.style.display = 'none'; if (blockBox) blockBox.style.display = 'none'; }
@@ -1258,12 +1359,23 @@
            drawn; the block's own outline shows while the pointer is on the tools, to say what they act on */
         var on = editing || held || picked, at = on && on !== toolsFor && toolsFor.contains(on) ? on.getBoundingClientRect() : null;
         frame(blockBox, r, 6); blockBox.style.display = (toolsFor.hasAttribute('data-tf-block') || sharedParts(document).indexOf(toolsFor) >= 0) && (!at || toolsHover || dragging) ? 'block' : 'none'; blockBox.classList.toggle('tf-block-moving', dragging);
+        if (coarse()) { /* a finger: the tools wait in a strip just above the bar, where the thumb is, never over the words a tap is meant for */
+            tools.classList.add('tf-tools-dock'); tools.style.left = tools.style.top = '';
+            blockBox.style.visibility = ''; placeNote(); return;
+        }
+        tools.classList.remove('tf-tools-dock'); tools.style.bottom = '';
         var w = tools.offsetWidth, own = toolsFor.getBoundingClientRect(); /* a band edge to edge: the tools keep to its content, not the window's edge */
         var left = Math.min((at || own).right - w - 4, window.innerWidth - w - 8);
         var h = tools.offsetHeight, top = r.top - 14, floor = 8, cover = topCover();
         if (cover && !cover.contains(toolsFor)) { /* a menu fixed at the top: the tools and the outline stay below it, never on it */
             floor = cover.getBoundingClientRect().bottom + 8;
             if (r.top < floor - 8) { var cut = floor - 8 - r.top; r = { left: r.left, right: r.right, width: r.width, top: floor - 8, bottom: r.bottom, height: Math.max(0, r.height - cut) }; frame(blockBox, r, 6); }
+        }
+        /* words being typed: the tools keep to the block's own corner, so they read as the block's, not the words'; only
+           when that corner would cover the words do they step beside them */
+        if (at && editing === on) {
+            var cl = Math.max(8, Math.min(own.right - w - 4, window.innerWidth - w - 8)), ct = Math.max(floor, r.height < h * 2 ? r.top - h - 6 : top);
+            if (cl >= at.right || cl + w <= at.left || ct >= at.bottom || ct + h <= at.top) { at = null; left = cl; }
         }
         if (at) { top = at.top - h - 10; if (top < floor) top = picked === on ? Math.max(floor, at.top + 8) : at.bottom + 10; } /* above it; no room: under the words, or inside the picture's top corner, clear of its description */
         else if (r.height < h * 2) { top = r.top - h - 6; if (top < floor) top = r.bottom + 6; } /* a small block, a button: the tools stand clear of it, so its words stay in reach */
@@ -1377,7 +1489,7 @@
     function choicesFor(block) {
         if (!block) return null;
         var list;
-        if (isButton(block)) { list = looks(block); return list.length > 1 ? { t: block, list: list } : null; }
+        if (isButton(block)) { list = still(function () { return looks(block); }); return list.length > 1 ? { t: block, list: list } : null; }
         if (!block.getClientRects().length || block.matches('li,tr,td,th,dt,dd')) return null;
         var big = isBig(block);
         /* a big part (a section, the header, a footer) always has its Look; a card has one when another ground of the site fits it */
@@ -1629,7 +1741,7 @@
        (cheaper: enough to know whether a card has a Look at all) */
     function grounds(b, classOnly) {
         var at = classOnly ? '_tfGroundsC' : '_tfGrounds';
-        if (b[at] && b[at].at === steps.length) return b[at].list;
+        if (b[at] && b[at].at === era) return b[at].list;
         return still(function () { return groundsNow(b, classOnly); });
     }
     /* the choices are worked out from the block as the page came, never from what it took since: the same rows every
@@ -1690,7 +1802,7 @@
             var samePair = function (x, y) { return !x && !y || !!x && !!y && !x.flip === !y.flip && same(x.g) === same(y.g) && same(x.i) === same(y.i); };
             list.forEach(function (o) { o.now = o.ok && (o.cls || '') === (was || '') && samePair(o.pair, held); });
         }
-        b[classOnly ? '_tfGroundsC' : '_tfGrounds'] = { at: steps.length, list: list };
+        b[classOnly ? '_tfGroundsC' : '_tfGrounds'] = { at: era, list: list };
         return list;
     }
     function rgbText(v) { return 'rgb(' + Math.round(v.r) + ', ' + Math.round(v.g) + ', ' + Math.round(v.b) + ')'; }
@@ -1745,26 +1857,22 @@
     function mirrorGround(part, classWas, tintWas) {
         var which = sharedParts(document).indexOf(part), cls = part.getAttribute('class'), st = tintStyle(part), id = part.getAttribute('data-tf-tint');
         var marked = st ? ownMarks(part).map(function (n) { return { path: pathFrom(part, n), m: markOf(n, id) }; }) : [];
-        var paths = pageList().map(function (p) { return p.path; });
-        Object.keys(changes).forEach(function (p) { if (paths.indexOf(p) < 0) paths.push(p); });
-        paths = paths.filter(function (p) { return p !== here(); });
-        if (!paths.length) return;
-        var local = steps[steps.length - 1], changesBefore = copy(changes), left = paths.length, differ = [];
+        var paths = otherPages(); if (!paths.length) return;
+        var local = steps[steps.length - 1];
         var tintText = function (n) { var t = tintStyle(n); return t ? t.textContent : ''; };
-        paths.forEach(function (path_) {
-            loadPage(path_, function (html) {
-                if (html !== null) {
-                    var doc = parse(html), there = sharedParts(doc)[which];
-                    if (there && (there.getAttribute('class') || '') === (classWas || '') && tintText(there) === (tintWas ? tintWas.style.textContent : '')) {
-                        untint(there); putAttr(there, 'class', cls);
-                        if (st) { there.appendChild(doc.importNode(st, true)); there.setAttribute('data-tf-tint', id); marked.forEach(function (x) { var n = walkPath(there, x.path); if (n) mark(n, x.m); }); }
-                        changes[path_] = serialize(doc);
-                    } else differ.push(path_);
-                }
-                if (--left) return;
-                var restore = function () { changes = changesBefore; };
-                if (steps[steps.length - 1] === local && local) { steps.pop(); steps.push(function () { local(); restore(); }); } else steps.push(restore);
-                refresh();
+        job(function (finish) {
+            var led = ledger(), differ = [];
+            eachPage(paths, function (path_, html) {
+                if (html === null) return;
+                var doc = parse(html), there = sharedParts(doc)[which];
+                if (there && (there.getAttribute('class') || '') === (classWas || '') && tintText(there) === (tintWas ? tintWas.style.textContent : '')) {
+                    untint(there); putAttr(there, 'class', cls);
+                    if (st) { there.appendChild(doc.importNode(st, true)); there.setAttribute('data-tf-tint', id); marked.forEach(function (x) { var n = walkPath(there, x.path); if (n) mark(n, x.m); }); }
+                    led.put(path_, serialize(doc));
+                } else differ.push(path_);
+            }, function () {
+                if (led.wrote()) fold(local, led.back);
+                finish();
                 if (differ.length) say(exceptPages(differ, 'this part'));
             });
         });
@@ -1791,47 +1899,52 @@
         once('ground', 'The colours come from this site. Undo brings the old ones back.');
         /* every page of the site, not only the menu's: the pages the menu names, those changed already, and each page
            any of them links to (a project page, a legal page), as far as the links go */
-        var seen = [here()], queue = [], left = 0, changesBefore = copy(changes), differ = [];
-        var add = function (p) { if (p && seen.indexOf(p) < 0 && seen.length < 60) { seen.push(p); queue.push(p); } };
+        var seen = [here()], queue = [];
+        var add = function (p) { if (p && !drops[p] && seen.indexOf(p) < 0 && seen.length < 60) { seen.push(p); queue.push(p); } };
         var linksIn = function (doc) { Array.prototype.forEach.call(doc.querySelectorAll('a[href]'), function (a) { if (isPageLink(a)) add(pathOf(a)); }); };
         pageList().forEach(function (p) { add(p.path); });
         Object.keys(changes).forEach(add);
         linksIn(document);
         if (!queue.length) return;
         say('Working…');
-        var next = function () {
-            while (queue.length) one(queue.shift());
-        };
-        var one = function (path_) {
-            left++;
-            loadPage(path_, function (html) {
-                if (html === null) { finish(); return; }
-                linksIn(parse(html)); next();
-                unseen(html, function (doc) {
-                    var there = doc && walkPath(doc.body, path);
-                    if (!there || there.tagName !== b.tagName || (there.getAttribute('class') || '') !== (was || '') || tintText(there) !== before) { differ.push(path_); return; }
-                    var calmIt = doc.createElement('style'); calmIt.textContent = '*,*::before,*::after{transition:none!important;animation:none!important}'; doc.head.appendChild(calmIt);
-                    var fromThere = groundFrom(there); putAttr(there, 'class', o.cls); retintNow(there, fromThere, o.pair);
-                    calmIt.remove(); scrub(doc.body);
-                    changes[path_] = serialize(doc);
-                }, finish);
-            });
-        };
-        next();
-        function finish() {
-            if (--left || queue.length) return;
-            var restore = function () { changes = changesBefore; };
-            if (steps[steps.length - 1] === local) { steps.pop(); steps.push(function () { local(); restore(); }); } else steps.push(restore);
-            refresh(); say('');
-            if (differ.length) say(exceptPages(differ, 'the background'));
-        }
+        job(function (finish) {
+            /* three pages at a time: each is laid out unseen, so all at once would stall a phone */
+            var led = ledger(), differ = [], running = 0;
+            var pump = function () {
+                while (running < 3 && queue.length) one(queue.shift());
+                if (!running && !queue.length) end();
+            };
+            var one = function (path_) {
+                running++;
+                var after = function () { running--; pump(); };
+                loadPage(path_, function (html) {
+                    if (html === null) { after(); return; }
+                    linksIn(parse(html));
+                    unseen(html, function (doc) {
+                        var there = doc && walkPath(doc.body, path);
+                        if (!there || there.tagName !== b.tagName || (there.getAttribute('class') || '') !== (was || '') || tintText(there) !== before) { differ.push(path_); return; }
+                        var calmIt = doc.createElement('style'); calmIt.textContent = '*,*::before,*::after{transition:none!important;animation:none!important}'; doc.head.appendChild(calmIt);
+                        var fromThere = groundFrom(there); putAttr(there, 'class', o.cls); retintNow(there, fromThere, o.pair);
+                        calmIt.remove(); scrub(doc.body);
+                        led.put(path_, serialize(doc));
+                    }, after);
+                });
+            };
+            var end = function () {
+                if (led.wrote()) fold(local, led.back);
+                finish(); say('');
+                if (differ.length) say(exceptPages(differ, 'the background'));
+            };
+            pump();
+        });
     }
-    /* a page laid out out of sight, at this window's width, with the site's styles and none of its scripts */
+    /* a page laid out out of sight, at this window's width, with the site's styles and none of its scripts.
+       A page that has not loaded in 8 seconds is not read at all: without its stylesheet its colours would be wrong. */
     function unseen(html, fn, after) {
         var f = document.createElement('iframe'); f.setAttribute('data-tweakfast', ''); f.setAttribute('sandbox', 'allow-same-origin'); f.setAttribute('aria-hidden', 'true'); f.tabIndex = -1;
         f.style.cssText = 'position:fixed;left:-20000px;top:0;width:' + window.innerWidth + 'px;height:' + window.innerHeight + 'px;border:0;visibility:hidden;pointer-events:none';
-        var done = false, end = function () { if (done) return; done = true; var d = null; try { d = f.contentDocument; } catch (e) {} try { fn(d && d.body ? d : null); } catch (e) { fn(null); } f.remove(); after(); };
-        f.addEventListener('load', end); setTimeout(end, 8000);
+        var done = false, end = function (late) { if (done) return; done = true; var d = null; try { d = late ? null : f.contentDocument; } catch (e) {} try { fn(d && d.body ? d : null); } catch (e) { fn(null); } f.remove(); after(); };
+        f.addEventListener('load', function () { end(false); }); setTimeout(function () { end(true); }, 8000);
         f.srcdoc = html; document.body.appendChild(f);
     }
     /* ---- tint: the parts of a block follow its new ground ----
@@ -1869,7 +1982,7 @@
         b.appendChild(state.style.cloneNode(true)); b.setAttribute('data-tf-tint', state.id);
         state.marks.forEach(function (m) { mark(m[0], m[1]); });
     }
-    function tintParts(b) { return [b].concat(Array.prototype.slice.call(b.querySelectorAll('*'))).filter(function (n) { return !n.closest('[data-tweakfast],svg') && !/^(STYLE|SCRIPT)$/.test(n.tagName); }).slice(0, 400); }
+    function tintParts(b) { return [b].concat(Array.prototype.slice.call(b.querySelectorAll('*'))).filter(function (n) { return !n.closest('[data-tweakfast],svg') && !/^(STYLE|SCRIPT)$/.test(n.tagName); }).slice(0, b.tagName === 'BODY' || b.tagName === 'MAIN' ? 3000 : 400); } /* the page's own ground reaches its footer too */
     function tintRead(n) { var cs = getComputedStyle(n), o = { under: behind(n) }; for (var k in TINT) o[k] = cs[k]; o.image = cs.backgroundImage !== 'none'; o.lines = ['Top', 'Right', 'Bottom', 'Left'].map(function (s) { return parseFloat(cs['border' + s + 'Width']) > 0 && cs['border' + s + 'Style'] !== 'none'; }); return o; }
     /* each of the site's hover looks on the block's parts, read as it shows */
     function tintHovers(b) {
@@ -2004,7 +2117,7 @@
         if (el._tfSlide) clearTimeout(el._tfSlide); else { el._tfT0 = el.style.transform; el._tfTr0 = el.style.transition; } /* one memory of its own styles, however many slides overlap */
         el.style.transition = 'none'; el.style.transform = 'translate(' + dx + 'px,' + dy + 'px) ' + keep;
         void el.offsetWidth;
-        el.style.transition = 'transform .15s ease'; el.style.transform = keep;
+        el.style.transition = slideTime(); el.style.transform = keep;
         if (follow) requestAnimationFrame(function tick() { follow(); if (Date.now() < until) requestAnimationFrame(tick); });
         var done = function () { clearTimeout(el._tfSlide); el._tfSlide = null; transients.splice(transients.indexOf(done), 1); el.style.transition = el._tfTr0; el.style.transform = el._tfT0; if (el.getAttribute('style') === '') el.removeAttribute('style'); };
         transients.push(done); el._tfSlide = setTimeout(done, 170);
@@ -2013,7 +2126,8 @@
     var transients = [];
     function finishTransients() { while (transients.length) transients[0](); }
     /* inline styles an earlier build may have left on a page (a Done pressed inside those 170 ms): ours, by their exact values */
-    var OURS = /^(transition: transform 0\.15s(?: ease)?|transform: (?:scale\(1\.015\)|translate\([^)]*\) scale\(1\.015\))|will-change: transform|z-index: 2147482998)$/;
+    function slideTime() { return motion() === 'auto' ? 'transform 0s ease' : 'transform .15s ease'; }
+    var OURS = /^(transition: transform 0(?:\.15)?s(?: ease)?|transform: (?:scale\(1\.015\)|translate\([^)]*\) scale\(1\.015\))|will-change: transform|z-index: 2147482998)$/;
     function scrub(root) {
         var all = root.querySelectorAll('[style]'), i, j;
         for (i = 0; i < all.length; i++) {
@@ -2046,6 +2160,7 @@
         if (grip) grip.setPointerCapture(e.pointerId);
         var last = null, swapAt = 0, swapPt = null;
         function at(ev) {
+            if (!dragging) return; /* ended already (the window lost focus): later moves move nothing */
             if (ev.buttons === 0 && ev.pointerType !== 'touch' && !byTouch) { end(); return; } /* the release was missed: no button is held any more */
             last = { clientX: ev.clientX, clientY: ev.clientY };
             edge = ev.clientY < 48 ? -1 : ev.clientY > window.innerHeight - 48 ? 1 : 0;
@@ -2094,13 +2209,13 @@
             skipClick = true; setTimeout(function () { skipClick = false; }, 400); /* the release is not a click on what lies under it */
             dragging = false; edge = 0; document.body.classList.remove('tf-dragging'); document.documentElement.style.overflowAnchor = anchorWas; b.classList.remove('tf-moving'); if (!b.className) b.removeAttribute('class');
             settle();
-            if (moved && b.nextElementSibling !== prevNext) { steps.push(function () { putOrder(parent, order); }); refresh(); if (parentWas !== null) setTimeout(function () { mirror(parent, parentWas); }, 180); } /* after the settle, so no animation styles are mirrored */
+            if (moved && b.nextElementSibling !== prevNext) { var st = function () { putOrder(parent, order); }; steps.push(st); refresh(); if (parentWas !== null) { busy++; refresh(); setTimeout(function () { busy--; mirror(parent, parentWas, st); refresh(); }, 180); } } /* after the settle, so no animation styles are mirrored */
             placeTools();
         }
         /* on release the block glides from under the finger into its slot, then carries nothing of ours */
         function settle() {
             var until = Date.now() + 170;
-            b.style.transition = 'transform .15s ease'; b.style.transform = inline.transform; /* back to its own transform, animated */
+            b.style.transition = slideTime(); b.style.transform = inline.transform; /* back to its own transform, animated */
             requestAnimationFrame(function tick() { placeTools(); if (Date.now() < until) requestAnimationFrame(tick); });
             var timer = setTimeout(restore, 170);
             b._tfRestore = restore; transients.push(restore);
@@ -2122,7 +2237,8 @@
     function longPress() {
         var timer = 0, b = null, x0 = 0, y0 = 0, drive = null;
         document.addEventListener('touchstart', function (e) {
-            if (e.touches.length !== 1 || editing || locked || dragging) return;
+            if (e.touches.length !== 1) { if (timer || drive) done(); return; } /* a second finger: a pinch, never a lift */
+            if (editing || locked || dragging || previewing) return;
             var t = e.touches[0], target = e.target;
             b = (target.nodeType === 1 ? target : target.parentElement); b = b && !b.closest('[data-tweakfast]') ? blockTarget(b) : null;
             if (!b) return;
@@ -2137,6 +2253,7 @@
         }, { passive: true });
         document.addEventListener('touchmove', function (e) {
             if (drive) { var t = e.touches[0]; e.preventDefault(); drive.at({ clientX: t.clientX, clientY: t.clientY, buttons: 1, pointerType: 'touch' }); return; }
+            if (timer && e.touches.length > 1) { done(); return; }
             if (timer && e.touches.length === 1) { var m = e.touches[0]; if (Math.abs(m.clientX - x0) + Math.abs(m.clientY - y0) > 10) { clearTimeout(timer); timer = 0; release(); } } /* a scroll, not a hold */
         }, { passive: false });
         function done() { clearTimeout(timer); timer = 0; if (drive) { drive.end(); drive = null; } release(); }
@@ -2153,7 +2270,7 @@
         steps.push(function () { putOrder(parent, order); });
         refresh();
         mirror(parent, parentWas);
-        b.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        b.scrollIntoView({ block: 'nearest', behavior: motion() });
         showTools(b);
     }
     function exchange(a, c) { var m = document.createComment(''); a.parentNode.replaceChild(m, a); c.parentNode.replaceChild(a, c); m.parentNode.replaceChild(c, m); }
@@ -2181,9 +2298,26 @@
         mirror(parent, parentWas); /* in a footer, gone from every page */
         once('remove', 'Removed. Undo brings it back; after Done, the page\u2019s versions under Site do.');
     }
-    function setHidden(b, on) {
-        if (on) { b.setAttribute('data-tf-hidden', ''); b.setAttribute('hidden', ''); b.style.display = 'none'; }
-        else { b.removeAttribute('data-tf-hidden'); b.removeAttribute('hidden'); b.style.display = ''; if (b.getAttribute('style') === '') b.removeAttribute('style'); }
+    /* a hidden block, here: only marked, so it keeps its own shape (a list item, a table row, a grid card) and shows faded.
+       In the saved page it is hidden for readers: the hidden attribute and display none, which beats a site's own display
+       rule; a display the block had in its own style waits in data-tf-display and comes back when it is shown again. */
+    function setHidden(b, on) { if (on) b.setAttribute('data-tf-hidden', ''); else b.removeAttribute('data-tf-hidden'); }
+    var HIDDEN = '[data-tf-hidden]:not(nav a)';
+    function savedHidden(root) {
+        var all = Array.prototype.slice.call(root.querySelectorAll(HIDDEN)); if (root.matches && root.matches(HIDDEN)) all.push(root);
+        all.forEach(function (n) {
+            if (n.hasAttribute('hidden')) return;
+            var d = n.style.display; if (d && d !== 'none') n.setAttribute('data-tf-display', d);
+            n.setAttribute('hidden', ''); n.style.display = 'none';
+        });
+    }
+    function liveHidden(root) {
+        var all = Array.prototype.slice.call(root.querySelectorAll('[hidden]')); if (root.matches && root.matches('[hidden]')) all.push(root);
+        all.forEach(function (n) {
+            if (!n.matches(HIDDEN)) return;
+            n.removeAttribute('hidden'); n.style.display = n.getAttribute('data-tf-display') || ''; n.removeAttribute('data-tf-display');
+            if (n.getAttribute('style') === '') n.removeAttribute('style');
+        });
     }
     function copyBlock() {
         var b = toolsFor; if (!b) return;
@@ -2194,7 +2328,7 @@
         mirror(b.parentElement, parentWas);
         refresh();
         showTools(twin);
-        twin.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        twin.scrollIntoView({ block: 'nearest', behavior: motion() });
         once('copy', 'A copy, with placeholders. Click each to fill it in.');
     }
 
@@ -2202,7 +2336,7 @@
        Where the site already pairs a button with a second, quieter one, the copy takes that look. */
     function copyButton(b) {
         var twin = b.cloneNode(true), parent = b.parentElement, parentWas = cleanOuter(parent), texts = [], t;
-        twin.removeAttribute('id'); twin.removeAttribute('hidden'); twin.removeAttribute('data-tf-hidden'); twin.style.display = ''; twin.classList.remove('tf-hover');
+        twin.removeAttribute('id'); twin.removeAttribute('data-tf-hidden'); twin.classList.remove('tf-hover');
         var walk = document.createTreeWalker(twin, NodeFilter.SHOW_TEXT);
         while ((t = walk.nextNode())) if (t.nodeValue.trim()) texts.push(t);
         texts.forEach(function (t, i) { t.nodeValue = i ? '' : (b.tagName === 'A' ? 'Link' : 'Button'); }); /* icons inside stay */
@@ -2247,6 +2381,7 @@
     function checkKey() {
         fetch('/api/check', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: key }), cache: 'no-store' }).then(function (r) {
             if (r.status === 403) r.json().then(function (j) { lock(j && j.message); }, function () { lock(); });
+            else if (r.status === 503) r.json().then(function (j) { if (j && /not set up/i.test(j.message || '')) lock(j.message + ' Ask the person who set up the site.'); }, function () {}); /* no key stored on the site: nothing could be saved */
             else if (r.ok) r.json().then(function (j) { if (j && j.demo) { demo = true; if (card) { fade(card); card = null; placeNote(); } } }, function () {}); /* "Bookmark this page" is not true of a demo */
         }, function () {});
     }
@@ -2344,13 +2479,14 @@
         if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6); /* no room below: above the button */
         menu.style.left = left + 'px'; menu.style.top = top + 'px';
         menu.row = row; if (row) row.classList.add('tf-open');
-        setTimeout(function () { if (menu) { document.addEventListener('pointerdown', menuAway, true); window.addEventListener('scroll', closeMenu, true); } }, 0);
+        setTimeout(function () { if (menu) { document.addEventListener('pointerdown', menuAway, true); window.addEventListener('scroll', menuScroll, true); } }, 0);
         var first = menu.querySelector("button"); if (first) first.focus();
     }
     function menuAway(e) { if (menu && !menu.contains(e.target) && e.target !== doneCount) closeMenu(); } /* the count toggles its own list */
+    function menuScroll(e) { if (menu && e.target && e.target.nodeType === 1 && menu.contains(e.target)) return; closeMenu(); } /* a long list scrolls in itself */
     function closeMenu() {
         if (!menu) return;
-        document.removeEventListener('pointerdown', menuAway, true); window.removeEventListener('scroll', closeMenu, true);
+        document.removeEventListener('pointerdown', menuAway, true); window.removeEventListener('scroll', menuScroll, true);
         if (menu.row) menu.row.classList.remove('tf-open');
         var m = menu; fade(menu); menu = null;
         if (m.contains(document.activeElement) && m.back && m.back.isConnected && m.back.getClientRects().length) m.back.focus({ preventScroll: true }); /* closed from the keyboard: back where it was opened */
@@ -2445,15 +2581,10 @@
     /* to another page of the site from the panel; with changes not live yet it asks, the way Leave does */
     function goTo(path) {
         if (path === here()) { closePages(); return; }
+        if (freshPages[path]) { say('That page is new and not saved yet. Press Done first, then open it.', 'error'); return; }
+        if (waitWork()) return;
         if (editing) commit();
-        if (!steps.length) { go(); return; }
-        closePages();
-        var n = steps.length;
-        say(n === 1 ? 'One change is not live yet.' : n + ' changes are not live yet.', 'stay');
-        offer('Make live and go', function () { afterSave = go; save(false); });
-        offer('Go anyway', function () { steps.length = 0; go(); });
-        asking = true;
-        function go() { location.href = path; }
+        carry(); location.href = path; /* what is not live yet goes along, kept in this browser */
     }
     /* ---- the command palette ---- */
     /* Cmd+K (Ctrl+K elsewhere): one search over every page and every action, in the sheet's place. A keyboard thing:
@@ -2521,7 +2652,7 @@
     }
     var palWas = null;
     function closePal(back) {
-        if (!pal) return; fade(pal); pal = null; palRows = [];
+        if (!pal) return; fade(pal); pal = null; palRows = []; placeNote();
         var w = palWas; palWas = null;
         if (!back || !w) return;
         if (w.sheet && !panel) togglePages();
@@ -2642,7 +2773,7 @@
     }
     /* Share: the address readers use, to copy or to scan; never the editing link */
     function showShare(body) {
-        var url = location.origin + '/';
+        var hp = homePath(), url = new URL(!hp || /^(index\.html|\.\/|\/)$/.test(hp) ? './' : hp, location.href).href; /* the home page beside this one, also in a folder */
         body.appendChild(el('div', 'tf-caption', 'Address'));
         var line = el('div', 'tf-share-line'), field = el('input', 'tf-input'); field.readOnly = true; field.value = url; field.setAttribute('aria-label', 'Address');
         field.addEventListener('focus', function () { field.select(); });
@@ -2751,7 +2882,7 @@
             mark.innerHTML = ICON[h[0]]; row.appendChild(mark);
             words.appendChild(el('div', 'tf-help-title', h[1]));
             if (typeof h[2] === 'string') words.appendChild(el('p', 'tf-help', h[2]));
-            else { var keys = el('p', 'tf-help tf-keys'); h[2].forEach(function (k) { var one = el('span'); one.appendChild(el('kbd', 'tf-kbd', k[0])); one.appendChild(document.createTextNode(k[1])); keys.appendChild(one); }); words.appendChild(keys); }
+            else { var keys = el('p', 'tf-help tf-help-keys'); h[2].forEach(function (k) { var one = el('span'); one.appendChild(el('kbd', 'tf-kbd', k[0])); one.appendChild(document.createTextNode(k[1])); keys.appendChild(one); }); words.appendChild(keys); }
             row.appendChild(words); list.appendChild(row);
         });
         body.appendChild(list);
@@ -2883,23 +3014,26 @@
             .then(function (r) { return r.json(); })
             .then(function (j) {
                 if (!j.ok) { box.textContent = j.message || 'Could not get that version.'; return; }
+                if (busy) { box.textContent = 'One moment: the other pages are still being changed.'; return; }
                 if (editing) commit(); if (held) unhold(); if (picked) unpick(); hideTools(); hoverNone();
-                var was = pageHtml(), wasWords = wordsOf(document), changesBefore = copy(changes), vd = parse(j.html);
-                var paths = pageList().map(function (p) { return p.path; });
-                Object.keys(changes).forEach(function (p) { if (paths.indexOf(p) < 0) paths.push(p); });
-                [here(), pg.path].forEach(function (p) { if (paths.indexOf(p) < 0) paths.push(p); });
-                var parts = sharedParts(vd), left = paths.length;
-                paths.forEach(function (path) {
-                    loadPage(path, function (html) {
-                        var doc = html !== null && (path === pg.path ? vd : parse(html));
-                        if (doc && (path === pg.path ? (giveParts(doc, sharedParts(parse(html))), true) : giveParts(doc, null, parts))) {
-                            if (path === pg.path && path !== here()) putMeta(doc, 'meta[name="tweakfast-updated"]', 'name', 'tweakfast-updated', j.updated || ''); /* the live page's stamp, so Done is not refused as stale */
-                            if (path === here()) { putContent(doc); if (path === pg.path) setWords(here(), wordsOf(doc), null); }
-                            else changes[path] = serialize(doc);
-                        }
-                        if (--left) return;
-                        steps.push(function () { putContent(parse(was)); setWords(here(), wasWords, null); changes = changesBefore; });
-                        view = { kind: 'pages' }; refresh();
+                var vd = parse(j.html), parts = sharedParts(vd);
+                var paths = otherPages(); if (paths.indexOf(pg.path) < 0 && pg.path !== here()) paths.push(pg.path);
+                job(function (finish) {
+                    var was = pageHtml(), wasWords = wordsOf(document), led = ledger();
+                    var into = function (path, doc) { /* the version's page, or another page taking the version's shared parts */
+                        if (path === pg.path) { if (path !== here()) putMeta(doc, 'meta[name="tweakfast-updated"]', 'name', 'tweakfast-updated', j.updated || ''); } /* the live page's stamp, so Done is not refused as stale */
+                        if (path === here()) { putContent(doc); if (path === pg.path) setWords(here(), wordsOf(doc), null); }
+                        else led.put(path, serialize(doc));
+                    };
+                    if (pg.path === here()) { giveParts(vd, sharedParts(parse(pageHtml()))); into(here(), vd); }
+                    else { var mine = parse(pageHtml()); if (giveParts(mine, null, parts)) into(here(), mine); }
+                    eachPage(paths, function (path, html) {
+                        if (html === null) return;
+                        if (path === pg.path) { giveParts(vd, sharedParts(parse(html))); into(path, vd); }
+                        else { var doc = parse(html); if (giveParts(doc, null, parts)) into(path, doc); }
+                    }, function () {
+                        steps.push(function () { putContent(parse(was)); setWords(here(), wasWords, null); led.back(); });
+                        view = { kind: 'pages' }; finish();
                         say(pg.path === here() ? 'The page is as it was at ' + label + '. Done makes it live, Undo takes it back.'
                             : pg.name + ' is as it was at ' + label + '. Open it to see; Done makes it live, Undo takes it back.');
                     });
@@ -2933,7 +3067,8 @@
        same stays the same node, what moved is moved, what changed is changed where it is. So every Undo step, the site's own
        scripts and our listeners still hold the elements they knew; swapping the nodes would leave them all pointing at nothing. */
     function putContent(doc) {
-        morphKids(document.body, doc.body, true);
+        morphKids(document.body, doc.body, true); /* both sides compared in the saved form */
+        liveHidden(document.body);
         markPictures(); markBlocks();
         var pics = document.querySelectorAll('img[data-tf-pos]'); for (var i = 0; i < pics.length; i++) enableDrag(pics[i]);
     }
@@ -2974,11 +3109,12 @@
         s = s.normalize ? s.normalize('NFD').replace(/[̀-ͯ]/g, '') : s;
         return s.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
     }
+    var stampOf = {};          /* each other page's saved stamp as this visit read it */
     function loadPage(path, cb) {
         if (path === here()) { cb(pageHtml()); return; }
         if (changes[path] !== undefined) { cb(changes[path]); return; }
         fetch(path, { cache: 'no-store' }).then(function (r) { if (!r.ok) throw r.status; return r.text(); }).then(function (html) {
-            if (loaded[path] === undefined) { var d = parse(html); takeUpdated(d); loaded[path] = serialize(d); } /* as it was, for Undo past Done */
+            if (loaded[path] === undefined) { var d = parse(html); stampOf[path] = takeUpdated(d); loaded[path] = serialize(d); } /* as it was, for Undo past Done */
             cb(html);
         }, function (st) { cb(null, st === 404 || st === 410); }); /* the second answer: there is no such page (not: it could not be reached) */
     }
@@ -2986,32 +3122,33 @@
     function serialize(doc) { return '<!doctype html>\n' + doc.documentElement.outerHTML; }
     /* run fn(nav, doc) on the menu of every page; the current page in place, the others into changes */
     function everyMenu(fn, after) {
-        var paths = pageList().map(function (p) { return p.path; });
-        Object.keys(changes).forEach(function (p) { if (paths.indexOf(p) < 0) paths.push(p); });
-        var cur = here(); if (paths.indexOf(cur) < 0) paths.push(cur);
-        var navBefore = menuOf(document).innerHTML, changesBefore = copy(changes), failed = [];
-        var left = paths.length;
-        paths.forEach(function (path) {
-            if (path === cur) { fn(menuOf(document), document); tick(); return; }
-            loadPage(path, function (html, missing) {
-                if (html === null) { if (!missing) failed.push(path); } /* a menu link to a page that does not exist has no menu to keep in step */
-                else { var doc = parse(html), nav = menuOf(doc); if (nav) { fn(nav, doc); changes[path] = serialize(doc); } }
-                tick();
+        var cur = here(), paths = otherPages();
+        job(function (finish) {
+            var navBefore = menuOf(document).innerHTML, headBefore = robotsOf(document), led = ledger(), failed = [];
+            fn(menuOf(document), document);
+            eachPage(paths, function (path, html, missing) {
+                if (html === null) { if (!missing) failed.push(path); return; } /* a menu link to a page that does not exist has no menu to keep in step */
+                var doc = parse(html), nav = menuOf(doc); if (nav) { fn(nav, doc); led.put(path, serialize(doc)); }
+            }, function () {
+                var back = function () { menuOf(document).innerHTML = navBefore; putRobots(document, headBefore); led.back(); };
+                if (failed.length) { /* all pages or none: a menu that differs from page to page is worse than no change */
+                    back(); finish(); if (panel) renderPages();
+                    say('Could not reach ' + failed.join(', ') + ', so nothing was changed. Check the connection, then try again.', 'error');
+                    after(failed); return;
+                }
+                steps.push(function () { back(); if (panel) renderPages(); });
+                finish();
+                after(failed);
             });
         });
-        function tick() {
-            if (--left) return;
-            if (failed.length) { /* all pages or none: a menu that differs from page to page is worse than no change */
-                menuOf(document).innerHTML = navBefore; changes = changesBefore; refresh();
-                say('Could not reach ' + failed.join(', ') + ', so nothing was changed. Check the connection, then try again.', 'error');
-                after(failed); return;
-            }
-            steps.push(function () { menuOf(document).innerHTML = navBefore; changes = changesBefore; if (panel) renderPages(); });
-            refresh();
-            if (panel) renderPages();
-            after(failed);
-        }
     }
+    /* the robots line of a page's head (a hidden page says noindex), kept and put back with the menu */
+    function robotsOf(doc) { var m = doc.querySelector('meta[name="robots"]'); return m ? m.outerHTML : null; }
+    function putRobots(doc, outer) {
+        var m = doc.querySelector('meta[name="robots"]'); if (m) m.remove();
+        if (outer) { var t = doc.createElement('template'); t.innerHTML = outer; doc.head.appendChild(doc.importNode(t.content, true)); }
+    }
+    function motion() { return matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'; } /* reduced motion: the page jumps, it does not glide */
     function copy(o) { var c = {}; for (var k in o) c[k] = o[k]; return c; }
     function setPageHidden(path, on) {
         if (path === homePath()) { say('Home cannot be hidden.', 'error'); return; }
@@ -3083,27 +3220,39 @@
     /* ---- undo, done ---- */
     /* Redo: before an Undo runs, the page as it is now is kept; Shift+Cmd+Z puts it back, until a new change is made */
     var redos = [], stepsSeen = 0;
-    function snapshot() { var c = {}; for (var k in changes) c[k] = changes[k]; return { html: pageHtml(), words: wordsOf(document), changes: c }; }
+    function snapshot() { return { html: pageHtml(), words: wordsOf(document), changes: copy(changes), drops: copy(drops), fresh: copy(freshPages), robots: robotsOf(document) }; }
     function restore(sn) {
         if (editing) commit(); if (held) unhold(); if (picked) unpick(); hideTools(); hoverNone();
         putContent(parse(sn.html)); setWords(here(), sn.words, null); changes = sn.changes;
+        if (sn.drops) drops = sn.drops; if (sn.fresh) freshPages = sn.fresh; if (sn.robots !== undefined) putRobots(document, sn.robots);
+    }
+    /* after an Undo or Redo: nothing stays picked, framed or asked about on an element that is no longer on the page */
+    function settle() {
+        var gone = function (n) { return n && !document.contains(n); };
+        if (gone(altFor)) { if (altBox && altBox.parentNode) altBox.remove(); altFor = null; }
+        if (gone(picked)) unpick();
+        if (gone(held)) unhold();
+        if (gone(linkFor)) hideLink();
+        if (gone(toolsFor)) hideTools();
+        if (gone(hoverEl)) hoverNone();
     }
     function undo() {
+        if (saving || waitWork()) return;
         if (editing) cancel();
         if (!steps.length) { if (saves.length) undoSave(); return; }
         var step = steps.pop(), sn = snapshot();
         if (step) step();
         redos.push(sn); stepsSeen = steps.length;
-        refresh(); say('');
+        settle(); refresh(); say('');
         if (altFor) altInput.value = altFor.getAttribute('alt') || ''; /* the open field shows what Undo put back */
         if (toolsFor) showTools(toolsFor);
     }
     function redo() {
-        if (!redos.length) return;
+        if (saving || waitWork() || !redos.length) return;
         var sn = redos.pop(), now = snapshot();
         restore(sn);
         steps.push(function () { restore(now); });
-        stepsSeen = steps.length; refresh(); say('');
+        stepsSeen = steps.length; settle(); refresh(); say('');
     }
     /* Undo past Done: the site goes back to how it was before the last Done of this visit */
     /* Undo past Done: the site as it was before the last Done comes back as a change; Done makes it live, Undo takes it back */
@@ -3121,12 +3270,14 @@
         stepsSeen = steps.length; refresh();
         say('The site is as it was before the last Done. Done makes it live, Undo takes it back.' + (fresh.length ? ' Pages added then stay.' : ''));
     }
+    var era = 0;               /* goes up with every change and every Undo: what was worked out before is stale */
     function refresh() {
+        era++;
         if (locked) return;
         if (steps.length > stepsSeen) redos.length = 0; /* a new change: what Undo took away is gone for good */
         stepsSeen = steps.length;
-        undoBtn.disabled = saving || (!steps.length && !saves.length);
-        doneBtn.disabled = saving || !steps.length;
+        undoBtn.disabled = saving || busy > 0 || (!steps.length && !saves.length);
+        doneBtn.disabled = saving || busy > 0 || !steps.length;
         doneCount.textContent = steps.length; doneCount.style.visibility = steps.length ? 'visible' : 'hidden';
         noteSteps();
         if (menu && menu.classList.contains('tf-changes')) { if (steps.length) showChanges(); else closeMenu(); }
@@ -3188,7 +3339,9 @@
         } else {
             var srcs = function (n) { return Array.prototype.map.call(n.tagName === 'IMG' ? [n] : n.querySelectorAll('img'), function (m) { return m.getAttribute('src') + '|' + m.getAttribute('alt'); }); };
             var sa = srcs(a), sb = srcs(b), hidden = b.hasAttribute('hidden') && !a.hasAttribute('hidden');
-            if (hidden) label = 'Removed ' + snippet(b);
+            var shown = a.hasAttribute('hidden') && !b.hasAttribute('hidden');
+            if (hidden) label = 'Hid ' + snippet(b);
+            else if (shown) label = 'Showed ' + snippet(b);
             else if (a.textContent.replace(/\s+/g, ' ') !== b.textContent.replace(/\s+/g, ' ')) label = 'Changed words ' + snippet(b);
             else if (sa.map(function (x) { return x.split('|')[0]; }).join() !== sb.map(function (x) { return x.split('|')[0]; }).join()) label = 'New picture';
             else if (sa.join() !== sb.join()) label = 'Picture description';
@@ -3226,7 +3379,7 @@
         menu.style.left = Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8)) + 'px';
         menu.style.top = Math.max(8, bar.getBoundingClientRect().top - h - 8) + 'px';
         menu.scrollTop = keep;
-        setTimeout(function () { if (menu) { document.addEventListener('pointerdown', menuAway, true); window.addEventListener('scroll', closeMenu, true); } }, 0);
+        setTimeout(function () { if (menu) { document.addEventListener('pointerdown', menuAway, true); window.addEventListener('scroll', menuScroll, true); } }, 0);
         var first = menu.querySelector('button'); if (first && !keep) first.focus();
     }
     function showChange(note) {
@@ -3234,7 +3387,7 @@
         var t = liveOf(note.show, note.showTag) || liveOf(note.area, note.tag);
         if (!t || t === document.body) { say(t ? 'That change is the whole page.' : 'That part has changed again since.', t ? '' : 'error'); return; }
         while (t.parentElement && t.parentElement !== document.body && !t.getClientRects().length) t = t.parentElement; /* a hidden part: its place */
-        t.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+        t.scrollIntoView({ block: 'center', behavior: motion() });
         var box = el('span', 'tf-hover-box tf-flash'); box.setAttribute('data-tweakfast', ''); document.body.appendChild(box);
         var tick = function () { if (box.parentNode) { frame(box, t.getBoundingClientRect(), 3); box.style.display = 'block'; } };
         tick(); var iv = setInterval(tick, 50);
@@ -3242,6 +3395,7 @@
     }
     /* Undo on a row: the newest is a plain Undo; an older one alone, when its part is as it left it and only this page changed */
     function undoOne(k) {
+        if (saving || waitWork()) return;
         if (k === steps.length - 1) { undo(); return; }
         var note = notes[k], after = steps.length - 1 - k;
         var cur = note.area && !note.others && note.tag !== 'BODY' ? parse(pageHtml()) : null, hit = null, all, i;
@@ -3261,23 +3415,24 @@
         refresh(); say('Taken back: ' + note.label.charAt(0).toLowerCase() + note.label.slice(1) + '.');
         if (steps.length) showChanges();
     }
-    var afterSave = null;      /* what to do once a save has gone through (Leave) */
     var saving = false;        /* Done and Undo rest while a save is in flight */
-    function save(force) {
+    function save(force, then) { /* then: what to do once the save has gone through (Make live and leave) */
+        if (saving || waitWork()) return;
         if (editing) commit();
         if (!steps.length) return;
         if (!saver) { /* the route did not answer on arrival: asked once more before falling back to files */
             if (noRoute) { downloadAll(); return; }
             say('Saving…');
-            findSaver(function () { if (saver) save(force); else if (noRoute) downloadAll(); else say('Could not reach the site. Check the connection, then press Done again.', 'error'); });
+            findSaver(function () { if (saver) save(force, then); else if (noRoute) downloadAll(); else say('Could not reach the site. Check the connection, then press Done again.', 'error'); });
             return;
         }
         var files = {}, pictures = {}, updated = {}, stamp = Date.now(), count = 0;
         var html = pageHtml(), cur = parse(html), hereChanged = html !== loaded[here()];
-        var named = extractPictures(cur, pictures, stamp, function () { return count++; });
+        var same = {}, named = extractPictures(cur, pictures, stamp, function () { return count++; }, same);
         if (hereChanged) { files[here()] = serialize(cur); updated[here()] = pageUpdated; } /* a page that did not change is not written again */
-        for (var k in changes) { if (drops[k]) continue; var d = parse(changes[k]); updated[k] = takeUpdated(d); extractPictures(d, pictures, stamp, function () { return count++; }); files[k] = serialize(d); }
+        for (var k in changes) { if (drops[k]) continue; var d = parse(changes[k]); updated[k] = takeUpdated(d); extractPictures(d, pictures, stamp, function () { return count++; }, same); files[k] = serialize(d); }
         var drop = Object.keys(drops);
+        drop.forEach(function (d) { if (stampOf[d] !== undefined && updated[d] === undefined) updated[d] = stampOf[d]; }); /* a page removed is checked like one saved */
         if (!Object.keys(files).length && !drop.length) { steps.length = 0; refresh(); say('Nothing has changed, so nothing needed saving.'); return; }
         var before = {}; for (var f in files) before[f] = loaded[f] === undefined ? null : loaded[f];
         say('Saving ' + countLine().replace(/\.$/, '…')); saving = true; refresh();
@@ -3291,14 +3446,15 @@
             })
             .then(function (j) {
                 saving = false;
+                tookWritten(j, files);
                 if (j.conflict) {
-                    afterSave = null; refresh();
+                    refresh();
                     say(j.message || 'This page was changed elsewhere since you opened it.');
-                    offer('Keep mine', function () { save(true); });
+                    offer('Keep mine', function () { save(true, then); });
                     offer('Take theirs', function () { steps.length = 0; location.reload(); });
                     return;
                 }
-                if (!j.ok) { var f = failure(j); afterSave = null; refresh(); say(f.text, 'error'); if (f.files) offer('Save as files', function () { downloadAll(true); }); return; }
+                if (!j.ok) { var f = failure(j); refresh(); say(f.text, 'error'); if (f.files) offer('Save as files', function () { downloadAll(true); }); return; }
                 if (j.demo) demo = true;
                 /* the new pictures now exist on the host under their names (a demo keeps them in the page as they are) */
                 if (!demo) named.forEach(function (n) { if (n.img) n.img.setAttribute('src', n.path); else n.box.setAttribute('style', n.box.getAttribute('style').replace(n.from, 'url("' + n.path + '")')); });
@@ -3310,13 +3466,13 @@
                 drop.forEach(function (d) { delete drops[d]; delete loaded[d]; });
                 for (var fp in files) delete freshPages[fp];
                 refresh();
-                if (afterSave) { var next = afterSave; afterSave = null; next(); return; }
+                if (then) { then(); return; }
                 if (demo) { say('Done. In this demo only you see it. On your own site, everyone would.', 'live'); later(8000); return; }
                 say('Live.', 'live');
                 offer('See the page', function () { window.open(location.pathname + location.search + '#view', '_blank'); });
                 later(8000);
             }).catch(function (e) {
-                saving = false; afterSave = null; refresh();
+                saving = false; refresh();
                 say(e instanceof TypeError ? 'Could not reach the site. Check the connection, then press Done again.' : ((e && e.message) || 'Saving failed. Your changes are still here; press Done again.'), 'error');
             });
     }
@@ -3336,11 +3492,23 @@
         }, function () {});
     }
     /* what happened, then what to do; never a code or a file name. The detail goes to the console. */
+    /* pages that went live although the save as a whole did not: they carry their new stamps, so the next Done is not
+       refused as "changed elsewhere" over the owner's own half-save */
+    function tookWritten(j, files) {
+        var w = j && j.written; if (!w || j.ok) return;
+        for (var p in w) {
+            if (!(p in files)) continue;
+            loaded[p] = files[p];
+            if (p === here()) pageUpdated = w[p];
+            else if (changes[p] !== undefined) { var d = parse(changes[p]); putMeta(d, 'meta[name="tweakfast-updated"]', 'name', 'tweakfast-updated', w[p]); changes[p] = serialize(d); }
+        }
+    }
     function failure(j) {
         var m = j.message || '', st = j.status;
         if (m) try { console.warn('Tweakfast: ' + st + ' ' + m); } catch (e) {}
         if (st === 403) return { text: 'This link no longer works. Ask the person who set up the site for a new one. Your changes can be saved as files meanwhile.', files: true };
         if (st === 413) return { text: /picture/i.test(m) ? 'A picture is too large to save. Choose a smaller one.' : 'This page is too large to save. Undo the last big change.' };
+        if (st === 503 && /not set up/i.test(m)) return { text: m + ' Ask the person who set up the site.', files: true };
         if (st >= 500 || st === 0) return { text: 'The site could not save right now. Wait a moment, then press Done again.' };
         return { text: 'Something went wrong and nothing was saved. Press Done again; if it keeps happening, ask the person who set up the site.' };
     }
@@ -3368,12 +3536,13 @@
         say(dead ? 'Saved as files on your computer.' : 'Saved as files on your computer. This site has no saving route yet.', 'stay');
     }
     /* data-URL pictures become files: pictures/tf-<stamp>-<n>.<ext>; returns the live imgs to rename after a save */
-    function extractPictures(doc, pictures, stamp, next) {
+    function extractPictures(doc, pictures, stamp, next, same) { /* same: one file for one picture, however many pages hold it (a new logo) */
+        same = same || {};
         var imgs = doc.querySelectorAll('img[src^="data:"]'), out = [];
         for (var i = 0; i < imgs.length; i++) {
             var src = imgs[i].getAttribute('src'), m = /^data:image\/(png|jpeg|gif|webp);base64,/.exec(src);
             if (!m) continue;
-            var path = 'pictures/tf-' + stamp + '-' + next() + '.' + (m[1] === 'jpeg' ? 'jpg' : m[1]);
+            var path = same[src] || (same[src] = 'pictures/tf-' + stamp + '-' + next() + '.' + (m[1] === 'jpeg' ? 'jpg' : m[1]));
             pictures[path] = src.slice(m[0].length);
             imgs[i].setAttribute('src', path);
             if (doc !== document) { /* find the same picture in the live page, to rename after the save */
@@ -3386,7 +3555,7 @@
         for (i = 0; i < boxes.length; i++) {
             var st = boxes[i].getAttribute('style'), mm = /url\("?(data:image\/(png|jpeg|gif|webp);base64,([^")]+))"?\)/.exec(st);
             if (!mm) continue;
-            var bpath = 'pictures/tf-' + stamp + '-' + next() + '.' + (mm[2] === 'jpeg' ? 'jpg' : mm[2]);
+            var bpath = same[mm[1]] || (same[mm[1]] = 'pictures/tf-' + stamp + '-' + next() + '.' + (mm[2] === 'jpeg' ? 'jpg' : mm[2]));
             pictures[bpath] = mm[3];
             boxes[i].setAttribute('style', st.replace(mm[0], 'url("' + bpath + '")'));
             if (doc !== document) { var lb = document.querySelectorAll('[style*="data:image"]'); for (j = 0; j < lb.length; j++) if (lb[j].getAttribute('style') === st) { out.push({ box: lb[j], from: mm[0], path: bpath }); break; } }
@@ -3402,6 +3571,7 @@
         var cls = doc.querySelectorAll('.tf-picture,.tf-editing,.tf-hover,.tf-moving');
         for (i = 0; i < cls.length; i++) { cls[i].classList.remove('tf-picture', 'tf-editing', 'tf-hover', 'tf-moving'); if (!cls[i].className) cls[i].removeAttribute('class'); }
         var s = doc.querySelector('#tf-style'); if (s) s.remove();
+        if (doc.querySelector('body')) savedHidden(doc.querySelector('body'));
         var t = doc.querySelector('title'); if (t) t.textContent = realTitle;
         var cls2 = doc.querySelectorAll('.tf-on'); for (i = 0; i < cls2.length; i++) cls2[i].classList.remove('tf-on');
         var marks = doc.querySelectorAll('[data-tf-block],[data-tf-art]');
@@ -3441,7 +3611,7 @@
         if (!steps.length) { go(); return; }
         var n = steps.length;
         say(n === 1 ? 'One change is not live yet.' : n + ' changes are not live yet.', 'stay');
-        offer('Make live and leave', function () { afterSave = go; save(false); });
+        offer('Make live and leave', function () { save(false, go); });
         offer('Leave anyway', function () { steps.length = 0; go(); });
         asking = true;
         function go() {
@@ -3464,10 +3634,17 @@
     }
     function later(ms) { clearTimeout(noteTimer); noteTimer = setTimeout(function () { noteTimer = 0; if (!status.querySelector('button') || ms > 6000) say(''); }, ms); }
     function placeNote() {
+        if (toolsFor && tools.classList.contains('tf-tools-dock')) { /* the phone's tool strip: just above the bar (and the welcome card); it steps aside while a sheet is up, and when its block has scrolled away */
+            var r = toolsFor.getBoundingClientRect(), under = bar.getBoundingClientRect().top;
+            if (card) under = Math.min(under, card.getBoundingClientRect().top);
+            tools.style.bottom = (window.innerHeight - under + 8) + 'px';
+            tools.style.visibility = r.bottom < 0 || r.top > window.innerHeight || panel || pal ? 'hidden' : '';
+        }
         if (!status.classList.contains('tf-show')) return;
         var top = bar.getBoundingClientRect().top;
         if (card) top = Math.min(top, card.getBoundingClientRect().top);
         if (panel) top = Math.min(top, panel.getBoundingClientRect().top);
+        if (toolsFor && tools.classList.contains('tf-tools-dock') && tools.style.visibility !== 'hidden') top = Math.min(top, tools.getBoundingClientRect().top); /* the phone's tool strip */
         status.style.bottom = (window.innerHeight - top + 12) + 'px';
     }
     function countLine() {
@@ -3491,6 +3668,8 @@
             '@keyframes tf-in{from{opacity:0;transform:translate(var(--tf-x),var(--tf-y)) scale(.96)}to{opacity:1;transform:translate(var(--tf-x),0) scale(1)}}@keyframes tf-out{to{opacity:0;transform:translate(var(--tf-x),var(--tf-y)) scale(.97)}}@keyframes tf-view{from{opacity:0;transform:translateX(var(--tf-dx,14px))}}' +
             '.tf-bar,.tf-panel,.tf-card,.tf-menu,.tf-tools,.tf-link,.tf-peek{animation:tf-in var(--tf-time) var(--tf-spring) both}.tf-bar,.tf-panel,.tf-card,.tf-peek,.tf-status{--tf-x:-50%}.tf-panel{--tf-y:10px;transform-origin:50% 100%}.tf-menu{--tf-y:-6px;transform-origin:100% 0}.tf-tools{transform-origin:50% 100%}.tf-link{--tf-y:-6px;transform-origin:0 0}.tf-out{animation:tf-out .15s ease-in both;pointer-events:none}.tf-sheet-body.tf-forward{animation:tf-view var(--tf-time) var(--tf-spring) both}.tf-sheet-body.tf-back{--tf-dx:-14px;animation:tf-view var(--tf-time) var(--tf-spring) both}' +
             '.tf-status{opacity:0;visibility:hidden;transform:translate(-50%,6px) scale(.97);transition:opacity .15s ease-in,visibility .15s,transform .15s ease-in}.tf-status.tf-show{opacity:1;visibility:visible;transform:translate(-50%,0) scale(1);transition:opacity var(--tf-time),visibility 0s,transform var(--tf-time) var(--tf-spring)}' +
+            /* the site's own rules for plain tags (button, input, a, p) must not reach the editor's parts; one class deep, so every rule below still wins */
+            '[data-tweakfast],[data-tweakfast] :where(*){letter-spacing:normal;word-spacing:normal;text-transform:none;text-shadow:none;text-indent:0;float:none;font-style:normal}[data-tweakfast]{text-align:left}[data-tweakfast] :where(button,input,select,textarea){margin:0;min-width:0;max-width:none;box-shadow:none}[data-tweakfast] :where(a){text-decoration:none}' +
             '@media(prefers-reduced-motion:reduce){[data-tweakfast],[data-tweakfast] *{animation-duration:0s!important;transition-duration:0s!important}}' +
             '.tf-bar{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);display:flex;align-items:center;gap:4px;max-width:calc(100% - 32px);padding:6px;border-radius:999px;font:14px/1.3 var(--tf-font);z-index:2147483000}' +
             '.tf-bar .tf-button{height:36px;font-size:14px}' +
@@ -3509,6 +3688,7 @@
             '.tf-link-label{white-space:nowrap;color:var(--tf-muted)}.tf-link .tf-input{flex:1;height:28px;padding:0 10px;font-size:13px}.tf-link .tf-small{flex:none;height:28px;padding:0 10px}.tf-link-open{appearance:none;flex:none;display:flex;align-items:center;justify-content:center;width:28px;height:28px;border:0;border-radius:50%;background:var(--tf-fill);color:inherit;cursor:pointer;transition:background .12s}.tf-link-open:hover{background:var(--tf-fill-hover)}.tf-link-open:focus-visible{outline:2px solid var(--tf-accent);outline-offset:2px}' +
             '.tf-words{padding:4px 6px 6px;font-size:13px}.tf-captioned{display:block}.tf-caption{display:block;margin:10px 0 6px 2px;font:500 11px/1.2 var(--tf-font);letter-spacing:.02em;text-transform:uppercase;color:var(--tf-muted)}.tf-words .tf-input,.tf-add .tf-input,.tf-add .tf-select{display:block;width:100%}.tf-area{height:32px;min-height:32px;padding:7px 10px;resize:none;line-height:18px;overflow:hidden;box-sizing:border-box}.tf-preview{padding:10px 12px;border-radius:10px;background:var(--tf-fill);font:13px/1.4 arial,sans-serif}.tf-preview-title{color:var(--tf-result);font-size:15px;line-height:1.3;overflow-wrap:anywhere}.tf-preview-url{color:var(--tf-muted);font-size:12px;margin:2px 0 4px}.tf-preview-desc{color:var(--tf-muted)}' +
             '.tf-tools{position:absolute;display:none;align-items:center;gap:2px;padding:4px;border-radius:999px;font:13px/1 var(--tf-font);z-index:2147483000}' +
+            '.tf-tools.tf-tools-dock{position:fixed;left:50%;--tf-x:-50%;transform:translateX(-50%);max-width:calc(100% - 16px);overflow-x:auto;scrollbar-width:none}' +
             '.tf-tools .tf-button{height:28px;padding:0 10px;font-size:13px}.tf-tools .tf-icon{width:28px}.tf-button.tf-icon{padding:0;position:relative}.tf-button svg{width:16px;height:16px;flex:none}.tf-tools .tf-button svg{width:15px;height:15px}.tf-word{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}.tf-button.tf-danger:hover{background:rgba(255,69,58,.2);color:var(--tf-bad-ink)}' +
             '.tf-grip{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:999px;color:var(--tf-muted);cursor:grab;touch-action:none;user-select:none;box-sizing:border-box;transition:background .12s,color .12s}.tf-grip svg{width:14px;height:14px}.tf-grip:hover{color:inherit;background:var(--tf-fill)}.tf-grip:active{cursor:grabbing}' +
             '.tf-card{position:fixed;left:50%;transform:translateX(-50%);width:min(340px,calc(100% - 32px));padding:18px 20px 16px;border-radius:18px;font:14px/1.45 var(--tf-font);z-index:2147483000;text-align:left}' +
@@ -3522,18 +3702,18 @@
             '.tf-panel-title{flex:1;min-width:0;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:600 15px/1.2 var(--tf-font)}' +
             '.tf-row{position:relative;display:flex;align-items:center;gap:8px;min-height:40px;padding:0 6px 0 4px;border-radius:10px;font-size:14px;transition:background .12s}.tf-row:hover,.tf-row.tf-open,.tf-row:focus-within{background:var(--tf-fill)}.tf-row-grip{opacity:0;transition:opacity .12s}.tf-row:hover .tf-row-grip,.tf-row.tf-open .tf-row-grip,.tf-row-moving .tf-row-grip{opacity:1}.tf-row-moving{background:var(--tf-lift);box-shadow:0 8px 24px rgba(0,0,0,.35)}.tf-rename{flex:1;min-width:0;height:28px}.tf-row-note,.tf-row-tag{color:var(--tf-muted);flex:none;font-size:12px;padding:2px 8px;border-radius:999px;background:var(--tf-fill)}.tf-row-hidden .tf-row-name{color:var(--tf-muted)}' +
             '.tf-row-name{flex:0 1 auto;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:inherit;text-decoration:none;padding:2px 0}.tf-row-name:hover{text-decoration:underline}.tf-row-name:focus{outline:none}.tf-row-name:focus-visible{outline:2px solid var(--tf-accent);outline-offset:2px;border-radius:4px}.tf-row.tf-here{background:var(--tf-fill)}.tf-row.tf-here:hover{background:var(--tf-fill-hover)}.tf-row.tf-here .tf-row-name{font-weight:600}.tf-row-check{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin-left:auto;color:var(--tf-muted);flex:none}.tf-row-check svg{width:14px;height:14px}.tf-row-check+.tf-row-acts{margin-left:0}' +
-            '.tf-row-acts{display:flex;gap:2px;align-items:center;flex:none;margin-left:auto;opacity:0;transition:opacity .12s}.tf-row:hover .tf-row-acts,.tf-row.tf-open .tf-row-acts,.tf-row:focus-within .tf-row-acts,.tf-versions .tf-row-acts{opacity:1}.tf-row-acts .tf-button{height:28px;padding:0 10px;font-size:13px}.tf-row-acts .tf-icon{width:28px}.tf-versions{padding:2px 0 0;font-size:13px}.tf-versions .tf-caption{margin-left:6px}.tf-menu{position:fixed;width:220px;padding:6px;border-radius:14px;font:13px/1 var(--tf-font);z-index:2147483001}.tf-item{appearance:none;display:flex;align-items:center;gap:10px;width:100%;height:32px;padding:0 10px;border:0;border-radius:8px;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}.tf-item:hover,.tf-item:focus-visible{background:var(--tf-fill);outline:0}.tf-item:focus-visible{box-shadow:inset 0 0 0 2px var(--tf-accent)}.tf-item svg{width:15px;height:15px;color:var(--tf-muted);flex:none}.tf-item.tf-danger{color:var(--tf-bad-ink)}.tf-item.tf-danger svg{color:currentColor}.tf-helps{display:grid;gap:16px;padding:10px 8px 8px}.tf-help-row{display:grid;grid-template-columns:30px 1fr;gap:12px;align-items:start}.tf-help-icon{display:grid;place-items:center;width:30px;height:30px;border-radius:8px;background:var(--tf-fill);color:var(--tf-accent)}.tf-help-icon svg{width:16px;height:16px}.tf-help-title{font:600 13.5px/1.3 var(--tf-font);margin:1px 0 3px}.tf-help{margin:0;font-size:13px;line-height:1.45;color:var(--tf-muted)}.tf-keys{display:flex;flex-wrap:wrap;gap:6px 14px}.tf-keys span{display:inline-flex;align-items:center;gap:6px}.tf-kbd{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:20px;padding:0 6px;border-radius:5px;background:var(--tf-fill);box-shadow:0 0 0 1px var(--tf-hairline),0 1px 0 var(--tf-hairline);font:500 11.5px/1 var(--tf-font);color:inherit}.tf-share-line{display:flex;gap:6px;align-items:center}.tf-share-line .tf-input{flex:1;min-width:0}.tf-qr{width:168px;margin:2px 0 10px;border-radius:12px;overflow:hidden;line-height:0}.tf-qr svg{width:100%;height:auto;display:block}.tf-share-note{margin:4px 2px 2px;font-size:13px;line-height:1.45;color:var(--tf-muted)}.tf-changes{width:340px;max-width:calc(100vw - 16px);max-height:50vh;overflow:auto}.tf-changes .tf-row{min-height:36px;padding:0 2px 0 10px;font-size:13px}.tf-changes .tf-row-name{flex:1 1 auto;font-weight:400;color:inherit}.tf-changes .tf-row-acts{opacity:1}.tf-count{cursor:pointer}.tf-gap{height:1px;background:var(--tf-hairline);margin:6px 4px}.tf-note{padding:6px 10px 4px;color:var(--tf-muted);font-size:12px;line-height:1.4}' +
+            '.tf-row-acts{display:flex;gap:2px;align-items:center;flex:none;margin-left:auto;opacity:0;transition:opacity .12s}.tf-row:hover .tf-row-acts,.tf-row.tf-open .tf-row-acts,.tf-row:focus-within .tf-row-acts,.tf-versions .tf-row-acts{opacity:1}.tf-row-acts .tf-button{height:28px;padding:0 10px;font-size:13px}.tf-row-acts .tf-icon{width:28px}.tf-versions{padding:2px 0 0;font-size:13px}.tf-versions .tf-caption{margin-left:6px}.tf-menu{position:fixed;width:220px;padding:6px;border-radius:14px;font:13px/1 var(--tf-font);z-index:2147483001}.tf-item{appearance:none;display:flex;align-items:center;gap:10px;width:100%;height:32px;padding:0 10px;border:0;border-radius:8px;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}.tf-item:hover,.tf-item:focus-visible{background:var(--tf-fill);outline:0}.tf-item:focus-visible{box-shadow:inset 0 0 0 2px var(--tf-accent)}.tf-item svg{width:15px;height:15px;color:var(--tf-muted);flex:none}.tf-item.tf-danger{color:var(--tf-bad-ink)}.tf-item.tf-danger svg{color:currentColor}.tf-helps{display:grid;gap:16px;padding:10px 8px 8px}.tf-help-row{display:grid;grid-template-columns:30px 1fr;gap:12px;align-items:start}.tf-help-icon{display:grid;place-items:center;width:30px;height:30px;border-radius:8px;background:var(--tf-fill);color:var(--tf-accent)}.tf-help-icon svg{width:16px;height:16px}.tf-help-title{font:600 13.5px/1.3 var(--tf-font);margin:1px 0 3px}.tf-help{margin:0;font-size:13px;line-height:1.45;color:var(--tf-muted)}.tf-help-keys{display:flex;flex-wrap:wrap;gap:6px 14px}.tf-keys span{display:inline-flex;align-items:center;gap:6px}.tf-kbd{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:20px;padding:0 6px;border-radius:5px;background:var(--tf-fill);box-shadow:0 0 0 1px var(--tf-hairline),0 1px 0 var(--tf-hairline);font:500 11.5px/1 var(--tf-font);color:inherit}.tf-share-line{display:flex;gap:6px;align-items:center}.tf-share-line .tf-input{flex:1;min-width:0}.tf-qr{width:168px;margin:2px 0 10px;border-radius:12px;overflow:hidden;line-height:0}.tf-qr svg{width:100%;height:auto;display:block}.tf-share-note{margin:4px 2px 2px;font-size:13px;line-height:1.45;color:var(--tf-muted)}.tf-changes{width:340px;max-width:calc(100vw - 16px);max-height:50vh;overflow:auto}.tf-changes .tf-row{min-height:36px;padding:0 2px 0 10px;font-size:13px}.tf-changes .tf-row-name{flex:1 1 auto;font-weight:400;color:inherit}.tf-changes .tf-row-acts{opacity:1}.tf-count{cursor:pointer}.tf-gap{height:1px;background:var(--tf-hairline);margin:6px 4px}.tf-note{padding:6px 10px 4px;color:var(--tf-muted);font-size:12px;line-height:1.4}' +
             '.tf-menu.tf-looks{width:min(340px,calc(100vw - 16px))}.tf-item.tf-look{height:auto;min-height:44px;padding:5px 6px;gap:12px}.tf-look-ground{flex:1 1 auto;min-width:0;display:flex;align-items:center;padding:8px 10px;border-radius:8px;overflow:hidden}.tf-look-sample{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.2;box-sizing:border-box}.tf-look-word{display:flex;align-items:center;justify-content:flex-end;gap:4px;flex:none;width:92px;color:var(--tf-muted);font-size:12px}.tf-look-word svg{width:13px;height:13px;color:var(--tf-primary)}.tf-item.tf-off{cursor:default}.tf-item.tf-off:hover{background:none}.tf-look-why{flex:1 1 auto;min-width:0;padding:4px 10px;color:var(--tf-muted);font-size:12px;line-height:1.35}.tf-menu.tf-grounds{width:min(280px,calc(100vw - 16px))}.tf-swatch-row{height:auto;min-height:52px;padding:4px;gap:10px}.tf-swatch{flex:1 1 auto;min-width:0;display:flex;align-items:center;height:44px;padding:0 14px;border-radius:9px;box-shadow:inset 0 0 0 1px rgba(127,127,127,.28);font:500 14px/1 var(--tf-font)}.tf-swatch{justify-content:space-between}.tf-swatch-tick{flex:none;display:flex}.tf-swatch-tick svg{width:15px;height:15px;color:currentColor}.tf-off .tf-look-word{opacity:.55}.tf-menu-label{padding:8px 10px 4px;color:var(--tf-muted);font-size:12px;font-weight:600}' +
             '.tf-pal-field{display:flex;align-items:center;gap:10px;flex:none;height:48px;padding:0 12px 0 16px;border-bottom:1px solid var(--tf-hairline)}.tf-pal-field svg{width:16px;height:16px;color:var(--tf-muted);flex:none}.tf-pal-input{flex:1;min-width:0;border:0;padding:0;background:none;color:inherit;font:15px/1 var(--tf-font);outline:0}.tf-pal-input::placeholder{color:var(--tf-muted)}' +
             '.tf-key{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;border-radius:5px;background:var(--tf-fill);color:var(--tf-muted);font:500 11px/1 var(--tf-font);box-shadow:inset 0 -1px 0 var(--tf-hairline);flex:none}.tf-keys{display:flex;gap:3px;margin-left:auto}' +
             '.tf-pal .tf-sheet-body{padding:8px 8px 10px}.tf-pal .tf-caption{margin:6px 0 4px 10px}.tf-pal-row{height:40px;padding:0 10px;border-radius:10px;font-size:14px}.tf-pal-row:hover{background:none}.tf-pal-row.tf-lit{background:var(--tf-fill)}.tf-pal-name{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tf-pal-row .tf-row-tag{margin-left:auto}.tf-pal-none{padding:10px 10px 6px;color:var(--tf-muted);font-size:13px}' +
             '.tf-add{padding:4px 6px 6px}.tf-add .tf-button{margin-top:14px}' +
             '.tf-select,.tf-input{appearance:none;border:0;border-radius:10px;height:32px;padding:0 10px;font:inherit;background:var(--tf-fill);color:inherit;min-width:0;outline:0;box-sizing:border-box;transition:box-shadow .12s}.tf-select{flex:1}.tf-input{flex:2}.tf-select:focus,.tf-input:focus{box-shadow:0 0 0 2px var(--tf-accent)}.tf-input::placeholder{color:var(--tf-muted)}' +
-            '[data-tf-hidden]{display:block!important;opacity:.35}nav a[data-tf-hidden]{display:inline!important}' +
+            '[data-tf-hidden]{opacity:.35}nav a[data-tf-hidden]{display:inline!important}' +
             '.tf-bar .tf-icon{width:36px}.tf-peek{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);display:flex;padding:6px;border-radius:999px;font:14px/1.3 var(--tf-font);z-index:2147483000}.tf-peek .tf-button{height:36px;padding:0 14px;font-size:14px;background:transparent}.tf-peek .tf-button:hover{background:var(--tf-fill)}' +
             ':root:has(#tf-style.tf-previewing) [data-tweakfast]:not(.tf-peek){display:none!important}:root:has(#tf-style.tf-previewing) [data-tf-hidden]{display:none!important}:root:has(#tf-style.tf-previewing) .tf-hover,:root:has(#tf-style.tf-previewing) img.tf-picture{cursor:auto}' +
             'img.tf-picture{cursor:pointer}' +
-            '@media(max-width:600px){.tf-bar{--tf-x:0;left:8px;right:8px;bottom:8px;transform:none;max-width:none;justify-content:space-between;gap:4px;border-radius:24px}.tf-bar .tf-button{height:34px;padding:0 11px}.tf-panel{width:calc(100% - 16px)}}@media(pointer:coarse){.tf-bar .tf-button,.tf-tools .tf-button,.tf-status .tf-offer,.tf-row-acts .tf-button,.tf-link .tf-small,.tf-versions .tf-button,.tf-add .tf-button{height:40px}.tf-grip{width:40px;height:40px}.tf-tools .tf-icon{width:40px}.tf-link-open{width:40px;height:40px}.tf-plus span,tr.tf-plus td span{width:40px;height:40px}.tf-plus span svg{width:18px;height:18px}.tf-link .tf-input{height:40px}.tf-row-acts{opacity:1}.tf-row-acts .tf-icon{width:40px}.tf-row-grip{opacity:1}.tf-sheet-head .tf-icon{width:40px;height:40px}.tf-item{height:40px}.tf-bar .tf-icon{width:40px}.tf-peek .tf-button{height:40px}}';
+            '@media(max-width:600px){.tf-bar{--tf-x:0;left:8px;right:8px;bottom:8px;transform:none;max-width:none;justify-content:space-between;gap:4px;border-radius:24px}.tf-bar .tf-button{height:34px;padding:0 11px}.tf-panel{width:calc(100% - 16px)}}@media(pointer:coarse){.tf-bar .tf-button,.tf-tools .tf-button,.tf-status .tf-offer,.tf-row-acts .tf-button,.tf-link .tf-small,.tf-versions .tf-button,.tf-add .tf-button{height:40px}.tf-grip{width:40px;height:40px}.tf-tools .tf-icon{width:40px}.tf-count{position:relative}.tf-count::after{content:"";position:absolute;inset:-11px -11px -11px -8px}.tf-link-open{width:40px;height:40px}.tf-plus span,tr.tf-plus td span{width:40px;height:40px}.tf-plus span svg{width:18px;height:18px}.tf-link .tf-input{height:40px}.tf-row-acts{opacity:1}.tf-row-acts .tf-icon{width:40px}.tf-row-grip{opacity:1}.tf-sheet-head .tf-icon{width:40px;height:40px}.tf-item{height:40px}.tf-bar .tf-icon{width:40px}.tf-peek .tf-button{height:40px}}';
         document.head.appendChild(s);
     }
     /* the page's ground, read once at the start: a light site gets dark glass, a dark site light glass */

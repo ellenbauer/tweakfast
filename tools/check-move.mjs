@@ -10,7 +10,7 @@ const BACK = '.tf-tools button:is([title="Move up"],[title="Move left"])', FWD =
 const off = sel => p.$eval(sel, e => e.disabled);
 await p.goto('http://127.0.0.1:8787/demo/events.html#edit=test'); await p.waitForTimeout(400);
 await p.click('.tf-button:has-text("Got it")').catch(() => {});
-console.log('tools in order:', await p.$$eval('.tf-tools button', bs => bs.map(x => x.title).join(',')), '| every one a shape with its word:', await p.$$eval('.tf-tools button', bs => bs.every(x => x.querySelector('svg') && x.textContent === x.title)));
+console.log('tools in order:', await p.$$eval('.tf-tools button', bs => bs.map(x => x.title).join(',')), '| every one a shape with its word:', await p.$$eval('.tf-tools button', bs => bs.every(x => x.querySelector('svg') && (x.getAttribute('aria-label') || x.textContent) === x.title)));
 await p.hover('.card:nth-child(1) h3'); await p.waitForTimeout(400);
 console.log('cards in a row, arrows sideways:', await p.$eval(BACK, e => e.title) === 'Move left' && await p.$eval(FWD, e => e.title) === 'Move right');
 console.log('first card: up off', await off(BACK), '| down on', !(await off(FWD)));

@@ -18,7 +18,8 @@ await edit('section:nth-of-type(2) p a.button');
 console.log('link click edits:', await p.evaluate(() => document.activeElement.tagName), 'url still index:', p.url().endsWith('index.html'));
 await p.keyboard.press('Escape');
 // 3 nav stays a link (pinned)
-console.log('nav pinned (no contenteditable after click):', await (async () => { await p.click('nav a[href="about.html"]', { noWaitAfter: true }); await p.waitForLoadState(); return p.url(); })());
+console.log('nav pinned, goes, the change comes along:', await (async () => { await p.click('nav a[href="about.html"]'); await p.waitForURL(/about\.html/); await p.waitForTimeout(400); return p.url().replace(/^.*\//, '') + ' | count ' + await p.$eval('.tf-count', e => e.textContent) + ' | quiet: ' + !(await p.textContent('.tf-status')).includes('came back'); })());
+p.on('dialog', d => d.accept()); /* the plain address below leaves with that change unsaved */
 await p.goto('http://127.0.0.1:8787/demo/index.html');
 console.log('bar on plain link (stored key):', await p.locator('.tf-bar').count());
 // 4 picture swap through the file chooser

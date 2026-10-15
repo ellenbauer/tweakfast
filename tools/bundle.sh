@@ -7,14 +7,16 @@ set -e
 SRC="$1"; OUT="$2"; HERE="$(cd "$(dirname "$0")/.." && pwd)"
 [ -d "$SRC" ] && [ -n "$OUT" ] || { echo "usage: tools/bundle.sh <site folder> <output folder>"; exit 1; }
 rm -rf "$OUT"; mkdir -p "$OUT/_site" "$OUT/functions"
-cp -R "$SRC"/. "$OUT/"
+# the site's files, without what is not for readers: hidden files (.git, .env, .spacefast) and node_modules
+rsync -a --include='.well-known/' --exclude='.*' --exclude='node_modules' "$SRC"/ "$OUT"/
 for f in "$OUT"/*.html; do
   [ -f "$f" ] || continue
   sed -e 's|<script src="[^"]*tweakfast.js"></script>|<script src="/tweakfast.js"></script>|' "$f" > "$OUT/_site/$(basename "$f")"
   rm "$f"
 done
 python3 "$HERE/tools/clean.py" "$OUT"/_site/*.html
-STAMP="$(cd "$HERE" && git log -1 --format=%h 2>/dev/null || echo dev) $(date +%Y-%m-%d)"
+# the editor's version is a short hash of its own text: a changed editor is never an old one from a cache, committed or not
+STAMP="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest()[:10])' "$HERE/src/tweakfast-editor.js")"
 # the loader, on every page: its comments stay in the source, readers get only the code
 sed -e "s/var BUILD = 'dev';/var BUILD = '$STAMP';/" "$HERE/src/tweakfast.js" | python3 -c 'import re,sys; s=re.sub(r"/\*[\s\S]*?\*/", "", sys.stdin.read()); print("\n".join(l.strip() for l in s.splitlines() if l.strip()))' > "$OUT/tweakfast.js"
 sed -e "s/var BUILD = 'dev';/var BUILD = '$STAMP';/" "$HERE/src/tweakfast-editor.js" > "$OUT/tweakfast-editor.js"   # the editor, owner only

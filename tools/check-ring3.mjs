@@ -16,9 +16,9 @@ await p.hover('.tf-row:has-text("Home")'); await p.waitForTimeout(200);
 console.log('shown on the hovered row:', await p.$eval('.tf-row:has-text("Home") .tf-row-acts', e => getComputedStyle(e).opacity === '1'));
 await edit('h1'); await p.keyboard.press('End'); await p.keyboard.type(' G'); await p.keyboard.press('Enter'); await p.waitForTimeout(100);
 await p.click('.tf-button:has-text("Site")'); await p.click('.tf-row-name:has-text("Home")'); await p.waitForTimeout(100);
-console.log('with a change, going asks:', await p.$eval('.tf-status', s => s.textContent.trim()), '| offers:', await p.$$eval('.tf-status button', bs => bs.map(x => x.textContent).join(' / ')), '| still here:', /about\.html/.test(p.url()));
-await p.click('.tf-status button:has-text("Go anyway")'); await p.waitForLoadState(); await p.waitForTimeout(300);
-console.log('Go anyway went Home:', /index\.html/.test(p.url()), '| bar there:', !!(await p.$('.tf-bar')));
+await p.waitForURL(/index\.html/); await p.waitForTimeout(400);
+console.log('with a change, the name just goes and the change comes along: on Home', /index\.html/.test(p.url()), '| count', await p.$eval('.tf-count', e => e.textContent), '| quiet:', !(await p.textContent('.tf-status')).includes('came back'), '| bar there:', !!(await p.$('.tf-bar')));
+await p.click('.tf-button:has-text("Undo")'); await p.waitForTimeout(200);
 await p.click('.tf-button:has-text("Site")'); await p.click('.tf-row-name:has-text("About")'); await p.waitForLoadState(); await p.waitForTimeout(300);
 console.log('clean, the name just goes: back on About:', /about\.html/.test(p.url()));
 await p.click('.tf-button:has-text("Site")');
@@ -60,7 +60,7 @@ console.log('Esc keeps the old name:', await p.$eval('.tf-row[data-path="contact
 { const g = await p.$eval('.tf-row[data-path="contact.html"] .tf-row-grip', e => { const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
   const t = await p.$eval('.tf-row[data-path="about.html"]', e => { const r = e.getBoundingClientRect(); return { y: r.top - 8 }; });
   await p.mouse.move(g.x, g.y); await p.mouse.down(); await p.mouse.move(g.x, g.y - 10); await p.mouse.move(g.x, t.y, { steps: 8 }); await p.mouse.up(); await p.waitForTimeout(700); }
-console.log('dragged Contact up: rows', await p.$$eval('.tf-row', rs => rs.map(r => r.getAttribute('data-path').replace('.html', '')).join(' ')), '| menu here:', await nav());
+console.log('dragged Contact up: rows', await p.$$eval('.tf-row', rs => rs.map(r => (r.getAttribute('data-path') || '-').replace('.html', '')).join(' ')), '| menu here:', await nav());
 await p.click('.tf-button:has-text("Undo")'); await p.waitForTimeout(100);
 console.log('Undo: menu back:', await nav());
 await p.click('.tf-button:has-text("Undo")'); await p.waitForTimeout(100);
