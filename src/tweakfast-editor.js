@@ -122,7 +122,7 @@
         markBlocks();
         if (firstVisit) welcome();
         loaded[here()] = pageHtml();
-        findSaver();
+        findSaver(function () { if (saver) checkKey(); setTimeout(findPages, 600); }); /* the site's pages are looked up early, out of the way of the page's own loading */
         bringBack();
     }
 
@@ -260,7 +260,8 @@
         return {
             put: function (path, html) { if (!(path in was)) was[path] = changes[path]; changes[path] = html; },
             back: function () { for (var p in was) { if (was[p] === undefined) delete changes[p]; else changes[p] = was[p]; } },
-            wrote: function () { return Object.keys(was).length > 0; }
+            wrote: function () { return Object.keys(was).length > 0; },
+            paths: function () { return Object.keys(was); }
         };
     }
     /* the step made here takes the other pages' Undo with it, wherever it now sits among the steps */
@@ -269,8 +270,10 @@
         if (i >= 0) { steps[i] = function () { local(); back(); }; if (notes[i] && notes[i].fn === local) notes[i].fn = steps[i]; }
         else steps.push(back);
     }
+    /* every other page of the site: the menu's, the ones found through the site's links and saves, the ones changed */
     function otherPages() {
         var paths = pageList().map(function (p) { return p.path; });
+        (found || []).forEach(function (p) { if (paths.indexOf(p) < 0) paths.push(p); });
         Object.keys(changes).forEach(function (p) { if (paths.indexOf(p) < 0) paths.push(p); });
         return paths.filter(function (p) { return p !== here() && !drops[p]; });
     }
@@ -441,7 +444,7 @@
         if (panel) closePages(); if (pal) closePal();
         if (editing && editing.contains(e.target)) return;
         if (editing) commit();
-        if (tools && !textTarget(e.target)) { var blk = toolTarget(e.target); if (blk) showTools(blk); else hideTools(); } /* a tap works where there is no hover */
+        if (tools && !textTarget(e.target)) { var blk = toolAt(e.target, e.clientY); if (blk) showTools(blk); else hideTools(); } /* a tap works where there is no hover */
         var link = e.target.closest('a[href]');
         if (link && freshPages[link.getAttribute('href')] && !editing && !held) {
             e.preventDefault(); e.stopPropagation();
@@ -765,7 +768,8 @@
         /* the site's pages, offered as the owner types */
         if (!linkBox.parentNode) {
             linkList.textContent = '';
-            pageList().forEach(function (pg) { var o = el('option'); o.value = pg.path; o.label = pg.name; linkList.appendChild(o); });
+            findPages();
+            pageList().concat(otherList()).forEach(function (pg) { var o = el('option'); o.value = pg.path; o.label = pg.name; linkList.appendChild(o); }); /* the menu's pages, then the others */
             document.body.appendChild(linkBox);
         }
         placeLink();
@@ -1120,6 +1124,19 @@
         if (!node || node.nodeType !== 1 || node.closest('[data-tweakfast],[data-tf="fixed"]')) return null;
         return sharedRootOf(node);
     }
+    /* a section laid out as a column is outlined edge to edge, the band the eye sees; beside its column the pointer is
+       over the page around it (main or what holds it), and the band at that height is the block */
+    function bandAt(node, y) {
+        if (!node || node.nodeType !== 1 || node.closest('[data-tweakfast]')) return null;
+        var main = document.querySelector('main') || document.body;
+        if (!node.contains(main)) return null;
+        for (var c = main.firstElementChild; c; c = c.nextElementSibling) {
+            if (!c.hasAttribute('data-tf-block') || !columnOf(c)) continue;
+            var r = c.getBoundingClientRect(); if (y >= r.top && y < r.bottom) return c;
+        }
+        return null;
+    }
+    function toolAt(node, y) { return toolTarget(node) || bandAt(node, y); }
     function blockTarget(node) {
         if (pinned(node)) return null;
         var main = document.querySelector('main') || document.body;
@@ -1150,6 +1167,7 @@
             if (n.getAttribute('data-tf') === 'block') { n.setAttribute('data-tf-block', ''); if (isRepeated(n) && parents.indexOf(n.parentElement) < 0) parents.push(n.parentElement); continue; }
             if (isButton(n)) { n.setAttribute('data-tf-block', ''); continue; } /* a button is words and a block: copy, remove, move among its own; no plus, Copy makes the next */
             if (buttonHolder(n)) continue; /* what only holds buttons is not one of a kind */
+            if (n.tagName === 'A' && n.hasAttribute('href') && n.textContent.trim() && isRepeated(n) && !ownWords(n.parentElement) && !n.parentElement.closest(TEXT)) { n.setAttribute('data-tf-block', ''); if (parents.indexOf(n.parentElement) < 0) parents.push(n.parentElement); continue; } /* a row of links (a footer's, a list of links): each link a row, copied by the plus; never the menu (pinned) */
             if (/^(LI|DT|DD)$/.test(n.tagName) && isRepeated(n) && !n.closest('nav')) { n.setAttribute('data-tf-block', ''); if (parents.indexOf(n.parentElement) < 0) parents.push(n.parentElement); continue; } /* a list item is text and a block */
             if (isTextLeaf(n) || n.tagName === 'IMG' || n.closest('svg')) continue;
             if (!n.textContent.trim() && !n.querySelector('img')) continue; /* icons and decoration are not blocks */
@@ -1169,15 +1187,28 @@
             if (Math.abs(nx) + Math.abs(ny) > 300) return false;
             return (ptNow.x - ptPrev.x) * nx + (ptNow.y - ptPrev.y) * ny > 0;
         }
-        document.addEventListener('mouseover', function (e) {
-            if (previewing) return;
-            if (tools.contains(e.target)) { clearTimeout(timer); pending = null; return; }
-            var b = toolTarget(e.target);
+        function offer(b) {
             if (!b || b === toolsFor || b === pending) return;
             pending = b; clearTimeout(timer);
             if (!towardTools()) { showTools(b); pending = null; return; }
             timer = setTimeout(function () { if (pending) showTools(pending); pending = null; }, 350);
+        }
+        document.addEventListener('mouseover', function (e) {
+            if (previewing) return;
+            if (tools.contains(e.target)) { clearTimeout(timer); pending = null; return; }
+            offer(toolAt(e.target, e.clientY));
         });
+        /* beside a column the pointer stays over the page around it, which sends no new mouseover going up or down:
+           the band under it is read as it moves, once a frame */
+        var sideMove = null;
+        document.addEventListener('mousemove', function (e) {
+            var first = !sideMove; sideMove = e; if (!first) return;
+            requestAnimationFrame(function () {
+                var m = sideMove; sideMove = null;
+                if (previewing || dragging || toolTarget(m.target)) return;
+                offer(bandAt(m.target, m.clientY));
+            });
+        }, true);
         document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !editing && !held && !picked && !menu && !dragging) hideTools(); });
         /* the lines and tools follow the page once a frame, however many scroll events the frame brings */
         var placeTick = false, placeAll = function () { if (placeTick) return; placeTick = true; requestAnimationFrame(function () { placeTick = false; if (toolsFor) placeTools(); placeTag(); placeEdit(); }); };
@@ -1216,11 +1247,21 @@
         else plus.innerHTML = cross;
         parent.appendChild(plus);
     }
+    /* the page a row leads to, when every row of its list leads to a page of its own (a list of projects, of posts):
+       else null (a list of links to one page, to parts of a page, to other sites) */
+    function rowPage(row) {
+        var lead = function (r) { var a = r.matches('a[href]') ? r : r.querySelector('a[href]'); return a && isPageLink(a) ? pathOf(a) : null; };
+        var mine = lead(row); if (!mine || sharedParts(row.ownerDocument).some(function (p) { return p.contains(row); })) return null; /* the header's and footers' links are copied as links */
+        var seen = [], sig = signature(row);
+        for (var c = row.parentElement.firstElementChild; c; c = c.nextElementSibling) if (signature(c) === sig && !c.hasAttribute('data-tweakfast')) { var p = lead(c); if (!p || seen.indexOf(p) >= 0) return null; seen.push(p); }
+        return seen.length >= 2 ? mine : null;
+    }
     function addItem(plus) {
         var parent = plus.parentElement, last = null;
         for (var c = plus.previousElementSibling; c; c = c.previousElementSibling) if (c.hasAttribute('data-tf-block') && !c.hasAttribute('data-tf-hidden')) { last = c; break; }
         if (!last) for (c = plus.previousElementSibling; c; c = c.previousElementSibling) if (c.hasAttribute('data-tf-block')) { last = c; break; }
         if (!last) return;
+        var leads = rowPage(last); if (leads) { if (!panel) togglePages(); if (panel) openView({ kind: 'add', like: leads }); return; } /* each row leads to its own page: a new row is a new page */
         var twin = makeTwin(last), parentWas = cleanOuter(parent);
         parent.insertBefore(twin, plus);
         steps.push(function () { twin.remove(); });
@@ -1249,10 +1290,28 @@
         /* a moving strip keeps its words: its loop needs the sentence repeated, a placeholder would break it */
         var m = keepsWords(block), keep = null;
         if (m) { var all = block.querySelectorAll('*'), at = Array.prototype.indexOf.call(all, m); keep = at < 0 ? twin : twin.querySelectorAll('*')[at]; if (keep) keep.setAttribute('data-tf-keep', ''); }
+        var nums = numbersIn(twin);
         fillPlaceholders(twin);
+        nextNumbers(twin, nums, block);
         if (keep) keep.removeAttribute('data-tf-keep');
         holders.forEach(addPlus);
         return twin;
+    }
+    /* a row's number (01, 2., 3)) is no words to fill in: a copy takes the next one in its list, written the same way */
+    function numbersIn(root) {
+        var out = [];
+        [root].concat(Array.prototype.slice.call(root.querySelectorAll('*'))).forEach(function (n) { if (!n.children.length && /^\d{1,3}[.)]?$/.test(n.textContent.trim())) out.push({ path: pathFrom(root, n), text: n.textContent.trim() }); });
+        return out;
+    }
+    function nextNumbers(twin, nums, model) {
+        if (!nums.length || !model.parentElement) return;
+        var sig = signature(model);
+        nums.forEach(function (x) {
+            var top = 0, n = walkPath(twin, x.path); if (!n) return;
+            for (var c = model.parentElement.firstElementChild; c; c = c.nextElementSibling) if (signature(c) === sig) { var m = walkPath(c, x.path), v = m && /^(\d{1,3})[.)]?$/.exec(m.textContent.trim()); if (v) top = Math.max(top, +v[1]); }
+            var digits = /^\d+/.exec(x.text)[0], next = String(top + 1); while (next.length < digits.length) next = '0' + next;
+            n.textContent = next + x.text.slice(digits.length);
+        });
     }
     function fillPlaceholders(root) {
         if (root.hasAttribute('data-tf-keep')) return;
@@ -1360,17 +1419,20 @@
         var on = editing || held || picked, at = on && on !== toolsFor && toolsFor.contains(on) ? on.getBoundingClientRect() : null;
         frame(blockBox, r, 6); blockBox.style.display = (toolsFor.hasAttribute('data-tf-block') || sharedParts(document).indexOf(toolsFor) >= 0) && (!at || toolsHover || dragging) ? 'block' : 'none'; blockBox.classList.toggle('tf-block-moving', dragging);
         if (coarse()) { /* a finger: the tools wait in a strip just above the bar, where the thumb is, never over the words a tap is meant for */
-            tools.classList.add('tf-tools-dock'); tools.style.left = tools.style.top = '';
+            tools.classList.add('tf-tools-dock'); tools.style.left = tools.style.top = tools.style.position = '';
             blockBox.style.visibility = ''; placeNote(); return;
         }
         tools.classList.remove('tf-tools-dock'); tools.style.bottom = '';
-        var w = tools.offsetWidth, own = toolsFor.getBoundingClientRect(); /* a band edge to edge: the tools keep to its content, not the window's edge */
+        var w = tools.offsetWidth, own = r; /* the tools sit in the top right corner of the outline the eye sees: a band's is the window's edge */
         var left = Math.min((at || own).right - w - 4, window.innerWidth - w - 8);
-        var h = tools.offsetHeight, top = r.top - 14, floor = 8, cover = topCover();
+        var h = tools.offsetHeight, top = r.top - 14, floor = 8, cover = topCover(), under = null;
         if (cover && !cover.contains(toolsFor)) { /* a menu fixed at the top: the tools and the outline stay below it, never on it */
-            floor = cover.getBoundingClientRect().bottom + 8;
-            if (r.top < floor - 8) { var cut = floor - 8 - r.top; r = { left: r.left, right: r.right, width: r.width, top: floor - 8, bottom: r.bottom, height: Math.max(0, r.height - cut) }; frame(blockBox, r, 6); }
+            floor = cover.getBoundingClientRect().bottom + 8; under = zUnder(cover);
+            /* the outline slides under the menu as the page scrolls, drawn just beneath it: moved by the page itself, it
+               cannot lag. Cut short by us each frame it ran a frame behind the scroll; only when the menu has no layer of its own */
+            if (r.top < floor - 8) { var cut = floor - 8 - r.top; r = { left: r.left, right: r.right, width: r.width, top: floor - 8, bottom: r.bottom, height: Math.max(0, r.height - cut) }; if (under === null) frame(blockBox, r, 6); }
         }
+        blockBox.style.zIndex = under === null ? '' : String(under);
         /* words being typed: the tools keep to the block's own corner, so they read as the block's, not the words'; only
            when that corner would cover the words do they step beside them */
         if (at && editing === on) {
@@ -1379,10 +1441,18 @@
         }
         if (at) { top = at.top - h - 10; if (top < floor) top = picked === on ? Math.max(floor, at.top + 8) : at.bottom + 10; } /* above it; no room: under the words, or inside the picture's top corner, clear of its description */
         else if (r.height < h * 2) { top = r.top - h - 6; if (top < floor) top = r.bottom + 6; } /* a small block, a button: the tools stand clear of it, so its words stay in reach */
-        top = Math.max(floor, top);
+        var held_ = top < floor; top = Math.max(floor, top);
         var gone = at ? at.bottom < floor : r.bottom < top + h; /* scrolled up under the menu: nothing left of it to work on */
         tools.style.visibility = blockBox.style.visibility = gone ? 'hidden' : '';
-        put(tools, Math.max(8, left), top);
+        /* held below the menu, the tools stay put in the window while the page scrolls: fixed there, they need no moving */
+        if (held_ && cover) { tools.style.position = 'fixed'; tools.style.left = Math.max(8, left) + 'px'; tools.style.top = top + 'px'; }
+        else { tools.style.position = ''; put(tools, Math.max(8, left), top); }
+    }
+    /* the layer just beneath a fixed menu, for our outline to pass under it; null when the menu has no layer of its own */
+    function zUnder(cover) {
+        var z = null;
+        for (var n = cover; n && n !== document.body; n = n.parentElement) { var cs = getComputedStyle(n); if (cs.position !== 'static' && /^\d+$/.test(cs.zIndex)) z = +cs.zIndex; }
+        return z !== null && z > 1 ? z - 1 : null;
     }
     /* the part fixed to the top of the window that the page scrolls under (a fixed or sticky header), else null */
     function topCover() {
@@ -1499,7 +1569,7 @@
         return { t: block, sides: [{ part: block }] };
     }
     /* a big part: a section, the header, a footer, a block straight in main */
-    function isBig(b) { return !!(b.parentElement && b.parentElement.matches('main') || b.matches('section,header,footer') || sharedParts(document).indexOf(b) >= 0); }
+    function isBig(b) { return !!(b.parentElement && b.parentElement.matches('main') || b.matches('section,header,footer') || sharedParts(b.ownerDocument).indexOf(b) >= 0); }
     function openLooks() {
         var b = toolsFor, ch = choicesFor(b); if (!ch) { lookBtn.style.display = 'none'; return; }
         var t = ch.t;
@@ -1520,7 +1590,14 @@
     }
     /* only what can be had and looks different is offered: a row that cannot be had here is left out */
     function swatchItem(r, take) {
-        return { swatch: { ground: r.o.ground, ink: r.o.look.color }, word: r.word, now: r.o.now, fn: r.o.now ? function () {} : function () { take(r.o); } };
+        return { swatch: { ground: r.o.ground, ink: nameInk(r.o.ground, r.o.look.color) }, word: r.word, now: r.o.now, fn: r.o.now ? function () {} : function () { take(r.o); } };
+    }
+    /* the row's name is written in the words' colour on that ground; where the part has no words to judge it by (a
+       picture), that colour may not read, and the name takes the site's colour that reads best there */
+    function nameInk(ground, ink) {
+        var g = rgbOf(ground), i = rgbOf(ink); if (!g || !i || contrast(g, i) >= 3) return ink;
+        var best = i; sitePairs().forEach(function (p) { [p.g, p.i].forEach(function (c) { var v = rgbOf(c); if (v && contrast(g, v) > contrast(g, best)) best = v; }); });
+        return contrast(g, best) >= 3 ? rgbText(best) : (lum(g) > .4 ? '#1d1d1f' : '#fff');
     }
     /* the Look of a ground is the same four rows everywhere: light, dark, colour and inverted. A row that cannot be had
        here stays, greyed, and says why. Each of the first three is the site's own: the ground the block has now, else
@@ -1548,7 +1625,9 @@
             return { word: k, off: bad ? WHY[bad.why] : 'This site has no ' + (k === 'colour' ? 'coloured' : k) + ' background.' };
         });
         var f = list.filter(function (o) { return o.flip; })[0];
-        var twin = f && f.ok && rows.filter(function (r) { return r.o && (alike(r.o, f) || sameByEye(r.o, f)); })[0]; /* swapped, it is a row already there */
+        var bare = !b.innerText.trim(); /* no words (a picture): only the ground shows, so the ground alone tells rows apart */
+        var groundAlike = function (x, y) { var p = rgbOf(x.ground), q = rgbOf(y.ground); return !!p && !!q && Math.abs(p.r - q.r) + Math.abs(p.g - q.g) + Math.abs(p.b - q.b) < 45; };
+        var twin = f && f.ok && rows.filter(function (r) { return r.o && (alike(r.o, f) || sameByEye(r.o, f) || bare && groundAlike(r.o, f)); })[0]; /* swapped, it is a row already there */
         rows.push(twin ? { word: 'inverted', off: 'Same as ' + twin.word + ' here.' } : f && f.ok ? { o: f, word: 'inverted' } : { word: 'inverted', off: f ? WHY[f.why] : list.flipWhy || 'The background here is a picture.' });
         return rows;
     }
@@ -1801,6 +1880,7 @@
             /* the tick: the choice that is what the block has now */
             var samePair = function (x, y) { return !x && !y || !!x && !!y && !x.flip === !y.flip && same(x.g) === same(y.g) && same(x.i) === same(y.i); };
             list.forEach(function (o) { o.now = o.ok && (o.cls || '') === (was || '') && samePair(o.pair, held); });
+            if (!list.some(function (o) { return o.now; })) { var seen = groundLook(b), tick = list.filter(function (o) { return o.ok && !o.flip && (alike(o, seen) || sameByEye(o, seen)); })[0]; if (tick) tick.now = true; } /* a Look that now looks as the part came: that row */
         }
         b[classOnly ? '_tfGroundsC' : '_tfGrounds'] = { at: era, list: list };
         return list;
@@ -1889,11 +1969,24 @@
     }
     /* the page's ground taken here, then on every other page whose ground was the same. Each other page is laid out
        unseen (no scripts run in it), so its quiet words and lines follow the new ground as they do here. */
+    /* a Look is a choice (light, dark, a colour), not colours fixed for the ground around it when it was made: when the
+       page's ground changes, every part inside it that has a Look of its own takes the same choice again against the
+       new ground, so its words keep reading. Answers the way back. */
+    function relook(page, doc, change) {
+        var back = Array.prototype.filter.call(doc.querySelectorAll('[data-tf-tint]'), function (t) { return t.tagName !== 'STYLE' && t !== page && !t.contains(page); }) /* parts, not our own style elements */
+            .map(function (t) { return { t: t, state: tintState(t), from: groundFrom(t), pair: tintPair(t) }; });
+        still(function () {
+            back.forEach(function (x) { untint(x.t); }); /* set aside, so the page's colours reach them as they came */
+            change();
+            back.forEach(function (x) { retintNow(x.t, x.from, x.pair); }); /* outer first: document order */
+        });
+        return function () { back.slice().reverse().forEach(function (x) { setTint(x.t, x.state); }); };
+    }
     function takePageGround(b, o) {
         var was = b.getAttribute('class'), tintWas = tintState(b), from = groundFrom(b), path = pathFrom(document.body, b);
         var tintText = function (n) { var t = tintStyle(n); return t ? t.textContent : ''; }, before = tintText(b);
-        putAttr(b, 'class', o.cls); retint(b, from, o.pair);
-        var local = function () { putAttr(b, 'class', was); setTint(b, tintWas); };
+        putAttr(b, 'class', o.cls); var relooked = relook(b, document, function () { retintNow(b, from, o.pair); });
+        var local = function () { putAttr(b, 'class', was); setTint(b, tintWas); relooked(); };
         steps.push(local);
         refresh(); if (panel && view && view.kind === 'pages') renderPages();
         once('ground', 'The colours come from this site. Undo brings the old ones back.');
@@ -1924,7 +2017,7 @@
                         var there = doc && walkPath(doc.body, path);
                         if (!there || there.tagName !== b.tagName || (there.getAttribute('class') || '') !== (was || '') || tintText(there) !== before) { differ.push(path_); return; }
                         var calmIt = doc.createElement('style'); calmIt.textContent = '*,*::before,*::after{transition:none!important;animation:none!important}'; doc.head.appendChild(calmIt);
-                        var fromThere = groundFrom(there); putAttr(there, 'class', o.cls); retintNow(there, fromThere, o.pair);
+                        var fromThere = groundFrom(there); putAttr(there, 'class', o.cls); relook(there, doc, function () { retintNow(there, fromThere, o.pair); }); roomsNow(doc); coverGround(doc);
                         calmIt.remove(); scrub(doc.body);
                         led.put(path_, serialize(doc));
                     }, after);
@@ -1940,9 +2033,9 @@
     }
     /* a page laid out out of sight, at this window's width, with the site's styles and none of its scripts.
        A page that has not loaded in 8 seconds is not read at all: without its stylesheet its colours would be wrong. */
-    function unseen(html, fn, after) {
+    function unseen(html, fn, after, width) {
         var f = document.createElement('iframe'); f.setAttribute('data-tweakfast', ''); f.setAttribute('sandbox', 'allow-same-origin'); f.setAttribute('aria-hidden', 'true'); f.tabIndex = -1;
-        f.style.cssText = 'position:fixed;left:-20000px;top:0;width:' + window.innerWidth + 'px;height:' + window.innerHeight + 'px;border:0;visibility:hidden;pointer-events:none';
+        f.style.cssText = 'position:fixed;left:-20000px;top:0;width:' + (width || window.innerWidth) + 'px;height:' + window.innerHeight + 'px;border:0;visibility:hidden;pointer-events:none';
         var done = false, end = function (late) { if (done) return; done = true; var d = null; try { d = late ? null : f.contentDocument; } catch (e) {} try { fn(d && d.body ? d : null); } catch (e) { fn(null); } f.remove(); after(); };
         f.addEventListener('load', function () { end(false); }); setTimeout(function () { end(true); }, 8000);
         f.srcdoc = html; document.body.appendChild(f);
@@ -2029,12 +2122,14 @@
         if (pair) { b.style.setProperty('background-color', pair.g, 'important'); b.style.setProperty('color', pair.i, 'important'); }
         B = parts.map(tintRead); HB = tintHovers(b); var g1 = behind(b), i1 = rgbOf(getComputedStyle(b).color), band = bare0 && bandOf(b);
         if (pair) putAttr(b, 'style', styleWas);
-        var id = Math.random().toString(36).slice(2, 7), rules = [], own = [];
+        var id = Math.random().toString(36).slice(2, 7), rules = [], own = [], depth = 1;
+        for (var up = b.parentElement; up; up = up.parentElement) if (up.hasAttribute('data-tf-tint')) depth++;
         if (pair) rules.push('[data-tf-tint="' + id + '"]{background-color:' + pair.g + '!important;color:' + pair.i + '!important}');
         var mixes = g0 && g1 && i0 && i1 && contrast(g0, i0) >= 2 && contrast(g1, i1) >= 2 /* not a picture ground, and an ink to read a mix from */
             && !(same('rgba(' + [g0.r, g0.g, g0.b, g0.a] + ')') === same('rgba(' + [g1.r, g1.g, g1.b, g1.a] + ')') && same('rgba(' + [i1.r, i1.g, i1.b, i1.a] + ')') === same('rgba(' + [i0.r, i0.g, i0.b, i0.a] + ')')); /* the same pair: nothing to bring along */
         if (mixes) parts.forEach(function (n, j) {
             if (own.some(function (o) { return o.contains(n); })) return; /* inside a part with its own ground: that part keeps its ink */
+            if (n !== b && n.hasAttribute('data-tf-tint')) { own.push(n); return; } /* a part with a Look of its own keeps it: it is its choice, not the page's colours */
             var a = A[j], z = B[j], set = [];
             var bgOwn = a.image || opaque(a.backgroundColor) && !remix(a.backgroundColor, g0, i0, g1, i1);
             if (n === b) return; /* the block's own ground and ink are the class's */
@@ -2051,7 +2146,7 @@
                 }
                 if (m && m !== a[k]) set.push(TINT[k] + ':' + m + '!important');
             }
-            if (set.length) { mark(n, id + '-' + j); rules.push('[data-tf-t~="' + id + '-' + j + '"]{' + set.join(';') + '}'); }
+            if (set.length) { mark(n, id + '-' + j); rules.push(new Array(depth + 1).join('[data-tf-t~="' + id + '-' + j + '"]') + '{' + set.join(';') + '}'); } /* a Look inside another Look wins over it */
         });
         if (mixes) HA.forEach(function (a, j) {
             var z = HB[j], h = a.h, set = []; if (!z || z.h !== h) return;
@@ -2065,12 +2160,152 @@
             if (dec('border-color') && z.borderTopColor === a.borderTopColor) { var mb = remix(a.borderTopColor, g0, i0, g1, i1); if (mb) set.push('border-color:' + mb + '!important'); }
             if (set.length) rules.push(':is([data-tf-tint="' + id + '"],[data-tf-tint="' + id + '"] *):is(' + h.sel + ',' + h.base + '[data-tf-hover]){' + set.join(';') + '}');
         });
-        if (band) rules.push('[data-tf-tint="' + id + '"]{box-shadow:0 0 0 100vw ' + band + '!important;clip-path:inset(0 -100vw)!important}');
+        if (band) rules.push('[data-tf-tint="' + id + '"]{box-shadow:0 0 0 100vw ' + band + '!important;clip-path:inset(0 -100vw)!important}'); /* edge to edge; the room above and below is the page's, per screen size */
         var seen = {}; rules = rules.filter(function (r) { return seen[r] ? false : (seen[r] = true); });
         if (!rules.length) return;
         var st = document.createElement('style'); st.setAttribute('data-tf-tint', ''); st.setAttribute('data-tf-from', from || ''); st.textContent = rules.join('\n');
         if (pair) { st.setAttribute('data-tf-pair', pair.g + '|' + pair.i); if (pair.flip) st.setAttribute('data-tf-flip', ''); }
         b.setAttribute('data-tf-tint', id); b.appendChild(st);
+    }
+    /* a menu fixed to the top of the window must read over whatever scrolls under it. As the site was made, a see-through
+       menu's words were chosen for what passes under it; once colours change here (the page, a section, the menu's own
+       Look) its words change and what passes under does not. So from the first colour change on a page, such a menu
+       wears glass in its own colour (its Look, else the page's ground): the colour at 85% with a blur, drawn behind its
+       words. When that colour is the page's own, the glass comes in over the first 64 px of scroll, so an opening picture
+       under the menu stays as the site made it; browsers without scroll timelines show it from the start. A menu with a
+       ground of its own as made, or one that scrolls away, is left alone. A rule in the head, not a mark in the menu:
+       the menu is the same on every page. */
+    function coverGround(doc) {
+        if (!doc.head) return;
+        var main = doc.querySelector('main') || doc.body, old = doc.head.querySelector('style[data-tf-cover]'), rules = [];
+        if (doc.querySelector('[data-tf-tint]')) {
+            if (old) old.media = 'not all'; /* read the page without our glass */
+            var tall = (doc.defaultView || window).innerHeight, seen = [];
+            Array.prototype.forEach.call(doc.querySelectorAll('header,nav,[role="banner"]'), function (n) {
+                for (; n && n !== doc.body && n !== doc.documentElement; n = n.parentElement) {
+                    var pos = getComputedStyle(n).position; if (pos !== 'fixed' && pos !== 'sticky') continue;
+                    if (seen.indexOf(n) >= 0 || n.contains(main)) return; seen.push(n);
+                    var r = n.getBoundingClientRect(); if (r.top > 2 || r.height >= tall / 2) return;
+                    if (!bareAsMade(n)) return;
+                    var cs = getComputedStyle(n), under = behind(n.parentElement), own = cs.backgroundImage === 'none' && opaque(cs.backgroundColor) ? rgbOf(cs.backgroundColor) : null, g = own || under;
+                    if (!g) return;
+                    var sel = steadySel(n), rgb = [g.r, g.g, g.b].join(',');
+                    var sameAs = function (c) { return c && same('rgb(' + rgb + ')') === same('rgb(' + [c.r, c.g, c.b].join(',') + ')'); };
+                    var atTop = (doc._tfTop || []).filter(function (x) { return x.top < r.height; }); /* grounds given here that reach under the menu at the page's top */
+                    var fades = (!own || sameAs(under)) && atTop.every(function (x) { return sameAs(x.g); });
+                    rules.push(sel + '::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background:rgba(' + rgb + ',.85);-webkit-backdrop-filter:saturate(1.8) blur(20px);backdrop-filter:saturate(1.8) blur(20px)}');
+                    if (fades) rules.push('@supports (animation-timeline:scroll()){' + sel + '::before{animation:tf-glass linear both;animation-timeline:scroll(root);animation-range:0 64px}}');
+                    return;
+                }
+            });
+            if (rules.some(function (x) { return /tf-glass/.test(x); })) rules.push('@keyframes tf-glass{from{opacity:0}to{opacity:1}}');
+            if (old) old.removeAttribute('media');
+        }
+        var text = rules.join('\n');
+        if ((old ? old.textContent : '') === text) return;
+        if (old) old.remove();
+        if (!text) return;
+        var st = doc.createElement('style'); st.setAttribute('data-tf-cover', ''); st.textContent = text; doc.head.appendChild(st);
+    }
+    /* the free space around the parts given a ground here, worked out again after every change, so the order of the
+       changes does not matter: toward a neighbour on the same ground the ground reaches all the way, so no strip of
+       the page's ground is left between them (a section and the footer, two light sections); toward anything else
+       halfway, up to 64 px for a band, 24 px for a card; with nothing past it, to the page's edge. The neighbour is the next thing on the page above or below,
+       in whatever holds it; beside a card, its own siblings. One rule per part in the head, over the one in its tint. */
+    /* the room is measured on this screen, and once more on a page laid out out of sight at the other kind of width (a
+       phone's, or a computer's when this is a phone): each set is used only at its own screen size. A page measured at
+       one size alone keeps its room to that size; elsewhere its grounds keep to their own boxes. */
+    var PHONE = 767, roomOther = '', roomTimer = 0;
+    function roomsNow(doc, settled) {
+        if (!doc.head) return;
+        var old = doc.head.querySelector('style[data-tf-room]'), w = (doc.defaultView || window).innerWidth, wide = w > PHONE;
+        if (old) old.media = 'not all';
+        var mine = roomRules(doc).join('\n'), other = doc === document ? roomOther : '';
+        if (old) old.removeAttribute('media');
+        var size = function (big) { return '@media (' + (big ? 'min-width:' + (PHONE + 1) : 'max-width:' + PHONE) + 'px)'; };
+        var text = (mine ? size(wide) + '{\n' + mine + '\n}' : '') + (mine && other ? '\n' + size(!wide) + '{\n' + other + '\n}' : '');
+        if (doc === document && !settled) { clearTimeout(roomTimer); if (mine) roomTimer = setTimeout(function () { otherRoom(wide); }, 700); else roomOther = ''; }
+        if ((old ? old.textContent : '') === text) return;
+        if (old) old.remove();
+        if (!text) return;
+        var st = doc.createElement('style'); st.setAttribute('data-tf-room', ''); st.textContent = text; doc.head.appendChild(st);
+    }
+    function otherRoom(wide) {
+        if (locked || previewing) return;
+        unseen(quietHtml(), function (d) {
+            if (!d) return;
+            var was = d.head && d.head.querySelector('style[data-tf-room]'); if (was) was.remove(); /* measured as the site has it, not with the room drawn already */
+            var rules = roomRules(d).join('\n'); if (rules === roomOther) return;
+            roomOther = rules;
+            var notedNow = lastHtml !== null && lastHtml === quietHtml(); /* the room is part of the last change, not a change of its own */
+            still(function () { roomsNow(document, true); });
+            if (notedNow) lastHtml = quietHtml();
+            laterDraft();
+        }, function () {}, wide ? 390 : 1280);
+    }
+    function roomRules(doc) {
+        var rules = [], shared = sharedParts(doc); doc._tfTop = [];
+        Array.prototype.forEach.call(doc.querySelectorAll('[data-tf-tint]'), function (b) {
+            if (b.tagName === 'STYLE' || shared.some(function (p) { return p.contains(b); }) || b.contains(doc.querySelector('main') || doc.body)) return;
+            var cs = getComputedStyle(b); if (/^(fixed|sticky)$/.test(cs.position) || cs.backgroundImage !== 'none' || seeThrough(cs.backgroundColor)) return;
+            if (!bareAsMade(b, true)) return;
+            var band = columnOf(b, true), g = rgbOf(cs.backgroundColor), cap = band ? 64 : 24, r = b.getBoundingClientRect(), o = { t: cap, r: cap, b: cap, l: cap };
+            var sameG = function (n) { var v = behind(n); return v && Math.abs(v.r - g.r) + Math.abs(v.g - g.g) + Math.abs(v.b - g.b) < 12; };
+            if (band) [['t', -1], ['b', 1]].forEach(function (side) {
+                var n = nextOnPage(b, side[1]), w = doc.defaultView || window;
+                if (!n) { o[side[0]] = Math.max(0, side[1] > 0 ? doc.documentElement.scrollHeight - (r.bottom + w.scrollY) : r.top + w.scrollY); return; } /* nothing past it: the page's edge */
+                var q = n.getBoundingClientRect(), gap = side[1] > 0 ? q.top - r.bottom : r.top - q.bottom; if (gap < 0) { o[side[0]] = 0; return; }
+                o[side[0]] = sameG(n) ? gap : Math.min(cap, gap / 2);
+            });
+            if (!band) for (var s = b.parentElement && b.parentElement.firstElementChild; s; s = s.nextElementSibling) { /* a card: halfway to its siblings across from it, at most 24 px */
+                if (s === b || s.closest('[data-tweakfast]') || /^(SCRIPT|STYLE)$/.test(s.tagName)) continue;
+                var q = s.getBoundingClientRect(); if (!q.width || !q.height) continue;
+                var acrossX = Math.min(r.right, q.right) - Math.max(r.left, q.left) > 0, acrossY = Math.min(r.bottom, q.bottom) - Math.max(r.top, q.top) > 0;
+                if (acrossY && q.right <= r.left + 1) o.l = Math.min(o.l, (r.left - q.right) / 2); else if (acrossY && q.left >= r.right - 1) o.r = Math.min(o.r, (q.left - r.right) / 2);
+                if (acrossX && q.bottom <= r.top + 1) o.t = Math.min(o.t, (r.top - q.bottom) / 2); else if (acrossX && q.top >= r.bottom - 1) o.b = Math.min(o.b, (q.top - r.bottom) / 2);
+            }
+            var par = b.parentElement, ps = par && getComputedStyle(par);
+            if (ps && (ps.backgroundImage !== 'none' || !seeThrough(ps.backgroundColor))) { var pr = par.getBoundingClientRect(); o.t = Math.min(o.t, r.top - pr.top); o.b = Math.min(o.b, pr.bottom - r.bottom); o.l = Math.min(o.l, r.left - pr.left); o.r = Math.min(o.r, pr.right - r.right); }
+            ['t', 'r', 'b', 'l'].forEach(function (k) { o[k] = Math.max(0, Math.ceil(o[k])); });
+            doc._tfTop.push({ top: r.top + (doc.defaultView || window).scrollY - o.t, g: g }); /* where its ground begins on the page */
+            var sel = 'html body [data-tf-tint="' + b.getAttribute('data-tf-tint') + '"]', col = cs.backgroundColor;
+            if (band) rules.push(sel + '{box-shadow:0 0 0 100vw ' + col + '!important;clip-path:inset(-' + o.t + 'px -100vw -' + o.b + 'px)!important}');
+            else { var R = Math.max(o.t, o.r, o.b, o.l); if (R) rules.push(sel + '{box-shadow:0 0 0 ' + R + 'px ' + col + '!important;clip-path:inset(-' + o.t + 'px -' + o.r + 'px -' + o.b + 'px -' + o.l + 'px)!important}'); }
+        });
+        return rules;
+    }
+    /* the next part on the page above (-1) or below (1): a sibling, else its holder's, as far up as it takes; only parts
+       that are drawn */
+    function nextOnPage(b, dir) {
+        for (var n = b; n && n !== n.ownerDocument.body; n = n.parentElement) {
+            for (var s = dir > 0 ? n.nextElementSibling : n.previousElementSibling; s; s = dir > 0 ? s.nextElementSibling : s.previousElementSibling) {
+                if (s.hasAttribute('data-tweakfast') || /^(SCRIPT|STYLE|TEMPLATE)$/.test(s.tagName) || s.classList.contains('tf-plus')) continue;
+                var cs = getComputedStyle(s); if (/^(fixed|absolute)$/.test(cs.position)) continue;
+                var q = s.getBoundingClientRect(); if (q.width && q.height) return s;
+            }
+        }
+        return null;
+    }
+    /* a selector for one part that holds when the site's own scripts add things to the page (a cookie bar before the
+       header): its id; else its tag and classes when they name it alone; else that, from the nearest holder that has an
+       id or a name of its own; the count of children from the top only as the last way */
+    function steadySel(n) {
+        var doc = n.ownerDocument, esc = function (x) { return window.CSS && CSS.escape ? CSS.escape(x) : x.replace(/([^\w-])/g, '\\$1'); };
+        var own = function (x) { if (x.id) return '#' + esc(x.id); var c = Array.prototype.filter.call(x.classList, function (k) { return k.indexOf('tf-') !== 0; }); return x.tagName.toLowerCase() + c.map(function (k) { return '.' + esc(k); }).join(''); };
+        var one = function (sel) { try { return doc.querySelectorAll(sel).length === 1 && doc.querySelector(sel) === n; } catch (e) { return false; } };
+        if (one(own(n))) return own(n);
+        for (var up = n.parentElement; up && up !== doc.body; up = up.parentElement) { var sel = own(up) + ' ' + own(n); if (one(sel)) return sel; }
+        return 'body' + pathFrom(doc.body, n).map(function (s) { return '>:nth-child(' + (s.i + 1) + ')'; }).join('');
+    }
+    /* a part as the site made it, before any Look here: no ground of its own, so the page shows through */
+    function bareAsMade(n, plain) {
+        var st = tintStyle(n), cls = n.getAttribute('class'), from = groundFrom(n);
+        if (st) st.media = 'not all';
+        if ((from || '') !== (cls || '')) putAttr(n, 'class', from || null);
+        var cs = getComputedStyle(n), bare = cs.backgroundImage === 'none' && seeThrough(cs.backgroundColor) && (!plain || cs.boxShadow === 'none' && cs.clipPath === 'none' && !(parseFloat(cs.borderTopLeftRadius) > 0)); /* plain: nor a shadow, a clip or round corners of its own */
+        if ((from || '') !== (cls || '')) putAttr(n, 'class', cls);
+        if (st) st.removeAttribute('media');
+        return bare;
     }
     /* a section laid out as a column in the middle of the page, with no ground of its own, shows the page's ground on
        both sides. Given a ground, it takes it from edge to edge as a band, the way a reader sees a section; its words stay
@@ -2084,11 +2319,11 @@
     /* a big part laid out as a column in the middle of a page that is itself edge to edge; wide: also when this screen
        (a phone) shows the column full width */
     function columnOf(b, wide) {
-        if (!b || !isBig(b) || sharedParts(document).indexOf(b) >= 0) return false;
-        var cs = getComputedStyle(b), page = document.documentElement.clientWidth, w = b.getBoundingClientRect().width;
+        if (!b || !isBig(b) || sharedParts(b.ownerDocument).indexOf(b) >= 0) return false;
+        var doc = b.ownerDocument, cs = getComputedStyle(b), page = doc.documentElement.clientWidth, w = b.getBoundingClientRect().width; /* the page it is on: a page laid out out of sight has its own width */
         if (w >= page - 1 && !(wide && cs.maxWidth !== 'none')) return false;
         if (w < page / 3) return false; /* a narrow block beside others is not a section */
-        for (var n = b.parentElement; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+        for (var n = b.parentElement; n && n !== doc.body && n !== doc.documentElement; n = n.parentElement) {
             var ns = getComputedStyle(n); if (ns.backgroundImage === 'none' && seeThrough(ns.backgroundColor)) continue;
             return n.getBoundingClientRect().width >= page - 1;
         }
@@ -2368,14 +2603,16 @@
     var changes = {};          /* other pages that Done must write: path -> html */
     var freshPages = {};       /* pages added in this visit and not saved yet: they cannot be opened before Done */
     var saver = null;          /* '/api/save' when the site has the saving route */
+    var saverKnown = false;    /* whether the site has answered that yet */
     var noRoute = false;       /* the site answered, and has no saving route: Done saves files */
     var demo = false;          /* a public demo: Done shows the change to this visitor only, nothing is written */
     function findSaver(then) {
         fetch('/api/save', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json().catch(function () { return null; }) : (r.status === 404 || r.status === 405 ? null : Promise.reject()); }).then(function (j) {
             if (j && j.tweakfast === 'save') { saver = '/api/save'; noRoute = false; if (panel) renderPages(); if (!then) checkKey(); }
             else noRoute = true;
+            saverKnown = true;
             if (then) then();
-        }, function () { if (then) then(); });
+        }, function () { saverKnown = true; if (then) then(); });
     }
     /* a wrong or old link is told on arrival, not after twenty minutes of edits */
     function checkKey() {
@@ -2400,7 +2637,7 @@
     function menuLinks(nav) {
         var all = nav.querySelectorAll('a[href]'), groups = [], best = null, i;
         for (i = 0; i < all.length; i++) if (isPageLink(all[i])) {
-            var parent = all[i].parentElement, g = null;
+            var parent = entryOf(all[i]).parentElement, g = null;
             for (var k = 0; k < groups.length; k++) if (groups[k].parent === parent) g = groups[k];
             if (!g) { g = { parent: parent, links: [] }; groups.push(g); }
             g.links.push(all[i]);
@@ -2410,6 +2647,32 @@
         var out = [], paths = best.links.map(pathOf);
         for (i = 0; i < best.links.length; i++) if (paths.indexOf(paths[i], i + 1) < 0) out.push(best.links[i]); /* the same page again later: this one is the logo */
         return out;
+    }
+    /* a menu entry: the link, or the list item that holds it */
+    function entryOf(a) { return a.parentElement && a.parentElement.tagName === 'LI' ? a.parentElement : a; }
+    /* the menu's entries that are words: a logo's letter or picture alone is no menu to add to */
+    function menuEntries(nav) { return nav ? menuLinks(nav).filter(function (a) { return a.textContent.replace(/\s+/g, '').length > 2; }) : []; }
+    /* a new entry is a twin of the menu's own: the same wrapper and look, its words and address new, never marked as
+       the page being read. Placed after the last entry, with the same spacing the menu has between its entries. */
+    function addEntry(nav, d, path, name, current) {
+        var list = menuEntries(nav); if (!list.length) return false;
+        var plain = list.filter(function (a) { return !a.hasAttribute('aria-current') && !a.hasAttribute('data-tf-hidden') && !/\b(active|current|selected|is-active)\b/i.test((a.getAttribute('class') || '') + ' ' + (entryOf(a).getAttribute('class') || '')); });
+        var model = (plain.length ? plain : list)[(plain.length ? plain : list).length - 1], last = entryOf(list[list.length - 1]);
+        var twin = entryOf(model).cloneNode(true), a = twin.tagName === 'A' ? twin : twin.querySelector('a[href]');
+        [twin].concat(Array.prototype.slice.call(twin.querySelectorAll('*'))).forEach(function (n) {
+            n.removeAttribute('id'); n.removeAttribute('aria-current'); n.removeAttribute('data-tf-hidden'); n.removeAttribute('hidden');
+            if (n.getAttribute('style')) n.style.removeProperty('display');
+            var c = n.getAttribute('class'); if (c) putAttr(n, 'class', c.split(/\s+/).filter(function (k) { return !/^(active|current|selected|is-active)$/i.test(k); }).join(' '));
+        });
+        a.setAttribute('href', path);
+        var texts = [], walk = d.createTreeWalker(a, 4), t; while ((t = walk.nextNode())) if (t.nodeValue.trim()) texts.push(t);
+        /* the words take the name; an icon or a mark beside them (no letters) stays */
+        var letters = function (n) { return (n.nodeValue.match(/[\p{L}\p{N}]/gu) || []).length; }, words = texts.filter(letters).sort(function (x, y) { return letters(y) - letters(x); });
+        if (words.length) { words[0].nodeValue = words[0].nodeValue.replace(/\S[\s\S]*\S|\S/, name); words.slice(1).forEach(function (n) { n.nodeValue = ''; }); } else a.appendChild(d.createTextNode(name));
+        if (current) a.setAttribute('aria-current', 'page');
+        var gap = last.previousSibling && last.previousSibling.nodeType === 3 && !last.previousSibling.nodeValue.trim() ? last.previousSibling.nodeValue : '';
+        last.parentNode.insertBefore(twin, last.nextSibling); if (gap) last.parentNode.insertBefore(d.createTextNode(gap), twin);
+        return true;
     }
     function homePath() {
         var nav = menuOf(document);
@@ -2433,6 +2696,43 @@
         if (!nav) return list;
         menuLinks(nav).forEach(function (a) { list.push({ path: pathOf(a), name: pageName(a), hidden: a.hasAttribute('data-tf-hidden'), link: a }); });
         return list;
+    }
+    /* every page of the site, not only the menu's: a site without a menu (a portfolio, a landing page) links its pages
+       from its words. Found once, when first asked for: the pages the menu names, each page any of them links to, as far
+       as the links go, and the pages saved here. Until then (and on a site that cannot be read) the menu's alone. */
+    var found = null, finding = false;
+    function findPages() {
+        if (found || finding || !saverKnown) return; finding = true; /* the saved pages are asked for once the site says it saves; asked earlier, they would be missed for good */
+        var seen = [here()], queue = [], all = [here()];
+        var add = function (p) { if (p && seen.indexOf(p) < 0 && seen.length < 60) { seen.push(p); queue.push(p); } };
+        var linksIn = function (doc) { Array.prototype.forEach.call(doc.querySelectorAll('a[href]'), function (a) { if (isPageLink(a) && !a.closest('[data-tweakfast]')) add(pathOf(a)); }); };
+        pageList().forEach(function (pg) { add(pg.path); });
+        linksIn(document);
+        var end = function () { finding = false; found = all; if (panel && view.kind === 'pages') renderPages(); };
+        var running = 0, crawl = function () { /* four at a time */
+            while (running < 4 && queue.length) (function (path) {
+                running++;
+                loadPage(path, function (html) { running--; if (html !== null) { all.push(path); linksIn(parse(html)); } crawl(); });
+            })(queue.shift());
+            if (!running && !queue.length) end();
+        };
+        if (!saver) { crawl(); return; }
+        fetch('/api/pages', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: key }) })
+            .then(function (r) { return r.ok ? r.json() : null; }, function () { return null; })
+            .then(function (j) { ((j && j.pages) || []).forEach(function (pg) { if (/^[\w-]+\.html$/.test(pg.path)) add(pg.path); }); crawl(); });
+    }
+    /* the pages outside the menu: found ones, those added here, and this one when the menu does not name it */
+    function otherList() {
+        var menu = pageList().map(function (pg) { return pg.path; }), paths = (found || [here()]).slice();
+        Object.keys(changes).forEach(function (p) { if (paths.indexOf(p) < 0) paths.push(p); });
+        return paths.filter(function (p) { return menu.indexOf(p) < 0 && !drops[p]; }).sort().map(function (p) {
+            var title = freshPages[p] && changes[p] ? (parse(changes[p]).title || '').trim() : '';
+            return { path: p, name: title || fileName(p), fresh: !!freshPages[p], other: true };
+        });
+    }
+    function fileName(p) {
+        p = p.replace(/\.html?$/, ''); if (!p || p === 'index') return 'Home';
+        p = p.replace(/[-_]+/g, ' '); return p.charAt(0).toUpperCase() + p.slice(1);
     }
     /* the sheet shows one view at a time: the pages, or one page's words for Google, its versions, or Add a page */
     var view = { kind: 'pages' }, menu = null;
@@ -2592,7 +2892,8 @@
     var pal = null, palField = null, palRows = [], palAt = 0, MAC = /Mac|iPhone|iPad/.test(navigator.platform);
     function palItems() {
         var list = pageList(), home = homePath(), out = [], n = steps.length;
-        list.forEach(function (pg) {
+        findPages();
+        list.concat(otherList()).forEach(function (pg) {
             out.push({ group: 'Pages', icon: 'page', word: pg.name, tag: pg.path === here() ? 'This page' : pg.path === home ? 'Home' : pg.hidden ? 'hidden' : '', fn: function () { goTo(pg.path); } });
         });
         out.push({ group: 'Actions', icon: 'eye', word: 'Preview', fn: enterPreview });
@@ -2679,7 +2980,13 @@
     }
     function drawPages(dir) {
         panel.innerHTML = '';
-        var list = pageList(), home = homePath();
+        findPages();
+        var list = pageList(), home = homePath(), others = otherList();
+        if (list.length && !menuEntries(menuOf(document)).length) { /* no menu of words (a logo alone): one plain list, Home first, nothing to order */
+            others = list.map(function (pg) { return { path: pg.path, name: pg.name, other: true }; }).concat(others.filter(function (o) { return !list.some(function (pg) { return pg.path === o.path; }); }));
+            list = [];
+        }
+        var menuless = !list.length;
         var head = el('div', 'tf-sheet-head'), body = el('div', 'tf-sheet-body' + (dir ? ' tf-' + dir : ''));
         panel.appendChild(head); panel.appendChild(body);
         if (view.kind !== 'pages') { /* a page's view: a chevron back to the list, the page's name as the title */
@@ -2689,11 +2996,11 @@
             else if (view.kind === 'share') showShare(body);
             else if (view.kind === 'words') showWords(view.pg, body);
             else if (view.kind === 'versions') showVersions(view.pg, body);
-            else renderAdd(body, list);
+            else renderAdd(body, list.concat(others.filter(function (pg) { return !pg.fresh; })));
             return;
         }
         head.appendChild(el('h3', 'tf-panel-title', 'Pages'));
-        if (list.length) head.appendChild(iconButton('plus', 'Add a page', function () { openView({ kind: 'add' }); }));
+        if (!menuless || others.length > 1) head.appendChild(iconButton('plus', 'Add a page', function () { openView({ kind: 'add' }); }));
         if (coarse()) head.appendChild(iconButton('search', 'Search', function () { openPal(); })); /* Cmd+K needs a keyboard; on a phone the search is here */
         head.appendChild(iconButton('share', 'Share the site', function () { openView({ kind: 'share' }); }));
         var helpBtn = iconButton('help', 'Help', function () { openView({ kind: 'help' }); }); head.appendChild(helpBtn);
@@ -2701,7 +3008,7 @@
             var acts = el('span', 'tf-row-acts'), b = iconButton('more', 'More', function () { openMenu(b, items, row); });
             acts.appendChild(b); row.appendChild(acts); return acts;
         }
-        if (!list.length) { /* a one-page site: the menu only jumps within the page; new pages come from the maker */
+        if (menuless && others.length < 2) { /* a one-page site: the menu only jumps within the page; new pages come from the maker */
             var one = { path: here(), name: 'This page' }, only = el('div', 'tf-row');
             only.appendChild(el('span', 'tf-row-name', 'This site has one page.'));
             var oneItems = [{ icon: 'search', word: 'Words for Google', fn: function () { openView({ kind: 'words', pg: one }); } }];
@@ -2716,6 +3023,7 @@
             /* a grip to drag the row: the menu takes that order on every page */
             var grip = el('span', 'tf-grip tf-row-grip'); grip.innerHTML = ICON.grip; grip.title = 'Drag to change the order'; grip.setAttribute('aria-label', 'Drag to change the order');
             grip.addEventListener('pointerdown', function (e) { dragRow(e, row); });
+            if (list.length < 2) grip.style.visibility = 'hidden'; /* one page in the menu: nothing to order */
             row.appendChild(grip);
             /* the name is the way to the page; the one you are on is marked */
             var name = el('a', 'tf-row-name', pg.name); name.href = pg.path;
@@ -2738,7 +3046,35 @@
             more(row, items);
             body.appendChild(row);
         });
+        /* pages the menu does not name, in the same list after the menu's: open, words for Google, versions; one made
+           here and not saved can go again. Where the site has a menu they say so; where it has none, nothing to say */
+        others.sort(function (a, b) { return (b.path === home) - (a.path === home); });
+        others.forEach(function (pg) {
+            var row = el('div', 'tf-row' + (pg.path === here() ? ' tf-here' : '')); row.setAttribute('data-path', pg.path);
+            if (!menuless) { var gap = el('span', 'tf-grip tf-row-grip'); gap.style.visibility = 'hidden'; row.appendChild(gap); } /* lined up with the menu's names */
+            var name = el('a', 'tf-row-name', pg.name); name.href = pg.path;
+            name.addEventListener('click', function (e) { e.preventDefault(); goTo(pg.path); });
+            row.appendChild(name);
+            if (pg.path === home) row.appendChild(el('span', 'tf-row-note', 'Home'));
+            if (pg.fresh) row.appendChild(el('span', 'tf-row-tag', 'new'));
+            else if (!menuless) row.appendChild(el('span', 'tf-row-tag', 'not in menu'));
+            if (pg.path === here()) { var mark = el('span', 'tf-row-check'); mark.innerHTML = ICON.check; mark.title = 'The page you are on'; row.appendChild(mark); }
+            var items = [{ icon: 'search', word: 'Words for Google', fn: function () { openView({ kind: 'words', pg: pg }); } }];
+            if (saver && !pg.fresh) items.push({ icon: 'clock', word: 'Versions', fn: function () { openView({ kind: 'versions', pg: pg }); } });
+            if (pg.fresh) { items.push('gap'); items.push({ icon: 'trash', word: 'Remove the page', danger: true, fn: function () { dropFresh(pg); } }); }
+            more(row, items);
+            body.appendChild(row);
+        });
         pageGroundRow(body);
+    }
+    /* a page added here and not saved yet goes again, with the rows and menu entries made for it; Undo brings all back */
+    var freshWays = {};
+    function dropFresh(pg) {
+        var w = freshWays[pg.path], html = changes[pg.path];
+        if (w) { w.back(); markBlocks(); steps.push(function () { w.again(); markBlocks(); }); }
+        else { delete changes[pg.path]; delete freshPages[pg.path]; steps.push(function () { changes[pg.path] = html; freshPages[pg.path] = true; }); }
+        refresh(); if (panel) renderPages();
+        say(pg.name + ' is gone, with its rows and links. Undo brings it back.');
     }
     /* the page's own ground, under the pages: the four rows of Look, made on every page */
     function pageGroundRow(body) {
@@ -2760,6 +3096,7 @@
         add.appendChild(el('div', 'tf-caption', 'Like'));
         var like = el('select', 'tf-select');
         list.forEach(function (pg) { var o = el('option', null, pg.name); o.value = pg.path; like.appendChild(o); });
+        if (view.like) { if (!list.some(function (pg) { return pg.path === view.like; })) { var o = el('option', null, fileName(view.like)); o.value = view.like; like.appendChild(o); } like.value = view.like; } /* from a list's plus: like the row above */
         add.appendChild(like);
         add.appendChild(el('div', 'tf-caption', 'Name'));
         var name = el('input', 'tf-input'); name.placeholder = 'Name of the new page'; name.autocomplete = 'off';
@@ -3125,22 +3462,72 @@
         var cur = here(), paths = otherPages();
         job(function (finish) {
             var navBefore = menuOf(document).innerHTML, headBefore = robotsOf(document), led = ledger(), failed = [];
+            var core = pageList().map(function (p) { return p.path; }).concat(Object.keys(changes)), sig = function (nav) { return menuLinks(nav).map(pathOf).sort().join('|'); }, mine = sig(menuOf(document));
             fn(menuOf(document), document);
             eachPage(paths, function (path, html, missing) {
-                if (html === null) { if (!missing) failed.push(path); return; } /* a menu link to a page that does not exist has no menu to keep in step */
-                var doc = parse(html), nav = menuOf(doc); if (nav) { fn(nav, doc); led.put(path, serialize(doc)); }
+                var named = core.indexOf(path) >= 0; /* a page the menu names, or one changed here; else one only found through links */
+                if (html === null) { if (!missing && named) failed.push(path); return; } /* a menu link to a page that does not exist has no menu to keep in step */
+                var doc = parse(html), nav = menuOf(doc); if (nav && (named || sig(nav) === mine)) { fn(nav, doc); led.put(path, serialize(doc)); } /* a found page only when its menu is this one (not a pager, not a breadcrumb) */
             }, function () {
                 var back = function () { menuOf(document).innerHTML = navBefore; putRobots(document, headBefore); led.back(); };
+                var navAfter = menuOf(document).innerHTML, headAfter = robotsOf(document), afterCh = {}; led.paths().forEach(function (k) { afterCh[k] = changes[k]; });
+                var again = function () { menuOf(document).innerHTML = navAfter; putRobots(document, headAfter); for (var k in afterCh) changes[k] = afterCh[k]; };
                 if (failed.length) { /* all pages or none: a menu that differs from page to page is worse than no change */
                     back(); finish(); if (panel) renderPages();
                     say('Could not reach ' + failed.join(', ') + ', so nothing was changed. Check the connection, then try again.', 'error');
                     after(failed); return;
                 }
-                steps.push(function () { back(); if (panel) renderPages(); });
+                var step = function () { back(); if (panel) renderPages(); }; steps.push(step);
                 finish();
-                after(failed);
+                after(failed, again, step);
             });
         });
+    }
+    /* fn(doc) on this page and on every other page of the site (the menu's, the ones found, the ones changed); this
+       page in place, the others into changes. One step: a page that cannot be read leaves everything as it was. */
+    function everyPage(fn, after) {
+        var paths = otherPages();
+        job(function (finish) {
+            var led = ledger(), failed = [], added = [];
+            var mark = new MutationObserver(function (list) { list.forEach(function (m) { Array.prototype.forEach.call(m.addedNodes, function (n) { added.push(n); }); }); });
+            mark.observe(document.body, { childList: true, subtree: true }); fn(document, here()); mark.takeRecords().forEach(function (m) { Array.prototype.forEach.call(m.addedNodes, function (n) { added.push(n); }); }); mark.disconnect();
+            added = added.filter(function (n) { return !(n.nodeType === 1 && n.closest && n.closest('[data-tweakfast]')); });
+            if (added.length) { markBlocks(); }
+            eachPage(paths, function (path, html, missing) {
+                if (html === null) { if (!missing) failed.push(path); return; }
+                var doc = parse(html); if (fn(doc, path)) led.put(path, serialize(doc));
+            }, function () {
+                var where = [], afterCh = {}; led.paths().forEach(function (k) { afterCh[k] = changes[k]; });
+                var back = function () { where = added.map(function (n) { return { n: n, parent: n.parentNode, next: n.nextSibling }; }); added.forEach(function (n) { if (n.parentNode) n.parentNode.removeChild(n); }); led.back(); };
+                var again = function () { where.forEach(function (x) { if (x.parent && !x.n.parentNode) x.parent.insertBefore(x.n, x.next && x.next.parentNode === x.parent ? x.next : null); }); for (var k in afterCh) changes[k] = afterCh[k]; };
+                if (failed.length) { back(); finish(); say('Could not reach ' + failed.join(', ') + ', so nothing was changed. Check the connection, then try again.', 'error'); after(failed); return; }
+                var step = function () { back(); if (panel) renderPages(); }; steps.push(step);
+                finish(); after(failed, again, step);
+            });
+        });
+    }
+    /* the rows of a list that link to a page (repeated items, outside the header, menu and footers): after the last of
+       each list, a twin of that page's row, its words placeholders, its name the new page's, its link the new page */
+    function listRows(d, likePath, path, name) {
+        var shared = sharedParts(d), nav = menuOf(d), seen = [], n = 0;
+        Array.prototype.forEach.call(d.querySelectorAll('a[href]'), function (a) {
+            if (pathOf(a) !== likePath || !isPageLink(a) || a.closest('[data-tweakfast]') || (nav && nav.contains(a)) || shared.some(function (p) { return p.contains(a); })) return;
+            var item = a; while (item && item !== d.body && !(item.parentElement && isRepeated(item))) item = item.parentElement;
+            if (!item || item === d.body || seen.indexOf(item.parentElement) >= 0 || rowPage(item) !== likePath) return; /* a list whose rows each lead to a page of their own, not a sentence or a section that mentions it */
+            seen.push(item.parentElement);
+            var sig = signature(item), last = item; for (var c = item.parentElement.firstElementChild; c; c = c.nextElementSibling) if (signature(c) === sig && !c.hasAttribute('data-tweakfast')) last = c;
+            var twin = item.cloneNode(true);
+            [twin].concat(Array.prototype.slice.call(twin.querySelectorAll('*'))).forEach(function (x) { x.removeAttribute('id'); x.removeAttribute('aria-current'); x.removeAttribute('data-tf-hidden'); x.removeAttribute('hidden'); x.classList && x.classList.remove('tf-hover', 'tf-editing', 'tf-picture', 'tf-moving'); });
+            [twin].concat(Array.prototype.slice.call(twin.querySelectorAll('a[href]'))).forEach(function (x) { if (x.tagName === 'A' && pathOf(x) === likePath) x.setAttribute('href', path); });
+            var label = Array.prototype.filter.call(twin.querySelectorAll('*'), function (x) { return !x.children.length && x.textContent.trim().toLowerCase() === fileName(likePath).toLowerCase(); })[0] || twin.querySelector('h1,h2,h3,h4,h5,h6');
+            var nums = numbersIn(twin);
+            fillPlaceholders(twin); nextNumbers(twin, nums, item);
+            if (label) label.textContent = name; /* the row is named for its page; the rest waits for the owner's words */
+            var gap = last.nextSibling && last.nextSibling.nodeType === 3 && !last.nextSibling.nodeValue.trim() ? last.nextSibling.nodeValue : '';
+            last.parentNode.insertBefore(twin, last.nextSibling); if (gap) last.parentNode.insertBefore(d.createTextNode(gap), twin);
+            n++;
+        });
+        return n;
     }
     /* the robots line of a page's head (a hidden page says noindex), kept and put back with the menu */
     function robotsOf(doc) { var m = doc.querySelector('meta[name="robots"]'); return m ? m.outerHTML : null; }
@@ -3199,18 +3586,34 @@
             var nav = menuOf(doc), cur = nav && nav.querySelectorAll('a[aria-current]');
             for (i = 0; cur && i < cur.length; i++) cur[i].removeAttribute('aria-current');
             changes[path] = serialize(doc);
-            everyMenu(function (nav, d) {
-                var links = nav.querySelectorAll('a[href]'), last = null;
-                for (var j = 0; j < links.length; j++) if (isPageLink(links[j])) last = links[j];
-                var a = d.createElement('a'); a.setAttribute('href', path); a.textContent = name;
-                if (d !== document && pageOf(d) === null && d.title === name) a.setAttribute('aria-current', 'page');
-                if (last) { last.parentNode.insertBefore(a, last.nextSibling); last.parentNode.insertBefore(d.createTextNode('\n    '), a); }
-                else nav.appendChild(a);
-            }, function (failed) {
-                if (failed.length) { delete changes[path]; refresh(); return; }
+            /* the new page goes where the page it is like is linked: the menu when that page is in it, and every list on
+               the site that links to it (a list of projects, of posts, of rooms) gets a row of its own, a twin of that
+               page's row. With neither, the menu still takes it when there is one; else words the owner picks link to it. */
+            var hasMenu = menuEntries(menuOf(document)).length > 0, inMenu = menuEntries(menuOf(document)).some(function (a) { return pathOf(a) === likePath; });
+            var rows = [], likeName = (pageList().concat(otherList()).filter(function (pg) { return pg.path === likePath; })[0] || { name: fileName(likePath) }).name;
+            var agains = [], mine = []; /* the steps this made, found by themselves: a word typed meanwhile stays its own step */
+            var outNotes = [], takeOut = function () { mine.forEach(function (f) { var i = steps.lastIndexOf(f); if (i >= 0) { steps.splice(i, 1); if (notes.length > i) outNotes.push(notes.splice(i, 1)[0]); } }); };
+            var finished = function (failed, viaMenu) {
+                if (failed.length) { takeOut(); mine.slice().reverse().forEach(function (f) { f(); }); delete changes[path]; refresh(); return; }
                 freshPages[path] = true;
-                var st = steps.pop(); steps.push(function () { st(); delete changes[path]; delete freshPages[path]; }); refresh(); /* one Undo takes the link and the new file */
-                say('Page added and in the menu on every page. Press Done to save it, then open it from the menu.');
+                var at = mine.length ? steps.lastIndexOf(mine[0]) : -1, html0 = changes[path], parts = mine.slice(), undoAll = function () { parts.slice().reverse().forEach(function (f) { f(); }); delete changes[path]; delete freshPages[path]; };
+                takeOut(); if (at >= 0 && at <= steps.length) { steps.splice(at, 0, undoAll); if (notes.length >= at && outNotes[0]) { outNotes[0].fn = undoAll; notes.splice(at, 0, outNotes[0]); } else if (notes.length > at) notes.length = at; } /* its name in the changes list goes with it */ else steps.push(undoAll);
+                refresh(); /* one Undo takes the links, the rows and the new file */
+                freshWays[path] = { back: undoAll, again: function () { agains.forEach(function (f) { f(); }); changes[path] = html0; freshPages[path] = true; } }; /* Remove the page, and Undo of that */
+                if (panel) openView({ kind: 'pages' });
+                var where = rows.length ? 'a new row where ' + likeName + ' is listed' + (rows.indexOf(here()) < 0 ? ' (on ' + rows.map(function (p) { var pg = pageList().concat(otherList()).filter(function (x) { return x.path === p; })[0]; return pg ? pg.name : fileName(p); }).join(', ') + ')' : '') + '; fill in its words there' : '';
+                if (viaMenu && where) say('Page added, in the menu on every page and with ' + where + '. Press Done to save it.');
+                else if (viaMenu) say('Page added and in the menu on every page. Press Done to save it, then open it from the menu.');
+                else if (where) say('Page added, with ' + where + '. Press Done to save it.');
+                else say('Page added to Pages. Nothing on this site lists ' + likeName + ', so to link to the new page, click any words, then choose it under Goes to. Press Done to save it.');
+            };
+            everyPage(function (d, at) { var n = listRows(d, likePath, path, name); if (n && at !== path && rows.indexOf(at) < 0) rows.push(at); return n > 0; }, function (failed, again, step) {
+                if (again) agains.push(again); if (step) mine.push(step);
+                if (failed.length) { finished(failed); return; }
+                if (!hasMenu || (!inMenu && rows.length)) { finished([], false); return; }
+                everyMenu(function (nav, d) {
+                    addEntry(nav, d, path, name, d !== document && pageOf(d) === null && d.title === name);
+                }, function (failed2, again2, step2) { if (!failed2.length) { mine.push(step2); agains.push(again2); } finished(failed2, true); });
             });
         });
         });
@@ -3274,6 +3677,7 @@
     function refresh() {
         era++;
         if (locked) return;
+        still(function () { roomsNow(document); coverGround(document); });
         if (steps.length > stepsSeen) redos.length = 0; /* a new change: what Undo took away is gone for good */
         stepsSeen = steps.length;
         undoBtn.disabled = saving || busy > 0 || (!steps.length && !saves.length);
@@ -3464,7 +3868,7 @@
                 steps.splice(0, sentSteps);
                 for (var c in sentChanges) if (changes[c] === sentChanges[c]) delete changes[c];
                 drop.forEach(function (d) { delete drops[d]; delete loaded[d]; });
-                for (var fp in files) delete freshPages[fp];
+                for (var fp in files) { delete freshPages[fp]; if (found && found.indexOf(fp) < 0) found.push(fp); } /* saved: a page of the site now, listed as found */
                 refresh();
                 if (then) { then(); return; }
                 if (demo) { say('Done. In this demo only you see it. On your own site, everyone would.', 'live'); later(8000); return; }
