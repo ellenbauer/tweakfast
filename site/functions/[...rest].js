@@ -5,6 +5,7 @@
      style.css, pictures/…  static files, served by the host as usual
      tweakfast.js           the one line on every page: a tiny loader
      tweakfast-editor.js    the editor, fetched only on the owner's computer
+     tweakfast-mend.js      mends what the cleaning took away (a dead menu button, a sideways part)
      functions/[...rest].js this file
 
    The host serves a static file when one exists at the path; everything else

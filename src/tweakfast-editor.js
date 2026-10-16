@@ -233,7 +233,7 @@
         var all = [c].concat(Array.prototype.slice.call(c.querySelectorAll('*')));
         for (i = 0; i < all.length; i++) {
             var n = all[i];
-            n.removeAttribute('contenteditable'); n.removeAttribute('data-tf-block'); n.removeAttribute('data-tf-art');
+            n.removeAttribute('contenteditable'); n.removeAttribute('data-tf-block'); n.removeAttribute('data-tf-art'); n.removeAttribute('data-tf-mend');
             n.classList.remove('tf-picture', 'tf-editing', 'tf-hover', 'tf-moving'); if (!n.className) n.removeAttribute('class');
             if (n.getAttribute('style') === '') n.removeAttribute('style');
         }
@@ -434,7 +434,9 @@
     }
 
     /* ---- text ---- */
+    var clickAt = null; /* where the last click fell, to put the caret under it */
     function onClick(e) {
+        clickAt = { x: e.clientX, y: e.clientY, t: Date.now() };
         if (previewing) { if (peek && peek.contains(e.target)) return; e.preventDefault(); return; } /* nothing edits while previewing; links are not followed either */
         if (dragging) { e.preventDefault(); e.stopPropagation(); return; }
         if (locked) { if (!bar.contains(e.target)) { e.preventDefault(); e.stopPropagation(); } return; }
@@ -486,10 +488,73 @@
         if (!editBox) { editBox = el('span', 'tf-edit-box'); editBox.setAttribute('data-tweakfast', ''); document.body.appendChild(editBox); }
         placeEdit();
     }
+    /* words drawn one box per letter or per word (left by an entry animation: each an inline-block of its own) take no
+       caret, and typed letters land at a box's edge: while they are edited they are plain words again, spaces kept.
+       Nothing typed: the boxes come back as they were. */
+    var flat = null;
+    function words(n) { return n.textContent.replace(/\s+/g, ' ').trim(); }
+    /* the words as written (not as drawn in capitals), a space where a line of its own begins */
+    function spoken(t) {
+        var out = '', w = document.createTreeWalker(t, NodeFilter.SHOW_TEXT), x, lastBlock = null;
+        while ((x = w.nextNode())) {
+            var blk = x.parentElement; while (blk && blk !== t && !/^(block|flex|grid|list-item|table)/.test(getComputedStyle(blk).display)) blk = blk.parentElement;
+            if (lastBlock && blk !== lastBlock) out += ' ';
+            out += x.nodeValue; lastBlock = blk;
+        }
+        return out.replace(/\s+/g, ' ').trim();
+    }
+    function unbox(t) {
+        var boxes = Array.prototype.filter.call(t.querySelectorAll('span,div'), function (s) {
+            if (s.children.length || !s.textContent || getComputedStyle(s).display !== 'inline-block') return false;
+            var kin = 0; for (var c = s.parentElement.firstElementChild; c; c = c.nextElementSibling) if (signature(c) === signature(s)) kin++;
+            return kin >= 2;
+        });
+        if (boxes.length < 2) return null;
+        var text = words(t), label = t.getAttribute('aria-label');
+        boxes.forEach(function (s) {
+            var cs = getComputedStyle(s), gap = parseFloat(cs.marginRight) > 0 || parseFloat(cs.marginLeft) > 0, next = s.nextSibling;
+            var piece = s.textContent + (gap && next && !(next.nodeType === 3 && /^\s/.test(next.nodeValue)) ? ' ' : '');
+            s.parentNode.replaceChild(document.createTextNode(piece), s);
+        });
+        Array.prototype.forEach.call(t.querySelectorAll('[aria-hidden="true"]'), function (n) { n.removeAttribute('aria-hidden'); }); /* the words are the words now */
+        t.normalize();
+        return { text: words(t) === text ? text : words(t), label: label };
+    }
+    /* the caret as a count of the letters before it (spaces not counted, so it holds when spaces are added), and back */
+    function lettersBefore(t) {
+        var node = null, off = 0, sel = document.getSelection();
+        if (clickAt && Date.now() - clickAt.t < 1000) { /* the letter under the click: a word drawn as a box gives the browser's caret its start */
+            var hit = document.caretRangeFromPoint ? document.caretRangeFromPoint(clickAt.x, clickAt.y) : document.caretPositionFromPoint ? document.caretPositionFromPoint(clickAt.x, clickAt.y) : null;
+            if (hit) { node = hit.startContainer || hit.offsetNode; off = hit.startOffset !== undefined ? hit.startOffset : hit.offset; }
+            if (node && node.nodeType === 1) { var inBox = letterAt(node, clickAt.x, clickAt.y); if (inBox) { node = inBox.node; off = inBox.off; } } /* a box gives its start, not the letter: measured here */
+        }
+        if (!node || !t.contains(node)) { if (!sel || !sel.rangeCount || !t.contains(sel.anchorNode)) return -1; node = sel.anchorNode; off = sel.anchorOffset; }
+        var r = document.createRange(); r.selectNodeContents(t); r.setEnd(node, off);
+        return r.toString().replace(/\s+/g, '').length;
+    }
+    function letterAt(el, x, y) {
+        var w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), tx, best = null, bestD = Infinity, r = document.createRange();
+        while ((tx = w.nextNode())) for (var i = 0; i < tx.nodeValue.length; i++) {
+            r.setStart(tx, i); r.setEnd(tx, i + 1); var q = r.getBoundingClientRect(); if (!q.width && !q.height) continue;
+            var dy = y < q.top ? q.top - y : y > q.bottom ? y - q.bottom : 0, dx = x < q.left ? q.left - x : x > q.right ? x - q.right : 0, d = dy * 4 + dx; /* the nearest letter, its line first */
+            if (d < bestD) { bestD = d; best = { node: tx, off: x < q.left + q.width / 2 ? i : i + 1 }; }
+        }
+        return best;
+    }
+    function caretAfter(t, n) {
+        var w = document.createTreeWalker(t, NodeFilter.SHOW_TEXT), x, left = n;
+        while ((x = w.nextNode())) {
+            for (var i = 0; i <= x.nodeValue.length; i++) {
+                if (left === 0) { var r = document.createRange(); r.setStart(x, i); r.collapse(true); var sel = document.getSelection(); sel.removeAllRanges(); sel.addRange(r); return; }
+                if (i < x.nodeValue.length && !/\s/.test(x.nodeValue[i])) left--;
+            }
+        }
+    }
     function begin(t) {
         hoverNone();
         sharedBefore = sharedRootOf(t) ? cleanOuter(t) : null;
         held = null; editing = t; before = t.innerHTML; hrefBefore = t.getAttribute('href');
+        var at = lettersBefore(t); flat = unbox(t); if (flat && at >= 0) caretAfter(t, at); /* the caret stays where the click put it */
         stripBegin(t);
         t.setAttribute('contenteditable', 'true');
         t.classList.add('tf-editing');
@@ -532,11 +597,14 @@
         t.classList.remove('tf-editing');
         if (!t.className) t.removeAttribute('class');
         stripEnd(t);
+        var flatWas = flat; flat = null;
+        if (flatWas && words(t) === flatWas.text) { t.innerHTML = before; flatWas = null; } /* nothing typed: the words keep their boxes as made */
         if (!t.textContent.trim() && !t.querySelector('img,svg') && /^(\s|<br\s*\/?>)*$/i.test(t.innerHTML)) t.innerHTML = ''; /* an emptied text is empty, not a stray line break */
         var after = t.innerHTML, was = before, hrefWas = hrefBefore, hrefNow = t.getAttribute('href');
         var fix = stripFix; stripFix = null;
+        if (flatWas && flatWas.label !== null) t.setAttribute('aria-label', spoken(t)); /* read aloud as now written */
         if (after !== was || hrefNow !== hrefWas) {
-            steps.push(function () { t.innerHTML = was; if (hrefWas !== null) t.setAttribute('href', hrefWas); if (fix) fix(); });
+            steps.push(function () { t.innerHTML = was; if (hrefWas !== null) t.setAttribute('href', hrefWas); if (flatWas && flatWas.label !== null) t.setAttribute('aria-label', flatWas.label); if (fix) fix(); });
             refresh();
             if (sharedBefore !== null) mirror(t, sharedBefore);
         }
@@ -1128,7 +1196,7 @@
        over the page around it (main or what holds it), and the band at that height is the block */
     function bandAt(node, y) {
         if (!node || node.nodeType !== 1 || node.closest('[data-tweakfast]')) return null;
-        var main = document.querySelector('main') || document.body;
+        var main = sectionsIn(document.querySelector('main') || document.body);
         if (!node.contains(main)) return null;
         for (var c = main.firstElementChild; c; c = c.nextElementSibling) {
             if (!c.hasAttribute('data-tf-block') || !columnOf(c)) continue;
@@ -1153,8 +1221,19 @@
         markBlocksIn(main, true);
         sharedParts(document).forEach(function (part) { if (!main.contains(part)) markBlocksIn(part, false); }); /* repeated things in the header and footers too, not the logo or the menu */
     }
+    /* what holds the page's sections: the main part, or the one plain wrapper a site put inside it (no ground, no
+       frame of its own), as deep as such wrappers go */
+    function sectionsIn(main) {
+        for (var n = main; ;) {
+            var kids = Array.prototype.filter.call(n.children, function (c) { return !/^(SCRIPT|STYLE|TEMPLATE)$/.test(c.tagName) && !c.hasAttribute('data-tweakfast'); });
+            if (kids.length !== 1 || kids[0].children.length < 2 || !/^(DIV|ARTICLE)$/.test(kids[0].tagName)) return n;
+            var cs = getComputedStyle(kids[0]);
+            if (cs.backgroundImage !== 'none' || !seeThrough(cs.backgroundColor) || parseFloat(cs.borderTopWidth) > 0 || cs.boxShadow !== 'none') return n;
+            n = kids[0];
+        }
+    }
     function markBlocksIn(main, sections) {
-        if (sections) for (var c = main.firstElementChild; c; c = c.nextElementSibling) {
+        if (sections) for (var c = sectionsIn(main).firstElementChild; c; c = c.nextElementSibling) {
             if (pinned(c) || c.tagName === 'SCRIPT' || c.tagName === 'STYLE') continue;
             c.setAttribute('data-tf-block', '');
         }
@@ -1281,6 +1360,9 @@
     }
     function makeTwin(block) {
         var twin = block.cloneNode(true), own = twin.querySelectorAll('[data-tweakfast]'), holders = [];
+        /* a decoration keeps its words: what screen readers skip (below), and what can be neither clicked nor selected */
+        var from = block.querySelectorAll('*'), to = twin.querySelectorAll('*');
+        for (var d = 0; d < from.length; d++) { var fs = getComputedStyle(from[d]); if (fs.pointerEvents === 'none' && (fs.userSelect || fs.webkitUserSelect) === 'none' && from[d].textContent.trim() && !from[d].closest('[data-tweakfast]')) to[d].setAttribute('data-tf-deco', ''); }
         for (var j = 0; j < own.length; j++) { /* the editor's own parts are not the page's: a plus inside a copied section is drawn fresh below */
             if (own[j].classList.contains('tf-plus')) holders.push(own[j].parentElement);
             own[j].remove();
@@ -1294,6 +1376,7 @@
         fillPlaceholders(twin);
         nextNumbers(twin, nums, block);
         if (keep) keep.removeAttribute('data-tf-keep');
+        Array.prototype.forEach.call(twin.querySelectorAll('[data-tf-deco]'), function (n) { n.removeAttribute('data-tf-deco'); });
         holders.forEach(addPlus);
         return twin;
     }
@@ -1315,6 +1398,12 @@
     }
     function fillPlaceholders(root) {
         if (root.hasAttribute('data-tf-keep')) return;
+        /* a title drawn one box per letter, with its words said by a label: one placeholder, shown and said */
+        Array.prototype.forEach.call(root.querySelectorAll('[aria-label]'), function (t) {
+            if (!t.matches(TEXT) || t.closest('[data-tf-keep]') || t.querySelector('img,svg') || !t.querySelector('[aria-hidden="true"]')) return;
+            var w = document.createTreeWalker(t, NodeFilter.SHOW_TEXT), x; while ((x = w.nextNode())) if (x.data.trim() && !x.parentElement.closest('[aria-hidden="true"]')) return;
+            t.textContent = placeholder(t); t.removeAttribute('aria-label');
+        });
         var texts = Array.prototype.slice.call(root.querySelectorAll(TEXT)).filter(function (t) { return !t.closest('[data-tf-keep]'); });
         if (root.matches(TEXT)) { /* a list item: its inner parts get placeholders, its own words one too; icons, pictures and wrappers stay */
             Array.prototype.forEach.call(root.children, function (c) { if (c.matches(TEXT) && !c.querySelector('img,svg')) c.textContent = placeholder(c); });
@@ -1326,9 +1415,16 @@
             var t = texts[i];
             var up = t.parentElement && t.parentElement.closest(TEXT);
             if (t !== root && up && up !== root && root.contains(up)) continue; /* inner spans follow their block */
-            var inner = t.querySelector(TEXT);
+            var hid = t.closest('[aria-hidden="true"],[data-tf-deco]'); if (hid && hid !== root && root.contains(hid)) continue; /* a decoration (a big letter behind, a badge's mark) keeps its look */
+            var inner = t.querySelector('a');
             if (inner) { /* keep a link inside, blank the rest */
-                for (var k = t.childNodes.length - 1; k >= 0; k--) if (t.childNodes[k].nodeType === 3) t.removeChild(t.childNodes[k]);
+                var words = false;
+                for (var k = t.childNodes.length - 1; k >= 0; k--) {
+                    var ch = t.childNodes[k];
+                    if (ch.nodeType === 3) { words = words || !!ch.data.trim(); t.removeChild(ch); }
+                    else if (ch.nodeType === 1 && ch.matches(TEXT) && !ch.matches('a') && !ch.querySelector('a,img,svg')) { words = true; t.removeChild(ch); } /* words of their own beside the link go with the rest */
+                }
+                if (words) t.insertBefore(document.createTextNode(placeholder(t) + ' '), t.firstChild);
                 continue;
             }
             t.textContent = placeholder(t);
@@ -1569,7 +1665,7 @@
         return { t: block, sides: [{ part: block }] };
     }
     /* a big part: a section, the header, a footer, a block straight in main */
-    function isBig(b) { return !!(b.parentElement && b.parentElement.matches('main') || b.matches('section,header,footer') || sharedParts(b.ownerDocument).indexOf(b) >= 0); }
+    function isBig(b) { var d = b.ownerDocument, m = d.querySelector('main'); return !!(b.parentElement && (b.parentElement.matches('main') || m && b.parentElement === sectionsIn(m)) || b.matches('section,header,footer') || sharedParts(d).indexOf(b) >= 0); }
     function openLooks() {
         var b = toolsFor, ch = choicesFor(b); if (!ch) { lookBtn.style.display = 'none'; return; }
         var t = ch.t;
@@ -1753,7 +1849,7 @@
         var seen = [], w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT), t, el, cs, bg;
         while ((t = w.nextNode()) && seen.length < 120) {
             el = t.parentElement; if (!t.nodeValue.trim() || !el || seen.indexOf(el) >= 0 || el.closest('[data-tweakfast]') || !el.getClientRects().length) continue;
-            seen.push(el); bg = behind(el); var fg = rgbOf(getComputedStyle(el).color);
+            seen.push(el); bg = behind(el); cs = getComputedStyle(el); var fill = rgbOf(cs.webkitTextFillColor), fg = rgbOf(fill && fill.a === 0 && parseFloat(cs.webkitTextStrokeWidth) > 0 ? cs.webkitTextStrokeColor : cs.color); /* outlined words read by their outline */
             out.push({ k: 't', v: bg && fg ? contrast(blend(fg, bg), bg) : null, el: el });
         }
         var all = [root].concat(Array.prototype.slice.call(root.querySelectorAll('*'))).slice(0, 200);
@@ -2046,7 +2142,7 @@
        is a mix of the old ground and the old ink is laid again as the same mix of the new ones, so quiet words stay
        quiet and lines stay faint, in the site's own two colours. A part on a ground of another colour (a lime sticker)
        keeps the ink it had. The colours sit in one style element inside the block: the way back takes it out. */
-    var TINT = { color: 'color', backgroundColor: 'background-color', borderTopColor: 'border-top-color', borderRightColor: 'border-right-color', borderBottomColor: 'border-bottom-color', borderLeftColor: 'border-left-color' };
+    var TINT = { color: 'color', backgroundColor: 'background-color', borderTopColor: 'border-top-color', borderRightColor: 'border-right-color', borderBottomColor: 'border-bottom-color', borderLeftColor: 'border-left-color', webkitTextStrokeColor: '-webkit-text-stroke-color' }; /* the outline of outlined words too */
     function tintStyle(b) { for (var c = b.firstElementChild; c; c = c.nextElementSibling) if (c.tagName === 'STYLE' && c.hasAttribute('data-tf-tint')) return c; return null; }
     /* the class the block's colours were made for: kept in its tint, so it lasts past a reload */
     /* the colours laid on a block as a pair, kept in its tint: { g, i, flip } */
@@ -2076,7 +2172,7 @@
         state.marks.forEach(function (m) { mark(m[0], m[1]); });
     }
     function tintParts(b) { return [b].concat(Array.prototype.slice.call(b.querySelectorAll('*'))).filter(function (n) { return !n.closest('[data-tweakfast],svg') && !/^(STYLE|SCRIPT)$/.test(n.tagName); }).slice(0, b.tagName === 'BODY' || b.tagName === 'MAIN' ? 3000 : 400); } /* the page's own ground reaches its footer too */
-    function tintRead(n) { var cs = getComputedStyle(n), o = { under: behind(n) }; for (var k in TINT) o[k] = cs[k]; o.image = cs.backgroundImage !== 'none'; o.lines = ['Top', 'Right', 'Bottom', 'Left'].map(function (s) { return parseFloat(cs['border' + s + 'Width']) > 0 && cs['border' + s + 'Style'] !== 'none'; }); return o; }
+    function tintRead(n) { var cs = getComputedStyle(n), o = { under: behind(n) }; for (var k in TINT) o[k] = cs[k]; o.stroke = parseFloat(cs.webkitTextStrokeWidth) > 0; o.image = cs.backgroundImage !== 'none'; o.lines = ['Top', 'Right', 'Bottom', 'Left'].map(function (s) { return parseFloat(cs['border' + s + 'Width']) > 0 && cs['border' + s + 'Style'] !== 'none'; }); return o; }
     /* each of the site's hover looks on the block's parts, read as it shows */
     function tintHovers(b) {
         var out = [];
@@ -2137,6 +2233,7 @@
             for (var k in TINT) {
                 if (bgOwn && !/^border/.test(k)) continue; /* its own ground and ink stay; its edge meets the block's ground */
                 if (/^border/.test(k) && !a.lines[['borderTopColor', 'borderRightColor', 'borderBottomColor', 'borderLeftColor'].indexOf(k)]) continue;
+                if (k === 'webkitTextStrokeColor' && !a.stroke) continue;
                 if (z[k] !== a[k]) continue; /* it follows the new ground already */
                 var m = remix(a[k], g0, i0, g1, i1);
                 if (!m && k === 'color' && n.firstChild && a.under && z.under && same('rgba(' + [z.under.r, z.under.g, z.under.b, z.under.a] + ')') === same('rgba(' + [g1.r, g1.g, g1.b, g1.a] + ')')) {
@@ -3456,7 +3553,7 @@
         }, function (st) { cb(null, st === 404 || st === 410); }); /* the second answer: there is no such page (not: it could not be reached) */
     }
     function parse(html) { return new DOMParser().parseFromString(html, 'text/html'); }
-    function serialize(doc) { return '<!doctype html>\n' + doc.documentElement.outerHTML; }
+    function serialize(doc) { return '<!doctype html>\n' + doc.documentElement.outerHTML.replace(/ data-tf-mend="[^"]*"/g, ''); } /* a mend's mark that came along with a part never lands */
     /* run fn(nav, doc) on the menu of every page; the current page in place, the others into changes */
     function everyMenu(fn, after) {
         var cur = here(), paths = otherPages();
@@ -3978,8 +4075,8 @@
         if (doc.querySelector('body')) savedHidden(doc.querySelector('body'));
         var t = doc.querySelector('title'); if (t) t.textContent = realTitle;
         var cls2 = doc.querySelectorAll('.tf-on'); for (i = 0; i < cls2.length; i++) cls2[i].classList.remove('tf-on');
-        var marks = doc.querySelectorAll('[data-tf-block],[data-tf-art]');
-        for (i = 0; i < marks.length; i++) { marks[i].removeAttribute('data-tf-block'); marks[i].removeAttribute('data-tf-art'); }
+        var marks = doc.querySelectorAll('[data-tf-block],[data-tf-art],[data-tf-mend]'); /* data-tf-mend: tweakfast-mend.js */
+        for (i = 0; i < marks.length; i++) { marks[i].removeAttribute('data-tf-block'); marks[i].removeAttribute('data-tf-art'); marks[i].removeAttribute('data-tf-mend'); }
         var empty = doc.querySelectorAll('[style=""],[class=""]');
         for (i = 0; i < empty.length; i++) { empty[i].removeAttribute('style'); empty[i].removeAttribute('class'); }
         return hostClean('<!doctype html>\n' + doc.outerHTML);

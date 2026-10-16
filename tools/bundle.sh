@@ -15,10 +15,11 @@ for f in "$OUT"/*.html; do
   rm "$f"
 done
 python3 "$HERE/tools/clean.py" "$OUT"/_site/*.html
-# the editor's version is a short hash of its own text: a changed editor is never an old one from a cache, committed or not
-STAMP="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest()[:10])' "$HERE/src/tweakfast-editor.js")"
+# the editor's version is a short hash of its text and the mender's: a changed editor is never an old one from a cache, committed or not
+STAMP="$(cat "$HERE/src/tweakfast-editor.js" "$HERE/src/tweakfast-mend.js" | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest()[:10])')"
 # the loader, on every page: its comments stay in the source, readers get only the code
 sed -e "s/var BUILD = 'dev';/var BUILD = '$STAMP';/" "$HERE/src/tweakfast.js" | python3 -c 'import re,sys; s=re.sub(r"/\*[\s\S]*?\*/", "", sys.stdin.read()); print("\n".join(l.strip() for l in s.splitlines() if l.strip()))' > "$OUT/tweakfast.js"
 sed -e "s/var BUILD = 'dev';/var BUILD = '$STAMP';/" "$HERE/src/tweakfast-editor.js" > "$OUT/tweakfast-editor.js"   # the editor, owner only
+cp "$HERE/src/tweakfast-mend.js" "$OUT/tweakfast-mend.js"   # what the cleaning took away, mended for readers
 cp "$HERE/site/functions/[...rest].js" "$OUT/functions/[...rest].js"
 echo "bundle ready in $OUT: $(ls "$OUT/_site" | wc -l | tr -d ' ') pages"

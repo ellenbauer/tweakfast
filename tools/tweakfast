@@ -121,3 +121,14 @@ except Exception: pass')"
     echo "Your new version of such a page comes in when the owner picks \"The original\" under Versions in their Site panel."
   fi
 fi
+
+# 6. what the cleaning took away with the site's own scripts: a hidden pointer, words that never show, buttons that
+#    do nothing. Checked in Chrome when it and playwright-core are here; else the command to run is named.
+PW="${TF_PLAYWRIGHT:-$HERE/node_modules/playwright-core/index.mjs}"
+CHROME="${TF_CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"
+if [ -f "$PW" ] && [ -x "$CHROME" ] && command -v node >/dev/null; then
+  echo ""; echo "Checking what the cleaning left broken..."
+  TF_PLAYWRIGHT="$PW" TF_CHROME="$CHROME" node "$HERE/tools/site-check.mjs" "$SITE" || echo "The check could not run; the site is published all the same."
+else
+  echo "To see what the cleaning left broken (needs Chrome and playwright-core): node tools/site-check.mjs $SITE"
+fi

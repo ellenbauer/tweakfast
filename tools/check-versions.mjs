@@ -19,7 +19,7 @@ await openSite(); await act('.tf-row:has-text("Events")', 'Versions'); await p.w
 console.log('versions listed:', await p.$$eval('.tf-versions .tf-row', rs => rs.map(r => (r.querySelector('.tf-row-tag') ? '[' : '') + r.querySelector('.tf-row-name').textContent.replace(/\d/g, '0') + (r.querySelector('.tf-row-tag') ? ']' : '')).join(' / ')));
 await p.click('.tf-versions .tf-row:has-text("The original") button'); await p.waitForTimeout(500);
 console.log('the original comes in as a change: h1', JSON.stringify(await h1()), '= original', (await h1()) === original, '| count', await count(), '| says:', await status());
-console.log('no browser dialog, bar still there:', !!(await p.$('.tf-bar')), '| editor script kept:', await p.$$eval('script[src*="tweakfast"]', s => s.map(x => x.src.split('/').pop().split('?')[0]).sort().join()) === 'tweakfast-editor.js,tweakfast.js', '| blocks marked again:', await p.$$eval('[data-tf-block]', e => e.length) > 0, '| plus there:', (await p.$$('.tf-plus')).length === 1);
+console.log('no browser dialog, bar still there:', !!(await p.$('.tf-bar')), '| editor script kept:', await p.$$eval('script[src*="tweakfast"]', s => s.map(x => x.src.split('/').pop().split('?')[0]).sort().join()) === 'tweakfast-editor.js,tweakfast-mend.js,tweakfast.js', '| blocks marked again:', await p.$$eval('[data-tf-block]', e => e.length) > 0, '| plus there:', (await p.$$('.tf-plus')).length === 1);
 await p.click('.tf-button:has-text("Undo")'); await p.waitForTimeout(100);
 console.log('Undo takes it back: h1 has V1:', /V1$/.test(await h1()), '| count', await count());
 await openSite(); await act('.tf-row:has-text("Events")', 'Versions'); await p.waitForTimeout(400);
