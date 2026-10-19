@@ -15,7 +15,7 @@ for (const sel of ['header', 'footer']) {
   const shown = await p.$$eval('.tf-tools .tf-button', es => es.filter(e => getComputedStyle(e).display !== 'none').map(e => e.textContent).join(',')); /* the name tile leads; the buttons are what counts */
   await p.click('.tf-look-open'); await p.waitForTimeout(200);
   const list = await rows();
-  console.log(sel + ': only Look', shown === 'Look', '| none greyed', !(await p.$('.tf-menu .tf-off')), '|', list.join(' '));
+  console.log(sel + ': only Colour', shown === 'Colour', '| none greyed', !(await p.$('.tf-menu .tf-off')), '|', list.join(' '));
   await p.click('.tf-menu .tf-swatch-row:not([aria-current]) >> nth=-1'); await p.waitForTimeout(1500); /* the last other one */
   grounds[sel] = await p.$eval(sel, e => getComputedStyle(e).backgroundColor);
 }

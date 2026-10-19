@@ -1718,7 +1718,7 @@
         blockOnly = [];
         replaceBtn = button('Replace', function () { if (picked) swapPicture(picked); }); tools.appendChild(replaceBtn);
         altBtn = button('Describes', function () { var i = altBox && altBox.querySelector('input'); if (i) { i.focus(); i.select(); } }); tools.appendChild(altBtn);
-        lookBtn = button('Look', openLooks); lookBtn.className += ' tf-look-open'; tools.appendChild(lookBtn);
+        lookBtn = button('Colour', openLooks); /* the word on the button: what the owner changes, a section's background or a button's colours */ lookBtn.className += ' tf-look-open'; tools.appendChild(lookBtn);
         upBtn = iconButton('up', 'Move up', function () { move(-1); }); tools.appendChild(upBtn);
         downBtn = iconButton('down', 'Move down', function () { move(1); }); tools.appendChild(downBtn);
         swapBtn = iconButton('swap', 'Swap sides', swapSides); tools.appendChild(swapBtn);
@@ -3895,7 +3895,7 @@
     function showHelp(body) {
         var mod = MAC ? '\u2318' : 'Ctrl+', shift = MAC ? '\u21e7\u2318' : 'Ctrl+Shift+', list = el('div', 'tf-helps');
         [['pencil', 'Words', 'Click any text to type. Enter keeps it, Shift+Enter starts a new line, Esc puts it back. Tab goes on to the next text.'],
-         ['grip', 'Blocks', 'Point at a part of the page to see its tools: Look, Move, Hide, Copy, Remove. Drag the dots to move it anywhere.'],
+         ['grip', 'Blocks', 'Point at a part of the page to see its tools: Colour, Move, Hide, Copy, Remove. Drag the dots to move it anywhere.'],
          ['picture', 'Pictures', ALT_ON ? 'Click a picture once to describe it, twice to choose a new one. Drag inside it to pick the part that shows.' : 'Click a picture once to select it, twice to choose a new one. Drag inside it to pick the part that shows.'],
          ['link', 'Links', 'While you edit words, the toolbar says where they lead. Type a page or an address under Link to and the words become a link.'],
          ['page', 'Pages', 'Site lists your pages. Use More on a page to rename it, hide it, remove it, set its words for Google, or bring back an older version.'],
