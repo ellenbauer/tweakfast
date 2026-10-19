@@ -465,7 +465,7 @@
         if (locked) { if (!bar.contains(e.target)) { e.preventDefault(); e.stopPropagation(); } return; }
         if (skipClick) { skipClick = false; if (!bar.contains(e.target) && !(tools && tools.contains(e.target))) { e.preventDefault(); e.stopPropagation(); return; } } /* the click born of the release */
         if (asking && !status.contains(e.target)) say('');
-        if (bar.contains(e.target) || status.contains(e.target) || (tools && tools.contains(e.target)) || (panel && panel.contains(e.target)) || (pal && pal.contains(e.target)) || (menu && menu.contains(e.target)) || (linkBox && linkBox.contains(e.target)) || (altBox && altBox.contains(e.target))) return;
+        if (bar.contains(e.target) || status.contains(e.target) || (tools && tools.contains(e.target)) || (panel && panel.contains(e.target)) || (pal && pal.contains(e.target)) || (menu && menu.contains(e.target)) || (linkBox && linkBox.contains(e.target)) || (linkList && linkList.contains(e.target)) || (altBox && altBox.contains(e.target))) return;
         if (panel) closePages(); if (pal) closePal();
         if (editing && editing.contains(e.target)) { if (editing.closest('button')) e.preventDefault(); return; } /* a click in a button's words places the caret; it never sends the form */
         if (editing) commit();
@@ -832,6 +832,7 @@
             return;
         }
         if (linkBox && linkBox.contains(e.target)) {
+            if (pagesKey(e)) return;
             if (e.key === 'Escape') { e.preventDefault(); linkInput.value = linkFor ? linkFor.getAttribute('href') || '' : ''; editing.focus(); }
             if (e.key === 'Enter') { e.preventDefault(); var tl = editing; commit(); hold(tl); } /* as Enter in the words: kept, still picked */
             if (e.key === 'Tab' && e.shiftKey) { e.preventDefault(); applyLink(); editing.focus(); }
@@ -1003,9 +1004,7 @@
             linkBox = el('div', 'tf-link'); linkBox.setAttribute('data-tweakfast', '');
             linkLabel = el('span', 'tf-link-label', 'Goes to'); linkBox.appendChild(linkLabel);
             linkInput = el('input', 'tf-input'); linkInput.type = 'text'; linkInput.autocomplete = 'off'; linkInput.spellcheck = false;
-            linkInput.setAttribute('list', 'tf-pages');
             linkBox.appendChild(linkInput);
-            linkList = el('datalist'); linkList.id = 'tf-pages'; linkBox.appendChild(linkList);
             var open = el('button', 'tf-link-open'); open.type = 'button'; tip(open, 'Open in a new tab'); open.setAttribute('aria-label', 'Open in a new tab');
             open.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9 9 3M4 3h5v5"/></svg>';
             open.addEventListener('click', function () { applyLink(); var to = linkFor && linkFor.getAttribute('href'); if (to) window.open(to, '_blank'); linkInput.focus(); });
@@ -1013,22 +1012,17 @@
             linkRemove = el('button', 'tf-button tf-small', 'Remove'); linkRemove.type = 'button';
             linkRemove.addEventListener('click', removeLink);
             linkBox.appendChild(linkRemove);
-            linkInput.addEventListener('input', function () { linkTyped = true; });
-            linkInput.addEventListener('blur', function () { applyLink(); });
-            window.addEventListener('scroll', placeLink, true); window.addEventListener('resize', placeLink);
+            linkInput.addEventListener('input', function () { linkTyped = true; showPages(); });
+            linkInput.addEventListener('focus', showPages);
+            linkInput.addEventListener('blur', function () { applyLink(); hidePages(); });
+            window.addEventListener('scroll', function () { placeLink(); placePages(); }, true); window.addEventListener('resize', function () { placeLink(); placePages(); });
         }
         if (a && a !== linkFor) { applyLink(); linkFor = a; linkRange = null; linkInput.value = a.getAttribute('href') || ''; linkTyped = false; }
         if (!a) { linkFor = null; linkRange = rg; linkInput.value = ''; linkTyped = false; }
         linkLabel.textContent = a ? 'Goes to' : 'Link to'; linkInput.placeholder = a ? '' : 'A page of the site, or an address';
         linkRemove.style.display = a ? '' : 'none'; linkBox.querySelector('.tf-link-open').style.display = a ? '' : 'none';
-        /* the site's pages, offered as the owner types */
         var home = linkHome();
         if (linkBox.parentNode !== home) {
-            if (!linkBox.parentNode) {
-                linkList.textContent = '';
-                findPages();
-                pageList().concat(otherList()).forEach(function (pg) { var o = el('option'); o.value = pg.path; o.label = pg.name; linkList.appendChild(o); }); /* the menu's pages, then the others */
-            }
             linkBox.classList.toggle('tf-link-in', home === tools);
             if (home === tools) { tools.insertBefore(linkBox, nameTile.nextElementSibling.nextSibling); linkBox.style.width = ''; linkBox.style.left = linkBox.style.top = ''; sepSync(); } /* right after the name's hairline */
             else document.body.appendChild(linkBox);
@@ -1040,6 +1034,49 @@
         var r = (linkFor || linkRange || editing).getBoundingClientRect(), w = Math.min(360, window.innerWidth - 16);
         linkBox.style.width = w + 'px';
         put(linkBox, Math.max(8, Math.min(r.left, window.innerWidth - w - 8)), bubbleTop(r, linkBox.offsetHeight || 40), linkFor || editing);
+    }
+    /* the site's pages under the link field: our own list in the menu's glass, not the browser's datalist. It opens when the field
+       takes focus with every page (the menu's first, then the others), narrows as the owner types with the palette's matching, and goes
+       away for an address. A row is lit once something is typed; arrows move, Enter takes the lit row, Esc closes; a row keeps the focus in the field. */
+    var pageRows = [], pageAt = 0;
+    function showPages() {
+        if (!linkInput || !linkBox.parentNode) return;
+        var q = linkInput.value.trim().toLowerCase();
+        if (q && (/^(https?:|mailto:|tel:|#|\/|\.|www\.)/.test(q) || q.indexOf('@') >= 0)) { hidePages(); return; } /* an address: no list */
+        if (!linkList) { linkList = el('div', 'tf-menu tf-pages-list'); linkList.setAttribute('data-tweakfast', ''); linkList.setAttribute('role', 'listbox'); document.body.appendChild(linkList); }
+        linkList.textContent = ''; pageRows = []; pageAt = q ? 0 : -1; /* a row is lit once something is typed; Enter in an untouched field keeps the words as before */
+        findPages();
+        var items = pageList().concat(otherList()).map(function (pg) { pg.rank = Math.max(palHit(pg.name, q), palHit(pg.path, q)); return pg; }).filter(function (pg) { return pg.rank; });
+        if (q) items.sort(function (a, b) { return b.rank - a.rank; });
+        if (!items.length) linkList.appendChild(el('div', 'tf-pages-none', 'No page for “' + linkInput.value.trim() + '”. An address works too.'));
+        items.forEach(function (pg, i) {
+            var row = el('button', 'tf-item tf-page-item'); row.type = 'button'; row.setAttribute('role', 'option'); row.tabIndex = -1; row.innerHTML = ICON.page;
+            row.appendChild(el('span', 'tf-page-name', pg.name)); row.appendChild(el('span', 'tf-page-file', pg.path));
+            row.addEventListener('pointerdown', function (e) { e.preventDefault(); }); /* the field keeps the focus */
+            row.addEventListener('click', function () { takePage(pg.path); });
+            row.addEventListener('mousemove', function () { if (pageAt !== i) { pageAt = i; litPage(); } });
+            linkList.appendChild(row); pageRows.push(row);
+        });
+        litPage(); placePages();
+    }
+    function litPage() { for (var i = 0; i < pageRows.length; i++) pageRows[i].classList.toggle('tf-lit', i === pageAt); if (pageRows[pageAt]) pageRows[pageAt].scrollIntoView({ block: 'nearest' }); }
+    function takePage(path) { linkInput.value = path; linkTyped = true; hidePages(); applyLink(); linkInput.focus(); }
+    function placePages() {
+        if (!linkList || !linkBox || !linkBox.parentNode) return;
+        var r = linkBox.getBoundingClientRect(), w = Math.max(240, Math.min(360, r.width, window.innerWidth - 16)), h = linkList.offsetHeight;
+        var left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)), top = r.bottom + 6, floor = window.innerHeight - 8;
+        if (bar && bar.getBoundingClientRect().top < floor) floor = bar.getBoundingClientRect().top - 8;
+        if (top + h > floor && r.top - 6 - h >= 8) top = r.top - 6 - h; /* no room below: above the field */
+        linkList.style.width = w + 'px'; linkList.style.left = left + 'px'; linkList.style.top = top + 'px';
+    }
+    function hidePages() { if (linkList) fade(linkList); linkList = null; pageRows = []; pageAt = 0; }
+    /* keys in the field while the list is open: arrows move the lit row, Enter takes it, Esc closes the list only */
+    function pagesKey(e) {
+        if (!linkList) return false;
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (pageRows.length) { pageAt = pageAt < 0 ? (e.key === 'ArrowDown' ? 0 : pageRows.length - 1) : (pageAt + (e.key === 'ArrowDown' ? 1 : pageRows.length - 1)) % pageRows.length; litPage(); } return true; }
+        if (e.key === 'Enter' && pageAt >= 0 && pageRows[pageAt]) { e.preventDefault(); pageRows[pageAt].click(); return true; }
+        if (e.key === 'Escape') { e.preventDefault(); hidePages(); return true; }
+        return false;
     }
     /* a bubble goes under its element; at the foot of the window, or over the bar, it goes above instead.
        Under the page's end it would lengthen the page: the white strip below the footer. */
@@ -1061,6 +1098,7 @@
         return Math.max(8, floor - h);
     }
     function hideLink() {
+        hidePages();
         var was = linkBox && linkBox.parentNode; if (was) linkBox.remove(); linkFor = null; linkRange = null; linkTyped = false; if (linkInput) linkInput.value = '';
         if (was === tools && toolsFor && toolsFor.isConnected && tools.style.display === 'flex') { sepSync(); placeTools(); } /* the toolbar shrinks back and re-centres */
     }
@@ -4782,12 +4820,14 @@
             '.tf-status{position:fixed;left:50%;display:flex;align-items:center;justify-content:center;gap:7px;max-width:min(460px,calc(100% - 32px));padding:9px 14px;border-radius:12px;font:13.5px/1.4 var(--tf-font);z-index:2147483000;text-align:center;text-wrap:balance}' +
             '.tf-status.tf-error::before{content:"";display:block;flex:none;width:14px;height:14px;background:url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 14 14%27%3E%3Ccircle cx=%277%27 cy=%277%27 r=%277%27 fill=%27%23ff453a%27/%3E%3Cpath d=%27M7 3.6v4.2%27 stroke=%27%23fff%27 stroke-width=%271.7%27 stroke-linecap=%27round%27/%3E%3Ccircle cx=%277%27 cy=%2710.4%27 r=%27.95%27 fill=%27%23fff%27/%3E%3C/svg%3E") center/contain no-repeat}' +
             '.tf-status.tf-live::before{content:"";display:block;flex:none;width:14px;height:14px;background:url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 14 14%27%3E%3Ccircle cx=%277%27 cy=%277%27 r=%277%27 fill=%27%2330d158%27/%3E%3Cpath d=%27M4 7.2l2 2 4-4.4%27 fill=%27none%27 stroke=%27%23fff%27 stroke-width=%271.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E") center/contain no-repeat}' +
-            '.tf-status .tf-offer{flex:none;height:26px;padding:0 10px;margin-left:4px;font-size:12px}' +
+            '.tf-status .tf-offer{flex:none;height:26px;padding:0 10px;margin-left:4px;font-size:13.5px}' +
             '.tf-editing{min-height:1em;outline:0}.tf-edit-box{position:absolute;display:none;box-sizing:border-box;border:2px solid #0a84ff;border-radius:4px;pointer-events:none;z-index:2147482999}' +
             '.tf-hover{cursor:text}img.tf-hover,[data-tf-art].tf-hover{cursor:pointer}.tf-link.tf-art .tf-link-label,.tf-link.tf-art .tf-input{display:none}.tf-link.tf-art{padding-left:4px}.tf-hover-box,.tf-block-hover,.tf-block-box{position:absolute;display:none;box-sizing:border-box;border:1px dashed #0a84ff;opacity:1;border-radius:4px;pointer-events:none;z-index:2147482999}.tf-block-box.tf-block-selected{border:2px solid #0a84ff;opacity:1}.tf-block-box.tf-block-inner{border:1px dashed #0a84ff;opacity:1}.tf-block-box.tf-block-moving{border:2px solid #0a84ff;opacity:1;box-shadow:0 12px 32px rgba(0,0,0,.18)}' +
             '.tf-tag{position:absolute;display:none;height:18px;padding:0 6px;border-radius:6px;background:#0a84ff;color:#fff;font:500 11px/18px -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;letter-spacing:.02em;white-space:nowrap;pointer-events:none;z-index:2147483000}' +
             '.tf-link{position:absolute;display:flex;align-items:center;gap:6px;padding:4px 4px 4px 12px;border-radius:12px;font:13.5px/1.2 var(--tf-font);z-index:2147483000}' +
             ':root:has(#tf-style) .tf-tools .tf-link.tf-link-in{position:static;transform:none;animation:none;background:none;-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:none;padding:0 0 0 6px;gap:4px;z-index:auto}.tf-link-in .tf-input{flex:none;width:220px}.tf-tools-dock .tf-link-in{flex:1;min-width:0}.tf-tools-dock .tf-link-in .tf-input{flex:1;width:auto;min-width:72px}' +
+            /* the list of pages under the link field: our own, not the datalist of the browser; the glass of the menu, rows like the palette */
+            '.tf-menu.tf-pages-list{--tf-y:-6px;transform-origin:0 0;width:auto;min-width:240px;max-width:360px;max-height:264px;overflow:auto;padding:4px}.tf-page-item{height:40px;gap:10px;border-radius:8px}.tf-page-item:hover{background:none}.tf-page-item.tf-lit{background:var(--tf-fill)}.tf-page-item .tf-page-name{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tf-page-file{margin-left:auto;flex:none;color:var(--tf-muted);font-size:12px}.tf-pages-none{padding:10px 10px 8px;color:var(--tf-muted);font-size:13px}' +
             '.tf-link-label{white-space:nowrap;color:var(--tf-muted)}.tf-link .tf-input{flex:1;height:32px;padding:0 10px;font-size:13.5px;border-radius:8px}.tf-link .tf-small{flex:none;height:32px;padding:0 10px;background:var(--tf-fill)}.tf-link-open{appearance:none;flex:none;display:flex;align-items:center;justify-content:center;width:32px;height:32px;border:0;border-radius:8px;background:var(--tf-fill);color:inherit;cursor:pointer;transition:background .12s}.tf-link-open:hover{background:var(--tf-fill-hover)}.tf-link-open:focus-visible{outline:2px solid var(--tf-accent);outline-offset:2px}' +
             '.tf-words{padding:4px 6px 6px;font-size:13px}.tf-captioned{display:block}.tf-caption{display:block;margin:10px 0 6px 2px;font:500 11px/1.2 var(--tf-font);letter-spacing:.02em;text-transform:uppercase;color:var(--tf-muted)}.tf-words .tf-input,.tf-add .tf-input,.tf-add .tf-select{display:block;width:100%}.tf-words .tf-area{height:32px;min-height:32px;padding:7px 10px;resize:none;line-height:18px;overflow:hidden;box-sizing:border-box}.tf-preview{padding:10px 12px;border-radius:10px;background:var(--tf-fill);font:13px/1.4 arial,sans-serif}.tf-preview-title{color:var(--tf-result);font-size:15px;line-height:1.3;overflow-wrap:anywhere}.tf-preview-url{color:var(--tf-muted);font-size:12px;margin:2px 0 4px}.tf-preview-desc{color:var(--tf-muted)}' +
             '.tf-tools{position:absolute;display:none;align-items:center;gap:3px;padding:4px;border-radius:12px;font:13.5px/1 var(--tf-font);z-index:2147483000}' +

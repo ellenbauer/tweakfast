@@ -25,7 +25,20 @@ console.log('empty field changes nothing: href', await p.$eval('main a.button', 
 /* Tab walks from the link's words into the field, Tab again moves on, Shift+Tab comes back; the site's pages are offered; the arrow opens a new tab */
 await p.keyboard.press('Escape'); await p.keyboard.press('Escape'); await edit('main a.button'); await p.waitForTimeout(200);
 await p.keyboard.press('Tab'); await p.waitForTimeout(50);
-console.log('Tab goes into the field:', await p.evaluate(() => document.activeElement === document.querySelector('.tf-link input')), '| pages offered:', await p.$$eval('#tf-pages option', os => os.map(o => o.label + '=' + o.value).join(', ')));
+console.log('Tab goes into the field:', await p.evaluate(() => document.activeElement === document.querySelector('.tf-link input')), '| pages offered:', await p.$$eval('.tf-pages-list .tf-page-item', os => os.map(o => o.querySelector('.tf-page-name').textContent + '=' + o.querySelector('.tf-page-file').textContent).join(', ')));
+/* our own list under the field: focus opens it with every page, the first lit; typing narrows it; arrows + Enter take a row; an address hides it; Esc closes the list only */
+console.log('list: under the field', await p.evaluate(() => { const f = document.querySelector('.tf-link').getBoundingClientRect(), l = document.querySelector('.tf-pages-list').getBoundingClientRect(); return Math.round(l.top - f.bottom) + ' below, width ' + Math.round(l.width) + ' of ' + Math.round(f.width); }), '| lit (the field holds words)', await p.$$eval('.tf-pages-list .tf-lit', l => l.length) === 1);
+await p.keyboard.type('ab'); await p.waitForTimeout(50);
+console.log('typed ab: rows', await p.$$eval('.tf-pages-list .tf-page-item', os => os.map(o => o.querySelector('.tf-page-file').textContent).join(', ')), '| first lit', await p.$eval('.tf-pages-list .tf-page-item', e => e.classList.contains('tf-lit')));
+await p.keyboard.press('ArrowDown'); await p.keyboard.press('Enter'); await p.waitForTimeout(150);
+console.log('ArrowDown + Enter: href', await p.$eval('main a.button', a => a.getAttribute('href')), '| field', await p.inputValue('.tf-link input'), '| list gone', await p.$$eval('.tf-pages-list', l => l.filter(x => !x.classList.contains('tf-out')).length) === 0, '| still editing', await p.$$eval('[contenteditable]', e => e.length) === 1, '| focus in field', await p.evaluate(() => document.activeElement === document.querySelector('.tf-link input')));
+await p.fill('.tf-link input', 'https://'); await p.waitForTimeout(50);
+console.log('an address typed: list', await p.$$eval('.tf-pages-list', l => l.filter(x => !x.classList.contains('tf-out')).length) === 0 ? 'hidden' : 'SHOWN');
+await p.fill('.tf-link input', 'zzz'); await p.waitForTimeout(50);
+console.log('nothing matches:', await p.$eval('.tf-pages-list .tf-pages-none', e => e.textContent).catch(() => 'NO LINE'));
+await p.fill('.tf-link input', ''); await p.waitForTimeout(50); await p.keyboard.press('Escape'); await p.waitForTimeout(250);
+console.log('Esc closes the list only: list gone', await p.$$eval('.tf-pages-list', l => l.filter(x => !x.classList.contains('tf-out')).length) === 0, '| still in the field', await p.evaluate(() => document.activeElement === document.querySelector('.tf-link input')));
+await p.fill('.tf-link input', 'about.html');
 await p.keyboard.press('Shift+Tab'); await p.waitForTimeout(50);
 console.log('Shift+Tab back in the words:', await p.evaluate(() => document.activeElement === document.querySelector('[contenteditable]')));
 await p.keyboard.press('Tab'); await p.keyboard.type('contact.html'); await p.keyboard.press('Tab'); await p.waitForTimeout(50);
