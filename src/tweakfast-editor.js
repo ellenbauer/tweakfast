@@ -681,7 +681,8 @@
         Array.prototype.forEach.call(rg.getClientRects(), function (q) { if (q.width) tops[Math.round(q.top)] = 1; });
         var par = t.parentElement, pcs = getComputedStyle(par), col = par.clientWidth - (parseFloat(pcs.paddingLeft) || 0) - (parseFloat(pcs.paddingRight) || 0);
         /* one line in a box of its own width (narrower than its column, a pill): it widens; a line as wide as the column only wraps */
-        size = { w: t.offsetWidth, h: t.offsetHeight, tw: w.width, th: w.height, one: Object.keys(tops).length <= 1 && t.offsetWidth < col - 1, sx: t.scrollWidth - t.clientWidth, sy: t.scrollHeight - t.clientHeight, touched: [], holders: [] };
+        var bx = t.getBoundingClientRect();
+        size = { w: t.offsetWidth, h: t.offsetHeight, tw: w.width, th: w.height, gl: Math.max(0, w.left - bx.left), gr: Math.max(0, bx.right - w.right), one: Object.keys(tops).length <= 1 && t.offsetWidth < col - 1, sx: t.scrollWidth - t.clientWidth, sy: t.scrollHeight - t.clientHeight, touched: [], holders: [] };
         /* the boxes holding the words, up to the page: how far each already spilled as made (a picture set past its edge,
            a picture breathing), so only spilling more than that is the words' doing */
         for (var n = t.parentElement; n && n !== document.body; n = n.parentElement) {
@@ -700,8 +701,9 @@
             touch(t); s.boxSizing = 'border-box'; s.maxWidth = '100%';
             if (size.one && !size.side) { /* sideways first */
                 size.side = true;
-                var side = Math.max(parseFloat(cs.paddingLeft) || 0, (size.w - size.tw) / 2);
-                s.width = 'max-content'; s.minWidth = size.w + 'px'; s.paddingLeft = s.paddingRight = side + 'px';
+                /* the room the words had at each side stays as it was: centred words keep their even sides, words set
+                   flush left keep their left (an even share of a wide box would push them in from its edge) */
+                s.width = 'max-content'; s.minWidth = size.w + 'px'; s.paddingLeft = size.gl + 'px'; s.paddingRight = size.gr + 'px';
             }
             /* words kept on one line as made (white-space: nowrap) at the column's width: they take more lines */
             var ws = cs.whiteSpace;
