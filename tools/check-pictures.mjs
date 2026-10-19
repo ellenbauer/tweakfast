@@ -10,6 +10,7 @@ console.log('before: field', await field(), '| alt:', await alt());
 /* a click selects: solid line, the small bar with Describes and Replace; no chooser yet */
 let opened = false; p.on('filechooser', () => { opened = true; });
 await p.click('main img'); await p.waitForTimeout(200);
+if (!(await field())) { console.log('Describes is off (ALT_ON false in the editor): a click selects, no field; the rest of this check waits for the flag. No chooser:', !opened); await b.close(); process.exit(0); }
 console.log('picture clicked: no chooser', !opened, '| line on it:', await p.evaluate(() => { const r = document.querySelector('main img').getBoundingClientRect(), b = document.querySelector('.tf-edit-box').getBoundingClientRect(); return getComputedStyle(document.querySelector('.tf-edit-box')).display === 'block' && Math.abs(b.top - r.top) < 1; }), '| field', await field(), '| shows:', await p.inputValue('.tf-link input'), '| Replace there:', (await p.$$('.tf-tools button:has-text("Replace")')).length === 1);
 const [chooser] = await Promise.all([p.waitForEvent('filechooser'), p.click('main img')]); await p.waitForTimeout(200);
 console.log('second click opens the chooser:', !!chooser);

@@ -1093,8 +1093,10 @@
     /* ---- what a picture shows ---- */
     /* A clicked picture gets a small field under it with its description (the alt text): what a screen reader
        says and what search engines read. Enter or clicking away keeps it; empty is allowed. */
+    var ALT_ON = false; /* the Describes field is out for now (2026-10-19): the field and the toolbar button wait on this flag; true brings both back */
     var altBox = null, altInput = null, altFor = null;
     function showAlt(img) {
+        if (!ALT_ON) return;
         if (!altBox) {
             altBox = el('div', 'tf-link'); altBox.setAttribute('data-tweakfast', '');
             altBox.appendChild(el('span', 'tf-link-label', 'Describes'));
@@ -1671,7 +1673,7 @@
         nameWord.textContent = nameOf(inner ? on : block);
         nameTile.classList.toggle('tf-handle', !part && !inner); nameTile.title = !part && !inner ? 'Drag to move' : '';
         blockOnly.forEach(function (n) { n.style.display = part || inner ? 'none' : ''; });
-        replaceBtn.style.display = inner && on === picked ? '' : 'none'; altBtn.style.display = inner && on === picked && !isArt(on) ? '' : 'none'; /* a drawn box has no words to describe */
+        replaceBtn.style.display = inner && on === picked ? '' : 'none'; altBtn.style.display = ALT_ON && inner && on === picked && !isArt(on) ? '' : 'none'; /* a drawn box has no words to describe */
         linkBtn.style.display = inner && on === editing && !isButton(on) ? '' : 'none';
         if (inner) { lookBtn.style.display = on === editing && isButton(on) && choicesFor(on) ? '' : 'none'; swapBtn.style.display = 'none'; }
         nameTile.nextElementSibling.style.display = Array.prototype.some.call(tools.querySelectorAll('.tf-button'), function (b) { return b.style.display !== 'none'; }) ? '' : 'none'; /* the hairline only parts the name from something */
@@ -3810,7 +3812,7 @@
         var mod = MAC ? '\u2318' : 'Ctrl+', shift = MAC ? '\u21e7\u2318' : 'Ctrl+Shift+', list = el('div', 'tf-helps');
         [['pencil', 'Words', 'Click any text to type. Enter keeps it, Shift+Enter starts a new line, Esc puts it back. Tab goes on to the next text.'],
          ['grip', 'Blocks', 'Point at a part of the page to see its tools: Look, Move, Hide, Copy, Remove. Drag the dots to move it anywhere.'],
-         ['picture', 'Pictures', 'Click a picture once to describe it, twice to choose a new one. Drag inside it to pick the part that shows.'],
+         ['picture', 'Pictures', ALT_ON ? 'Click a picture once to describe it, twice to choose a new one. Drag inside it to pick the part that shows.' : 'Click a picture once to select it, twice to choose a new one. Drag inside it to pick the part that shows.'],
          ['link', 'Links', 'While you type in a link, the Goes to field below it says where it leads.'],
          ['page', 'Pages', 'Site lists your pages. Use More on a page to rename it, hide it, remove it, set its words for Google, or bring back an older version.'],
          ['check', 'Making it live', 'Nothing changes for readers until you press Done. The number on Done shows your changes; click it to see them. Undo takes back the last one, even after Done.'],
