@@ -32,4 +32,16 @@ await p.keyboard.press('Enter'); await p.waitForTimeout(80);
 let kept = await p.$eval('.one', n => ({ inside: n.scrollWidth <= n.clientWidth + 1, sideways: document.documentElement.scrollWidth > innerWidth, h: n.offsetHeight }));
 console.log('kept: inside', kept.inside, '| no sideways page', !kept.sideways, '| same height as while edited', kept.h === word.h);
 await p.click('.tf-bar >> text=Undo'); await p.waitForTimeout(120); console.log('Undo: heading as made', await p.$eval('.one', n => !n.getAttribute('style')));
+/* a column sized by its longest word (a grid's fr column): a long word widens the column without spilling and pushes the art beside it away */
+const split = () => p.evaluate(() => ({ col: Math.round(document.querySelector('.col').getBoundingClientRect().width), art: Math.round(document.querySelector('.art').getBoundingClientRect().left), wrap: getComputedStyle(document.querySelector('.col')).overflowWrap }));
+await p.click('.tf-card .tf-button', { timeout: 1000 }).catch(() => {}); await p.waitForTimeout(100); /* the welcome card sits low, over this heading */
+const made = await split();
+await edit('.col'); await p.keyboard.type('dddddddddddddddd');
+const grown = await split();
+console.log('long word in a grid column: column kept', grown.col === made.col, '| art stays', grown.art === made.art, '| broken by the fit', grown.wrap === 'anywhere');
+await p.keyboard.press('Enter'); await p.waitForTimeout(80);
+const keptCol = await split(); console.log('kept: column kept', keptCol.col === made.col, '| art stays', keptCol.art === made.art);
+await p.click('.tf-bar >> text=Undo'); await p.waitForTimeout(120); console.log('Undo: heading as made', await p.$eval('.col', n => !n.getAttribute('style')));
+await p.click('.col'); await p.waitForTimeout(60); await p.click('.col'); await p.waitForTimeout(60); await p.keyboard.press('End'); await p.keyboard.type(' and tea'); await p.keyboard.press('Enter'); await p.waitForTimeout(80);
+console.log('words with spaces: no break rule added', await p.$eval('.col', n => getComputedStyle(n).overflowWrap !== 'anywhere'));
 await b.close();

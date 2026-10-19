@@ -682,7 +682,7 @@
         var par = t.parentElement, pcs = getComputedStyle(par), col = par.clientWidth - (parseFloat(pcs.paddingLeft) || 0) - (parseFloat(pcs.paddingRight) || 0);
         /* one line in a box of its own width (narrower than its column, a pill): it widens; a line as wide as the column only wraps */
         var bx = t.getBoundingClientRect();
-        size = { w: t.offsetWidth, h: t.offsetHeight, tw: w.width, th: w.height, gl: Math.max(0, w.left - bx.left), gr: Math.max(0, bx.right - w.right), one: Object.keys(tops).length <= 1 && t.offsetWidth < col - 1, sx: t.scrollWidth - t.clientWidth, sy: t.scrollHeight - t.clientHeight, touched: [], holders: [] };
+        size = { ow: bx.width, w: t.offsetWidth, h: t.offsetHeight, tw: w.width, th: w.height, gl: Math.max(0, w.left - bx.left), gr: Math.max(0, bx.right - w.right), one: Object.keys(tops).length <= 1 && t.offsetWidth < col - 1, sx: t.scrollWidth - t.clientWidth, sy: t.scrollHeight - t.clientHeight, touched: [], holders: [] };
         /* the boxes holding the words, up to the page: how far each already spilled as made (a picture set past its edge,
            a picture breathing), so only spilling more than that is the words' doing */
         for (var n = t.parentElement; n && n !== document.body; n = n.parentElement) {
@@ -716,6 +716,13 @@
                 s.height = 'auto'; s.minHeight = size.h + 'px'; s.paddingTop = s.paddingBottom = above + 'px';
             }
         }
+        /* one word wider than its column, where the column gives way instead (a grid or flex column sized by its longest
+           word): the words widen without spilling and push what stands beside them off the page. The word may break
+           wherever it must; kept only when that brings the column back */
+        if (cs.display !== 'inline' && !size.side && cs.overflowWrap !== 'anywhere' && t.getBoundingClientRect().width > size.ow + 1) {
+            var wide = t.getBoundingClientRect().width; touch(t); s.overflowWrap = 'anywhere';
+            if (t.getBoundingClientRect().width >= wide - 1) s.overflowWrap = '';
+        }
         /* a box around the words made to a fixed height (a section, a card): it grows with them, from its size as made */
         size.holders.forEach(function (x) {
             var n = x.el;
@@ -734,7 +741,7 @@
         var put = function (list) { list.forEach(function (x) { if (x.style === null) x.el.removeAttribute('style'); else x.el.setAttribute('style', x.style); }); };
         var now = was.touched.map(function (x) { return { el: x.el, style: x.el.getAttribute('style') }; });
         put(was.touched);
-        var over = (getComputedStyle(t).display !== 'inline' && spills(t, was)) || was.holders.some(function (x) { return x.el.scrollHeight - x.el.clientHeight > x.spill + 1; });
+        var over = (getComputedStyle(t).display !== 'inline' && (spills(t, was) || (!was.side && t.getBoundingClientRect().width > was.ow + 1))) || was.holders.some(function (x) { return x.el.scrollHeight - x.el.clientHeight > x.spill + 1; });
         if (!over) return null;
         put(now);
         return function () { put(was.touched); };
