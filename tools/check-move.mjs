@@ -12,13 +12,13 @@ const pickBlock = async (page, sel) => { /* a click on the block itself, off its
   if (await page.$eval('.tf-edit-box', e => getComputedStyle(e).display === 'block').catch(() => false)) { await page.keyboard.press('Escape'); await page.waitForTimeout(120); } }; /* a block covered by its picture or words: the click took those; Esc steps out to the block */
 const titles = () => p.evaluate(() => [...document.querySelectorAll('.cards > *')].filter(n => !n.classList.contains('tf-plus')).map(n => n.querySelector('h3').textContent).join(','));
 const count = () => p.$eval('.tf-count', c => c.style.visibility === 'hidden' ? '-' : c.textContent);
-const BACK = '.tf-tools button:is([title="Move up"],[title="Move left"])', FWD = '.tf-tools button:is([title="Move down"],[title="Move right"])';
+const BACK = '.tf-tools button:is([aria-label="Move up"],[aria-label="Move left"])', FWD = '.tf-tools button:is([aria-label="Move down"],[aria-label="Move right"])';
 const off = sel => p.$eval(sel, e => e.disabled);
 await p.goto('http://127.0.0.1:8787/demo/events.html#edit=test'); await p.waitForTimeout(400);
 await p.click('.tf-button:has-text("Got it")').catch(() => {});
-console.log('tools in order:', await p.$$eval('.tf-tools button', bs => bs.map(x => x.title).join(',')), '| every one a shape with its word:', await p.$$eval('.tf-tools button', bs => bs.every(x => x.querySelector('svg') && (x.getAttribute('aria-label') || x.textContent) === x.title)));
+console.log('tools in order:', await p.$$eval('.tf-tools button', bs => bs.map(x => x.getAttribute('aria-label')).join(',')), '| every shape carries its word, every worded button no tooltip:', await p.$$eval('.tf-tools button', bs => bs.every(x => x.querySelector('svg') ? x.getAttribute('aria-label') === x.getAttribute('data-tf-tip') && !x.title : !x.hasAttribute('data-tf-tip') && !x.title)));
 await pickBlock(p, '.card:nth-child(1)');
-console.log('cards in a row, arrows sideways:', await p.$eval(BACK, e => e.title) === 'Move left' && await p.$eval(FWD, e => e.title) === 'Move right');
+console.log('cards in a row, arrows sideways:', await p.$eval(BACK, e => e.getAttribute('aria-label')) === 'Move left' && await p.$eval(FWD, e => e.getAttribute('aria-label')) === 'Move right');
 console.log('first card: up off', await off(BACK), '| down on', !(await off(FWD)));
 await p.click(FWD); await p.waitForTimeout(300);
 console.log('moved down:', await titles(), '| count', await count(), '| tools follow it: up on now', !(await off(BACK)));

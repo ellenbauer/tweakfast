@@ -6,7 +6,7 @@ const b = await chromium.launch({ executablePath: process.env.TF_CHROME || '/App
 const p = await b.newPage({ viewport: { width: 1100, height: 900 } });
 p.on('pageerror', e => console.log('PAGEERROR', e.message));
 const edit = async (sel, o) => { await p.click(sel, o); await p.waitForTimeout(60); await p.click(sel, o); }; /* one click picks, the second edits */
-const act = async (row, word) => { await p.hover(row); await p.click(row + ' button[title="More"]'); await p.click('.tf-menu button:has-text("' + word + '")'); };
+const act = async (row, word) => { await p.hover(row); await p.click(row + ' button[aria-label="More"]'); await p.click('.tf-menu button:has-text("' + word + '")'); };
 await p.goto('http://127.0.0.1:8788/demo/events.html#edit=test');
 await p.waitForTimeout(300);
 await edit('h1'); await p.keyboard.type('!'); await p.keyboard.press('Enter');

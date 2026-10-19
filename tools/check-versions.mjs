@@ -6,7 +6,7 @@ const b = await chromium.launch({ executablePath: process.env.TF_CHROME || '/App
 const p = await b.newPage({ viewport: { width: 1100, height: 800 } });
 p.on('pageerror', e => console.log('PAGEERROR', e.message)); p.on('dialog', d => { console.log('BROWSER DIALOG', d.message()); d.dismiss(); });
 const edit = async (sel, o) => { await p.click(sel, o); await p.waitForTimeout(60); await p.click(sel, o); }; /* one click picks, the second edits */
-const act = async (row, word) => { await p.hover(row); await p.click(row + ' button[title="More"]'); await p.click('.tf-menu button:has-text("' + word + '")'); };
+const act = async (row, word) => { await p.hover(row); await p.click(row + ' button[aria-label="More"]'); await p.click('.tf-menu button:has-text("' + word + '")'); };
 const status = () => p.$eval('.tf-status', s => s.textContent.trim());
 const openSite = async () => { if (!(await p.$('.tf-panel'))) if (!(await p.$('.tf-panel:not(.tf-pal):not(.tf-out)'))) { await p.click('.tf-pages'); await p.waitForTimeout(150); } };
 const count = () => p.$eval('.tf-count', c => c.style.visibility === 'hidden' ? 0 : +c.textContent);
@@ -42,13 +42,13 @@ await openSite(); await act('.tf-row:has-text("Events")', 'Versions'); await p.w
 await p.click('.tf-versions .tf-row:has-text("The original") button'); await p.waitForTimeout(500);
 console.log('another page, the original it already is: says:', await status(), '| count', await count());
 /* a page the owner added has no original: it can be removed, out of the menu now, gone for good at Done */
-await openSite(); await p.click('.tf-sheet-head button[title="Add a page"]'); await p.selectOption('.tf-select', 'events.html'); await p.fill('.tf-add .tf-input', 'Zed'); await p.click('.tf-add button:has-text("Add")');
+await openSite(); await p.click('.tf-sheet-head button[aria-label="Add a page"]'); await p.selectOption('.tf-select', 'events.html'); await p.fill('.tf-add .tf-input', 'Zed'); await p.click('.tf-add button:has-text("Add")');
 await p.waitForFunction(() => /Page added/.test(document.querySelector('.tf-status').textContent));
 await p.click('.tf-button:has-text("Done")'); await p.waitForFunction(() => /Live/.test(document.querySelector('.tf-status').textContent)); await p.waitForTimeout(100);
 console.log('Zed saved:', (await fetch('http://127.0.0.1:8788/demo/zed.html')).status === 200);
 await openSite(); await act('.tf-row:has-text("Zed")', 'Versions'); await p.waitForTimeout(400);
 console.log('an added page offers:', await p.$$eval('.tf-versions .tf-row', rs => rs.map(r => r.querySelector('.tf-row-name').textContent.replace(/\d/g, '0')).join(' / ')));
-await p.click('.tf-sheet-head button[title="Back"]'); await p.waitForTimeout(100);
+await p.click('.tf-sheet-head button[aria-label="Back"]'); await p.waitForTimeout(100);
 await act('.tf-row:has-text("Zed")', 'Remove the page'); await p.waitForFunction(() => /out of the menu|Could not/.test(document.querySelector('.tf-status').textContent)); await p.waitForTimeout(200);
 console.log('removed:', await status(), '| Zed out of this menu:', !(await p.$('nav a[href="zed.html"]')), '| count', await count());
 await p.click('.tf-button:has-text("Undo")'); await p.waitForTimeout(100);
@@ -58,7 +58,7 @@ await p.click('.tf-button:has-text("Done")'); await p.waitForFunction(() => /Liv
 console.log('Done took it away:', (await fetch('http://127.0.0.1:8788/demo/zed.html')).status === 404, '| menus saved without it:', !/zed\.html/.test(JSON.parse(fs.readFileSync(LOG, 'utf8')).files['about.html'] || 'zed.html'));
 /* an original page (the maker shipped it) can go too: out of the menu, not served after Done; Home has no Remove */
 await openSite();
-const offers = async (row) => { await p.hover(row); await p.click(row + ' button[title="More"]'); const w = await p.$$eval('.tf-menu button', bs => bs.map(x => x.textContent)); await p.keyboard.press('Escape'); return w; };
+const offers = async (row) => { await p.hover(row); await p.click(row + ' button[aria-label="More"]'); const w = await p.$$eval('.tf-menu button', bs => bs.map(x => x.textContent)); await p.keyboard.press('Escape'); return w; };
 console.log('Home has no Remove:', !(await offers('.tf-row[data-path="index.html"]')).includes('Remove the page'), '| Events has:', (await offers('.tf-row[data-path="events.html"]')).includes('Remove the page'));
 await act('.tf-row:has-text("Events")', 'Remove the page'); await p.waitForFunction(() => /out of the menu|Could not/.test(document.querySelector('.tf-status').textContent)); await p.waitForTimeout(200);
 await p.click('.tf-button:has-text("Done")'); await p.waitForFunction(() => /Live/.test(document.querySelector('.tf-status').textContent)); await p.waitForTimeout(100);

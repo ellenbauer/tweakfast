@@ -17,7 +17,7 @@ await p.goto('http://127.0.0.1:' + PORT + '/demo/index.html?v=' + Date.now() + '
 await p.click('.tf-button:has-text("Got it")').catch(() => {});
 await edit('h1'); await p.keyboard.press('Meta+ArrowRight'); await p.keyboard.type(' today'); await p.keyboard.press('Enter'); await p.waitForTimeout(100);
 await edit('section:nth-of-type(2) h2'); await p.keyboard.press('Meta+ArrowRight'); await p.keyboard.type(' and next'); await p.keyboard.press('Enter'); await p.waitForTimeout(100);
-await pickBlock(p, '.card:nth-child(1)'); await p.click('.tf-tools button[title="Move right"]'); await p.waitForTimeout(400);
+await pickBlock(p, '.card:nth-child(1)'); await p.click('.tf-tools button[aria-label="Move right"]'); await p.waitForTimeout(400);
 await p.click('.tf-count'); await p.waitForTimeout(200);
 console.log('list open, Done not pressed:', !!(await p.$('.tf-changes')), '| count', await p.$eval('.tf-count', c => c.textContent));
 console.log('rows newest first:', JSON.stringify(await rows()));

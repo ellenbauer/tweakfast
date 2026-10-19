@@ -18,7 +18,7 @@ await p.addInitScript(() => { /* how many page listeners are bound: must not gro
   EventTarget.prototype.addEventListener = function (t, f, x) { if (t === 'mouseover' && this === document) window.__L++; return o.call(this, t, f, x); };
 });
 const edit = async (sel, o) => { await p.click(sel, o); await p.waitForTimeout(60); await p.click(sel, o); }; /* one click picks, the second edits */
-const act = async (row, word) => { await p.hover(row); await p.click(row + ' button[title="More"]'); await p.click('.tf-menu button:has-text("' + word + '")'); };
+const act = async (row, word) => { await p.hover(row); await p.click(row + ' button[aria-label="More"]'); await p.click('.tf-menu button:has-text("' + word + '")'); };
 const say = () => p.textContent('.tf-status');
 const count = () => p.$eval('.tf-count', c => c.style.visibility === 'hidden' ? '0' : c.textContent);
 const order = () => p.$$eval('main > section', s => s.map(e => (e.querySelector('h1,h2') || e).textContent.trim().split(' ').slice(0, 2).join(' ')).join(' | '));
@@ -29,8 +29,8 @@ await p.goto(S + 'index.html#edit=test'); await p.waitForTimeout(500);
 await p.evaluate(() => document.querySelector('header').addEventListener('click', () => { window.__site = (window.__site || 0) + 1; }));
 const first = await order();
 await pickBlock(p, 'main > section:nth-of-type(1)');
-await p.click('.tf-tools button[title^="Move down"]'); await p.waitForTimeout(200);
-await p.click('.tf-tools button[title^="Copy"]'); await p.waitForTimeout(200);
+await p.click('.tf-tools button[aria-label="Move down"]'); await p.waitForTimeout(200);
+await p.click('.tf-tools button[aria-label="Copy"]'); await p.waitForTimeout(200);
 await p.keyboard.press('Escape');
 for (const k of ['Meta+z', 'Meta+Shift+z', 'Meta+z', 'Meta+z']) { await p.keyboard.press(k); await p.waitForTimeout(200); }
 console.log('undo after redo: back to the start:', await order() === first, '| count', await count(), '| hover listeners', await p.evaluate(() => window.__L));
@@ -68,7 +68,7 @@ await p.keyboard.press('Escape');
 
 /* 5 the last of a group stays: the plus makes more from it */
 await p.goto(S + 'events.html#edit=test'); await p.waitForTimeout(500);
-for (let i = 0; i < 3; i++) { await pickBlock(p, '.card >> nth=0'); await p.click('.tf-tools button[title="Remove"]'); await p.waitForTimeout(150); }
+for (let i = 0; i < 3; i++) { await pickBlock(p, '.card >> nth=0'); await p.click('.tf-tools button[aria-label="Remove"]'); await p.waitForTimeout(150); }
 console.log('last card kept:', await p.$$eval('.card', c => c.length), '|', await say());
 
 /* 6 pages: a rename to a name in use is refused; Add a page is one Undo; a file outside the menu is never written over */
@@ -76,13 +76,13 @@ await p.goto(S + 'index.html#edit=test'); await p.waitForTimeout(500);
 if (!(await p.$('.tf-panel:not(.tf-pal):not(.tf-out)'))) { await p.click('.tf-pages'); await p.waitForTimeout(150); }
 await act('.tf-row:has-text("About")', 'Rename'); await p.keyboard.press('Meta+a'); await p.keyboard.type('events'); await p.keyboard.press('Enter'); await p.waitForTimeout(300);
 console.log('rename to a name in use:', await say(), '| About still there:', await p.locator('.tf-row:has-text("About")').count());
-await p.click('.tf-sheet-head button[title="Add a page"]'); await p.selectOption('.tf-select', 'events.html');
+await p.click('.tf-sheet-head button[aria-label="Add a page"]'); await p.selectOption('.tf-select', 'events.html');
 await p.fill('.tf-add .tf-input', 'Plant list'); await p.click('.tf-add button:has-text("Add")'); await p.waitForTimeout(800);
 console.log('added: count', await count(), '| in the menu:', await p.locator('nav a:has-text("Plant list")').count());
 await p.keyboard.press('Meta+z'); await p.waitForTimeout(300);
 console.log('one Undo takes link and page: count', await count(), '| in the menu:', await p.locator('nav a:has-text("Plant list")').count());
 await p.route('**/demo/rules.html', r => r.fulfill({ status: 200, contentType: 'text/html', body: '<p>rules</p>' }));
-await p.click('.tf-sheet-head button[title="Add a page"]'); await p.selectOption('.tf-select', 'events.html');
+await p.click('.tf-sheet-head button[aria-label="Add a page"]'); await p.selectOption('.tf-select', 'events.html');
 await p.fill('.tf-add .tf-input', 'Rules'); await p.click('.tf-add button:has-text("Add")'); await p.waitForTimeout(500);
 console.log('a file outside the menu:', await say(), '| count', await count());
 

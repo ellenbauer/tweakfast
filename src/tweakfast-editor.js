@@ -90,24 +90,25 @@
         injectStyle();
         bar = el('div', 'tf-bar');
         bar.setAttribute('data-tweakfast', '');
-        bar.title = 'Tweakfast ' + BUILD;
+        bar.setAttribute('data-build', BUILD); /* the bar itself says nothing on hover: its buttons do, see tip() */
         /* the bar holds buttons only, so nothing moves; sentences appear in a bubble above it */
         status = el('div', 'tf-status', ''); status.setAttribute('data-tweakfast', ''); status.setAttribute('role', 'status');
         var mac = /Mac|iPhone|iPad/.test(navigator.platform);
-        undoBtn = button('Undo', undo); undoBtn.title = mac ? 'Undo \u2318Z \u00b7 Redo \u21e7\u2318Z' : 'Undo Ctrl+Z \u00b7 Redo Ctrl+Shift+Z';
-        doneBtn = button('Done', function () { save(false); }); doneBtn.title = 'Done ' + (mac ? '\u2318S' : 'Ctrl+S');
+        undoBtn = button('Undo', undo); tip(undoBtn, 'Undo', mac ? '\u2318Z' : 'Ctrl+Z'); /* Redo is taught in Help */
+        doneBtn = button('Done', function () { save(false); }); tip(doneBtn, 'Done', mac ? '\u2318S' : 'Ctrl+S');
         doneBtn.className += ' tf-primary';
         doneCount = el('span', 'tf-count', '0'); doneBtn.appendChild(doneCount); /* how many changes Done makes live */
-        doneCount.title = 'See the changes';
+        tip(doneCount, 'See the changes');
         doneCount.addEventListener('click', function (e) { e.stopPropagation(); e.preventDefault(); toggleChanges(); }); /* the count opens the list; the rest of the button is Done */
         var leave = button('Leave', leave_); leave.className += ' tf-quiet'; symbolize(leave, 'leave');
         symbolize(undoBtn, 'undo');
         /* the page you are on; its menu lists the site's pages, Add a page and the door to the Site sheet */
         pagesBtn = el('button', 'tf-button tf-pages'); pagesBtn.type = 'button'; pagesBtn.appendChild(el('span', 'tf-page-name', '')); pagesBtn.insertAdjacentHTML('beforeend', ICON.chev);
-        pagesBtn.addEventListener('click', togglePages); pagesBtn.title = 'The pages of the site'; pagesBtn.setAttribute('aria-haspopup', 'dialog'); /* the one door to the pages: the sheet, where a row jumps and More holds the rest */
-        previewBtn = iconButton('play', 'See it as readers do', enterPreview); previewBtn.title = 'Preview: the page as readers see it';
+        pagesBtn.addEventListener('click', togglePages); pagesBtn.setAttribute('aria-haspopup', 'dialog'); /* the one door to the pages: the sheet, where a row jumps and More holds the rest */
+        previewBtn = iconButton('play', 'Preview', enterPreview);
         bar.appendChild(leave); bar.appendChild(pagesBtn); bar.appendChild(undoBtn); bar.appendChild(el('span', 'tf-sep')); bar.appendChild(previewBtn); bar.appendChild(doneBtn);
         document.body.appendChild(bar); document.body.appendChild(status);
+        tipsOn();
         window.addEventListener('resize', placeNote);
         pageUpdated = takeUpdated(document);
         realTitle = document.title; setTab();
@@ -1005,11 +1006,11 @@
             linkInput.setAttribute('list', 'tf-pages');
             linkBox.appendChild(linkInput);
             linkList = el('datalist'); linkList.id = 'tf-pages'; linkBox.appendChild(linkList);
-            var open = el('button', 'tf-link-open'); open.type = 'button'; open.title = 'Open in a new tab'; open.setAttribute('aria-label', 'Open in a new tab');
+            var open = el('button', 'tf-link-open'); open.type = 'button'; tip(open, 'Open in a new tab'); open.setAttribute('aria-label', 'Open in a new tab');
             open.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9 9 3M4 3h5v5"/></svg>';
             open.addEventListener('click', function () { applyLink(); var to = linkFor && linkFor.getAttribute('href'); if (to) window.open(to, '_blank'); linkInput.focus(); });
             linkBox.appendChild(open);
-            linkRemove = el('button', 'tf-button tf-small', 'Remove'); linkRemove.type = 'button'; linkRemove.title = 'Remove the link, keep the words';
+            linkRemove = el('button', 'tf-button tf-small', 'Remove'); linkRemove.type = 'button';
             linkRemove.addEventListener('click', removeLink);
             linkBox.appendChild(linkRemove);
             linkInput.addEventListener('input', function () { linkTyped = true; });
@@ -1528,7 +1529,7 @@
         var plus = el(last && /^(LI|TR|OPTION|DT|DD)$/.test(last.tagName) ? last.tagName.toLowerCase() : 'div', 'tf-plus');
         plus.setAttribute('data-tweakfast', '');
         plus.setAttribute('role', 'button');
-        plus.title = 'Add one more';
+        tip(plus, 'Add one more');
         var cross = '<span><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M7 1.5v11M1.5 7h11"/></svg></span>';
         if (plus.tagName === 'TR') { var cells = last.querySelectorAll('td,th').length || 1; plus.innerHTML = '<td colspan="' + cells + '">' + cross + '</td>'; }
         else plus.innerHTML = cross;
@@ -1668,9 +1669,9 @@
         nameTile.addEventListener('pointerdown', function (e) { if (nameTile.classList.contains('tf-handle')) startDrag(e); });
         tools.appendChild(nameTile); tools.appendChild(el('span', 'tf-sep'));
         blockOnly = [];
-        replaceBtn = button('Replace', function () { if (picked) swapPicture(picked); }); replaceBtn.title = 'Another picture'; tools.appendChild(replaceBtn);
-        altBtn = button('Describes', function () { var i = altBox && altBox.querySelector('input'); if (i) { i.focus(); i.select(); } }); altBtn.title = 'What the picture shows, for blind readers and Google'; tools.appendChild(altBtn);
-        lookBtn = button('Look', openLooks); lookBtn.className += ' tf-look-open'; lookBtn.title = 'Give it another look from this site'; tools.appendChild(lookBtn);
+        replaceBtn = button('Replace', function () { if (picked) swapPicture(picked); }); tools.appendChild(replaceBtn);
+        altBtn = button('Describes', function () { var i = altBox && altBox.querySelector('input'); if (i) { i.focus(); i.select(); } }); tools.appendChild(altBtn);
+        lookBtn = button('Look', openLooks); lookBtn.className += ' tf-look-open'; tools.appendChild(lookBtn);
         upBtn = iconButton('up', 'Move up', function () { move(-1); }); tools.appendChild(upBtn);
         downBtn = iconButton('down', 'Move down', function () { move(1); }); tools.appendChild(downBtn);
         swapBtn = iconButton('swap', 'Swap sides', swapSides); tools.appendChild(swapBtn);
@@ -1698,7 +1699,7 @@
         /* words or a picture inside the block are the thing: the toolbar names them and carries only what is theirs */
         var on = editing || picked, inner = on && on !== block && block.contains(on);
         nameWord.textContent = nameOf(inner ? on : block);
-        nameTile.classList.toggle('tf-handle', !part && !inner); nameTile.title = !part && !inner ? 'Drag to move' : '';
+        nameTile.classList.toggle('tf-handle', !part && !inner); tip(nameTile, !part && !inner ? 'Drag to move' : '');
         blockOnly.forEach(function (n) { n.style.display = part || inner ? 'none' : ''; });
         replaceBtn.style.display = inner && on === picked ? '' : 'none'; altBtn.style.display = ALT_ON && inner && on === picked && !isArt(on) ? '' : 'none'; /* a drawn box has no words to describe */
         if (inner) { lookBtn.style.display = on === editing && isButton(on) && choicesFor(on) ? '' : 'none'; swapBtn.style.display = 'none'; }
@@ -3624,7 +3625,7 @@
         list.forEach(function (pg) {
             var row = el('div', 'tf-row' + (pg.path === here() ? ' tf-here' : '') + (pg.hidden ? ' tf-row-hidden' : '')); row.setAttribute('data-path', pg.path);
             /* a grip to drag the row: the menu takes that order on every page */
-            var grip = el('span', 'tf-grip tf-row-grip'); grip.innerHTML = ICON.grip; grip.title = 'Drag to change the order'; grip.setAttribute('aria-label', 'Drag to change the order');
+            var grip = el('span', 'tf-grip tf-row-grip'); grip.innerHTML = ICON.grip; tip(grip, 'Drag to change the order'); grip.setAttribute('aria-label', 'Drag to change the order');
             grip.addEventListener('pointerdown', function (e) { dragRow(e, row); });
             if (list.length < 2) grip.style.visibility = 'hidden'; /* one page in the menu: nothing to order */
             row.appendChild(grip);
@@ -3634,7 +3635,7 @@
             row.appendChild(name);
             if (pg.path === home) row.appendChild(el('span', 'tf-row-note', 'Home'));
             if (pg.hidden) row.appendChild(el('span', 'tf-row-tag', 'hidden'));
-            if (pg.path === here()) { var mark = el('span', 'tf-row-check'); mark.innerHTML = ICON.check; mark.title = 'The page you are on'; row.appendChild(mark); } /* the row is filled and bold too; no dot: a dot would say "changed" */
+            if (pg.path === here()) { var mark = el('span', 'tf-row-check'); mark.innerHTML = ICON.check; tip(mark, 'The page you are on'); row.appendChild(mark); } /* the row is filled and bold too; no dot: a dot would say "changed" */
             var items = [
                 { icon: 'pencil', word: 'Rename', fn: function () { renameRow(pg, row, name); } },
                 { icon: 'search', word: 'Words for Google', fn: function () { openView({ kind: 'words', pg: pg }); } }
@@ -3661,7 +3662,7 @@
             if (pg.path === home) row.appendChild(el('span', 'tf-row-note', 'Home'));
             if (pg.fresh) row.appendChild(el('span', 'tf-row-tag', 'new'));
             else if (!menuless) row.appendChild(el('span', 'tf-row-tag', 'not in menu'));
-            if (pg.path === here()) { var mark = el('span', 'tf-row-check'); mark.innerHTML = ICON.check; mark.title = 'The page you are on'; row.appendChild(mark); }
+            if (pg.path === here()) { var mark = el('span', 'tf-row-check'); mark.innerHTML = ICON.check; tip(mark, 'The page you are on'); row.appendChild(mark); }
             var items = [{ icon: 'search', word: 'Words for Google', fn: function () { openView({ kind: 'words', pg: pg }); } }];
             if (saver && !pg.fresh) items.push({ icon: 'clock', word: 'Versions', fn: function () { openView({ kind: 'versions', pg: pg }); } });
             if (pg.fresh) { items.push('gap'); items.push({ icon: 'trash', word: 'Remove the page', danger: true, fn: function () { dropFresh(pg); } }); }
@@ -4424,7 +4425,7 @@
         menu.appendChild(el('div', 'tf-menu-label', steps.length === 1 ? 'One change, not live yet' : steps.length + ' changes, not live yet'));
         for (var k = notes.length - 1; k >= 0; k--) (function (k) {
             var note = notes[k], row = el('div', 'tf-row'), acts = el('span', 'tf-row-acts');
-            var name = el('span', 'tf-row-name', note.label); name.title = note.label; row.appendChild(name);
+            var name = el('span', 'tf-row-name', note.label); row.appendChild(name);
             if (note.show) acts.appendChild(button('Show', function () { showChange(note); }));
             acts.appendChild(button('Undo', function () { undoOne(k); }));
             row.appendChild(acts); menu.appendChild(row);
@@ -4715,17 +4716,62 @@
     function button(label, fn) { var b = el('button', 'tf-button', label); b.type = 'button'; b.addEventListener('click', fn); return b; }
     /* a button that shows a shape and says its word to the tooltip, to screen readers and to the checks */
     function iconButton(icon, word, fn) { var b = el('button', 'tf-button tf-icon'); b.type = 'button'; b.addEventListener('click', fn); relabel(b, icon, word); return b; }
-    function relabel(b, icon, word) { b.innerHTML = ICON[icon] + '<span class="tf-word"></span>'; b.lastChild.textContent = word; b.title = word; b.setAttribute('aria-label', word); }
+    function relabel(b, icon, word) { b.innerHTML = ICON[icon] + '<span class="tf-word"></span>'; b.lastChild.textContent = word; tip(b, word); b.setAttribute('aria-label', word); }
+    /* Tooltips, one rule. A tooltip says the word a control has no room for, and its key; it never explains (sentences belong in Help).
+       It opens over a shape: the icon buttons, the grip, the check mark, the plus, the count on Done. A worded button gets one only
+       to show its key (Undo, Done); a button whose word is on its face gets none, and the bar, the name of the page and the
+       fields get none. A finger never sees one (nothing to rest). The pointer rests 500 ms first; once one is open, a neighbour
+       opens at once (300 ms of warmth). A Tab onto a shape shows it too. It sits centred 6 above the control, below only when
+       there is no room above, and goes on a press, a key, a scroll, a resize or when the control goes. One element, the bar's glass. */
+    var tipEl, tipFor, tipTimer = 0, tipWarm = 0;
+    function tip(n, word, key) { n.removeAttribute('title'); if (!word) { n.removeAttribute('data-tf-tip'); n.removeAttribute('data-tf-key'); return; } n.setAttribute('data-tf-tip', word); if (key) n.setAttribute('data-tf-key', key); else n.removeAttribute('data-tf-key'); }
+    function tipOf(n) { return n && n.closest ? n.closest('[data-tf-tip]') : null; }
+    function showTip(n) {
+        clearTimeout(tipTimer); tipTimer = 0;
+        if (!tipEl) { tipEl = el('div', 'tf-tip'); tipEl.setAttribute('data-tweakfast', ''); tipEl.setAttribute('role', 'tooltip'); document.body.appendChild(tipEl); }
+        var fresh = !tipFor; tipFor = n;
+        tipEl.textContent = n.getAttribute('data-tf-tip'); var k = n.getAttribute('data-tf-key'); if (k) tipEl.appendChild(el('span', 'tf-tip-key', k));
+        tipEl.classList.remove('tf-out'); if (fresh) { tipEl.classList.remove('tf-show'); void tipEl.offsetWidth; } /* fresh: the rise plays again; a neighbour: it only moves */
+        tipEl.classList.add('tf-show'); placeTip();
+    }
+    function placeTip() {
+        if (!tipFor || !tipFor.isConnected || !tipFor.getClientRects().length) { hideTip(true); return; }
+        var r = tipFor.getBoundingClientRect(), w = tipEl.offsetWidth, h = tipEl.offsetHeight, x = Math.round(r.left + r.width / 2 - w / 2), y = Math.round(r.top - 6 - h), below = y < 8;
+        if (below) y = Math.round(r.bottom + 6);
+        tipEl.style.left = Math.max(8, Math.min(x, window.innerWidth - 8 - w)) + 'px'; tipEl.style.top = y + 'px'; tipEl.classList.toggle('tf-tip-below', below);
+    }
+    function hideTip(now) {
+        clearTimeout(tipTimer); tipTimer = 0;
+        if (!tipFor) return;
+        tipFor = null; tipWarm = Date.now();
+        if (now) { tipEl.classList.remove('tf-show'); tipEl.classList.remove('tf-out'); return; }
+        tipEl.classList.add('tf-out'); tipEl.addEventListener('animationend', function () { if (!tipFor) { tipEl.classList.remove('tf-show'); tipEl.classList.remove('tf-out'); } }, { once: true });
+    }
+    function tipsOn() {
+        if (!(window.matchMedia && matchMedia('(hover: hover) and (pointer: fine)').matches)) return; /* a finger has nothing to rest */
+        document.addEventListener('pointerover', function (e) {
+            var n = tipOf(e.target); if (n === tipFor) return; clearTimeout(tipTimer); tipTimer = 0;
+            if (!n) { hideTip(); return; }
+            if (tipFor || Date.now() - tipWarm < 300) showTip(n); else tipTimer = setTimeout(function () { showTip(n); }, 500);
+        }, true);
+        document.addEventListener('pointerout', function (e) { if (!e.relatedTarget) hideTip(); }, true); /* the pointer left the window */
+        document.addEventListener('focusin', function (e) { var n = tipOf(e.target), vis = false; try { vis = !!n && n.matches(':focus-visible'); } catch (x) {} if (vis) showTip(n); }, true);
+        document.addEventListener('focusout', function (e) { if (tipFor && tipOf(e.target) === tipFor) hideTip(true); }, true);
+        ['pointerdown', 'keydown', 'wheel', 'scroll'].forEach(function (k) { document.addEventListener(k, function () { hideTip(true); }, true); });
+        window.addEventListener('resize', function () { hideTip(true); });
+    }
     function injectStyle() {
         var s = el('style', darkGround() ? 'tf-light' : ''); s.id = 'tf-style';
         s.textContent =
-            '.tf-bar,.tf-status,.tf-link,.tf-tools,.tf-panel,.tf-card,.tf-menu,.tf-peek{--tf-time:.25s;--tf-spring:cubic-bezier(.3,1.2,.4,1);--tf-x:0;--tf-y:6px;--tf-accent:#0a84ff;--tf-ok:#30d158;--tf-bad:#ff453a;--tf-font:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;--tf-fill:rgba(255,255,255,.1);--tf-fill-hover:rgba(255,255,255,.18);--tf-fill-press:rgba(255,255,255,.26);--tf-muted:rgba(245,245,247,.6);--tf-hairline:rgba(255,255,255,.12);--tf-primary:#fff;--tf-primary-ink:#1d1d1f;--tf-lift:rgba(58,58,62,.96);--tf-result:#8ab4f8;--tf-bad-ink:#ff6b61;--tf-on-fill:rgba(10,132,255,.24);--tf-on-ink:#9ccaff;--tf-bad-fill:rgba(255,69,58,.18);--tf-bad-fill-hover:rgba(255,69,58,.3);color:#f5f5f7;background:rgba(28,28,30,.78);-webkit-backdrop-filter:blur(24px) saturate(1.6);backdrop-filter:blur(24px) saturate(1.6);box-shadow:0 10px 30px rgba(0,0,0,.22),0 1px 2px rgba(0,0,0,.12),inset 0 0 0 1px rgba(255,255,255,.1);box-sizing:border-box;-webkit-font-smoothing:antialiased}' +
-            ':root:has(#tf-style.tf-light) :is(.tf-bar,.tf-status,.tf-link,.tf-tools,.tf-panel,.tf-card,.tf-menu,.tf-peek){--tf-fill:rgba(0,0,0,.06);--tf-fill-hover:rgba(0,0,0,.1);--tf-fill-press:rgba(0,0,0,.16);--tf-muted:rgba(29,29,31,.55);--tf-hairline:rgba(0,0,0,.08);--tf-primary:#1d1d1f;--tf-primary-ink:#fff;--tf-lift:rgba(255,255,255,.98);--tf-result:#1a0dab;--tf-bad-ink:#d70015;--tf-on-fill:rgba(10,132,255,.16);--tf-on-ink:#0a84ff;--tf-bad-fill:rgba(255,69,58,.14);--tf-bad-fill-hover:rgba(255,69,58,.26);color:#1d1d1f;background:rgba(250,250,252,.82);box-shadow:0 10px 30px rgba(0,0,0,.22),0 1px 2px rgba(0,0,0,.12),inset 0 0 0 1px rgba(0,0,0,.08)}' +
+            '.tf-bar,.tf-status,.tf-link,.tf-tools,.tf-panel,.tf-card,.tf-menu,.tf-peek,.tf-tip{--tf-time:.25s;--tf-spring:cubic-bezier(.3,1.2,.4,1);--tf-x:0;--tf-y:6px;--tf-accent:#0a84ff;--tf-ok:#30d158;--tf-bad:#ff453a;--tf-font:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;--tf-fill:rgba(255,255,255,.1);--tf-fill-hover:rgba(255,255,255,.18);--tf-fill-press:rgba(255,255,255,.26);--tf-muted:rgba(245,245,247,.6);--tf-hairline:rgba(255,255,255,.12);--tf-primary:#fff;--tf-primary-ink:#1d1d1f;--tf-lift:rgba(58,58,62,.96);--tf-result:#8ab4f8;--tf-bad-ink:#ff6b61;--tf-on-fill:rgba(10,132,255,.24);--tf-on-ink:#9ccaff;--tf-bad-fill:rgba(255,69,58,.18);--tf-bad-fill-hover:rgba(255,69,58,.3);color:#f5f5f7;background:rgba(28,28,30,.78);-webkit-backdrop-filter:blur(24px) saturate(1.6);backdrop-filter:blur(24px) saturate(1.6);box-shadow:0 10px 30px rgba(0,0,0,.22),0 1px 2px rgba(0,0,0,.12),inset 0 0 0 1px rgba(255,255,255,.1);box-sizing:border-box;-webkit-font-smoothing:antialiased}' +
+            ':root:has(#tf-style.tf-light) :is(.tf-bar,.tf-status,.tf-link,.tf-tools,.tf-panel,.tf-card,.tf-menu,.tf-peek,.tf-tip){--tf-fill:rgba(0,0,0,.06);--tf-fill-hover:rgba(0,0,0,.1);--tf-fill-press:rgba(0,0,0,.16);--tf-muted:rgba(29,29,31,.55);--tf-hairline:rgba(0,0,0,.08);--tf-primary:#1d1d1f;--tf-primary-ink:#fff;--tf-lift:rgba(255,255,255,.98);--tf-result:#1a0dab;--tf-bad-ink:#d70015;--tf-on-fill:rgba(10,132,255,.16);--tf-on-ink:#0a84ff;--tf-bad-fill:rgba(255,69,58,.14);--tf-bad-fill-hover:rgba(255,69,58,.26);color:#1d1d1f;background:rgba(250,250,252,.82);box-shadow:0 10px 30px rgba(0,0,0,.22),0 1px 2px rgba(0,0,0,.12),inset 0 0 0 1px rgba(0,0,0,.08)}' +
             '@keyframes tf-in{from{opacity:0;transform:translate(var(--tf-x),var(--tf-y)) scale(.96)}to{opacity:1;transform:translate(var(--tf-x),0) scale(1)}}@keyframes tf-out{to{opacity:0;transform:translate(var(--tf-x),var(--tf-y)) scale(.97)}}@keyframes tf-view{from{opacity:0;transform:translateX(var(--tf-dx,14px))}}' +
             '.tf-bar,.tf-panel,.tf-card,.tf-menu,.tf-tools,.tf-link,.tf-peek{animation:tf-in var(--tf-time) var(--tf-spring) both}.tf-bar,.tf-panel,.tf-card,.tf-peek,.tf-status{--tf-x:-50%}.tf-panel{--tf-y:10px;transform-origin:50% 100%}.tf-menu{--tf-y:-6px;transform-origin:100% 0}.tf-tools{transform-origin:50% 100%}.tf-link{--tf-y:-6px;transform-origin:0 0}.tf-out{animation:tf-out .15s ease-in both;pointer-events:none}.tf-sheet-body.tf-forward{animation:tf-view var(--tf-time) var(--tf-spring) both}.tf-sheet-body.tf-back{--tf-dx:-14px;animation:tf-view var(--tf-time) var(--tf-spring) both}' +
             '.tf-status{opacity:0;visibility:hidden;transform:translate(-50%,6px) scale(.97);transition:opacity .15s ease-in,visibility .15s,transform .15s ease-in}.tf-status.tf-show{opacity:1;visibility:visible;transform:translate(-50%,0) scale(1);transition:opacity var(--tf-time),visibility 0s,transform var(--tf-time) var(--tf-spring)}' +
             /* the site's own rules for plain tags (button, input, a, p) must not reach the editor's parts; one class deep, so every rule below still wins */
             '[data-tweakfast],[data-tweakfast] :where(*){letter-spacing:normal;word-spacing:normal;text-transform:none;text-shadow:none;text-indent:0;float:none;font-style:normal}[data-tweakfast]{text-align:left}[data-tweakfast] :where(button,input,select,textarea){margin:0;min-width:0;max-width:none;box-shadow:none}[data-tweakfast] :where(a){text-decoration:none}' +
+            /* the tooltip: 12px on the glass of the bar, a smaller shadow than the menus (it is a word, not a sheet), the key in the muted ink; no apostrophe in these comments, the lab tools read the quotes */
+            '.tf-tip{position:fixed;left:0;top:0;display:none;z-index:2147483002;padding:5px 8px;border-radius:6px;font:500 12px/1.25 var(--tf-font);white-space:nowrap;pointer-events:none;--tf-time:.15s;--tf-y:4px;animation:tf-in var(--tf-time) var(--tf-spring) both;box-shadow:0 4px 14px rgba(0,0,0,.18),0 1px 2px rgba(0,0,0,.12),inset 0 0 0 1px rgba(255,255,255,.1)}.tf-tip.tf-show{display:block}.tf-tip.tf-tip-below{--tf-y:-4px}.tf-tip.tf-out{animation:tf-out .15s ease-in both}.tf-tip-key{margin-left:6px;color:var(--tf-muted);font-weight:400}:root:has(#tf-style.tf-light) .tf-tip{box-shadow:0 4px 14px rgba(0,0,0,.14),0 1px 2px rgba(0,0,0,.1),inset 0 0 0 1px rgba(0,0,0,.08)}' +
             '@media(prefers-reduced-motion:reduce){[data-tweakfast],[data-tweakfast] *{animation-duration:0s!important;transition-duration:0s!important}}' +
             '.tf-bar{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);display:flex;align-items:center;gap:3px;max-width:calc(100% - 32px);padding:4px;border-radius:12px;font:13.5px/1.3 var(--tf-font);z-index:2147483000}' +
             '.tf-bar .tf-button{height:32px;font-size:13.5px}.tf-sep{flex:none;width:1px;height:18px;margin:0 4px;background:var(--tf-hairline)}.tf-bar .tf-sym{display:none}.tf-pages{gap:5px}.tf-pages>svg{width:16px;height:16px;opacity:.7;margin:0 -4px 0 -2px;flex:none}.tf-page-name{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tf-item .tf-row-tag,.tf-item-check{margin-left:auto}.tf-item-check{display:inline-flex;color:var(--tf-muted)}.tf-item-check svg{width:16px;height:16px}.tf-item.tf-here{font-weight:600}' +

@@ -28,6 +28,6 @@ st = await state();
 console.log('Undo: original words', !(await p.$eval('.ticker span', e => e.textContent)).includes('SOFT'), '| twice', st.copies === 2, '| old pace back', st.dur === '20s');
 /* a copy of the strip keeps its words and its slide: a placeholder would leave one short sentence in an empty loop */
 await pickBlock(p, '.ticker');
-await p.click('.tf-tools button[title="Copy"]'); await p.waitForTimeout(300);
+await p.click('.tf-tools button[aria-label="Copy"]'); await p.waitForTimeout(300);
 console.log('copied strip: two strips', (await p.$$('.ticker')).length === 2, '| same words', await p.$$eval('.ticker span', ss => ss[0].innerHTML === ss[1].innerHTML), '| still sliding', await p.$eval('.ticker:nth-of-type(2) span', e => getComputedStyle(e).animationName !== 'none'), '| no placeholder', !(await p.$eval('.ticker:nth-of-type(2)', e => e.textContent)).includes('Your text'));
 await b.close();

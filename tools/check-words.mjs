@@ -5,7 +5,7 @@ const LOG = (process.env.TMPDIR || '/tmp') + '/tweakfast-fake-save.json';
 const b = await chromium.launch({ executablePath: process.env.TF_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true });
 const p = await b.newPage({ viewport: { width: 1100, height: 800 } });
 p.on('pageerror', e => console.log('PAGEERROR', e.message));
-const act = async (row, word) => { await p.hover(row); await p.click(row + ' button[title="More"]'); await p.click('.tf-menu button:has-text("' + word + '")'); };
+const act = async (row, word) => { await p.hover(row); await p.click(row + ' button[aria-label="More"]'); await p.click('.tf-menu button:has-text("' + word + '")'); };
 await p.goto('http://127.0.0.1:8788/demo/index.html#edit=test'); await p.waitForTimeout(500);
 if (!(await p.$('.tf-panel:not(.tf-pal):not(.tf-out)'))) { await p.click('.tf-pages'); await p.waitForTimeout(150); } await p.waitForTimeout(300);
 await act('.tf-row:has-text("Home")', 'Words for Google'); await p.waitForTimeout(300);

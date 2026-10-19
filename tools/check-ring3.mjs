@@ -4,7 +4,7 @@ const b = await chromium.launch({ executablePath: process.env.TF_CHROME || '/App
 const p = await b.newPage({ viewport: { width: 1100, height: 900 } });
 p.on('pageerror', e => console.log('PAGEERROR', e.message));
 const edit = async (sel, o) => { await p.click(sel, o); await p.waitForTimeout(60); await p.click(sel, o); }; /* one click picks, the second edits */
-const act = async (row, word) => { await p.hover(row); await p.click(row + ' button[title="More"]'); await p.click('.tf-menu button:has-text("' + word + '")'); };
+const act = async (row, word) => { await p.hover(row); await p.click(row + ' button[aria-label="More"]'); await p.click('.tf-menu button:has-text("' + word + '")'); };
 await p.goto('http://127.0.0.1:8787/demo/about.html#edit=test');
 const nav = () => p.evaluate(() => [...document.querySelectorAll('header nav a')].map(a => a.textContent + (a.hasAttribute('data-tf-hidden') ? '(hidden)' : '')).join(' | '));
 if (!(await p.$('.tf-panel:not(.tf-pal):not(.tf-out)'))) { await p.click('.tf-pages'); await p.waitForTimeout(150); }
@@ -30,7 +30,7 @@ console.log('status:', await p.textContent('.tf-status'));
 console.log('nav here:', await nav());
 console.log('changes:', await p.evaluate(() => Object.keys(window.__tf ? window.__tf() : {})) );
 // add a page like Events
-await p.click('.tf-sheet-head button[title="Add a page"]'); await p.selectOption('.tf-select', 'events.html');
+await p.click('.tf-sheet-head button[aria-label="Add a page"]'); await p.selectOption('.tf-select', 'events.html');
 await p.fill('.tf-add .tf-input', 'Plant list');
 await p.click('.tf-add button:has-text("Add")');
 await p.waitForFunction(() => /Page added|Could not|already/.test(document.querySelector('.tf-status').textContent));

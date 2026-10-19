@@ -24,4 +24,12 @@ await edit('.one'); await p.keyboard.type(' Services and much more for you');
 let one = await p.$eval('.one', n => ({ inside: n.scrollWidth <= n.clientWidth + 1, wide: n.offsetWidth, sideways: document.documentElement.scrollWidth > innerWidth }));
 console.log('one-line heading at the column wraps: words inside', one.inside, '| no sideways page', !one.sideways, '| not widened', one.wide <= 600);
 await p.keyboard.press('Escape'); await p.waitForTimeout(80); console.log('Esc: heading as made', await p.$eval('.one', n => !n.getAttribute('style')));
+/* one word wider than the column (letters typed without a space): while edited it breaks exactly as it will be kept; kept, it stays in the page */
+await edit('.one'); await p.keyboard.type(' ServicesServicesServicesServicesServicesServicesServicesServicesServices');
+let word = await p.$eval('.one', n => ({ inside: n.scrollWidth <= n.clientWidth + 1, sideways: document.documentElement.scrollWidth > innerWidth, wrap: getComputedStyle(n).overflowWrap, h: n.offsetHeight }));
+console.log('long word while edited: inside', word.inside, '| no sideways page', !word.sideways, '| broken by the fit, not the browser', word.wrap === 'anywhere');
+await p.keyboard.press('Enter'); await p.waitForTimeout(80);
+let kept = await p.$eval('.one', n => ({ inside: n.scrollWidth <= n.clientWidth + 1, sideways: document.documentElement.scrollWidth > innerWidth, h: n.offsetHeight }));
+console.log('kept: inside', kept.inside, '| no sideways page', !kept.sideways, '| same height as while edited', kept.h === word.h);
+await p.click('.tf-bar >> text=Undo'); await p.waitForTimeout(120); console.log('Undo: heading as made', await p.$eval('.one', n => !n.getAttribute('style')));
 await b.close();

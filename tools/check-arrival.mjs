@@ -7,7 +7,7 @@ const b = await chromium.launch({ executablePath: process.env.TF_CHROME || '/App
 const p = await b.newPage({ viewport: { width: 1100, height: 900 } });
 p.on('pageerror', e => console.log('PAGEERROR', e.message));
 const edit = async (sel, o) => { await p.click(sel, o); await p.waitForTimeout(60); await p.click(sel, o); }; /* one click picks, the second edits */
-const act = async (row, word) => { await p.hover(row); await p.click(row + ' button[title="More"]'); await p.click('.tf-menu button:has-text("' + word + '")'); };
+const act = async (row, word) => { await p.hover(row); await p.click(row + ' button[aria-label="More"]'); await p.click('.tf-menu button:has-text("' + word + '")'); };
 await p.goto('http://127.0.0.1:8788/demo/index.html#edit=test'); await p.waitForTimeout(400);
 console.log('tab title:', await p.title(), '| bar quiet:', (await p.textContent('.tf-status')) === '');
 console.log('first visit card:', await p.textContent('.tf-card-title'), await p.textContent('.tf-card-text'), '| above the bar:', await p.evaluate(() => document.querySelector('.tf-card').getBoundingClientRect().bottom < document.querySelector('.tf-bar').getBoundingClientRect().top));

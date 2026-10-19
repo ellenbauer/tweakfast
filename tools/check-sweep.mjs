@@ -8,7 +8,7 @@ const p = await b.newPage({ viewport: { width: 1100, height: 800 } });
 p.on('pageerror', e => console.log('PAGEERROR', e.message));
 const edit = async (sel, o) => { await p.click(sel, o); await p.waitForTimeout(60); await p.click(sel, o); };
 const count = () => p.$eval('.tf-count', e => e.style.visibility === 'hidden' ? '0' : e.textContent);
-const tool = async (title) => p.click(`.tf-tools button[title="${title}"]`);
+const tool = async (title) => p.click(`.tf-tools button[aria-label="${title}"]`);
 const html = () => p.evaluate(() => { const c = document.documentElement.cloneNode(true); return c.outerHTML; });
 
 /* 1. a footer change, then Undo at once: Undo waits, then takes it from every page */
@@ -34,7 +34,7 @@ console.log('hidden list item keeps its shape here:', live.d === before, '| fade
 await tool('Show'); await p.waitForTimeout(100);
 await p.click('.card:nth-child(1) h3'); await p.waitForTimeout(150); await p.keyboard.press('Escape');
 await p.click('.card:nth-child(1) p'); await p.waitForTimeout(150);
-const cardTools = await p.$$eval('.tf-tools button', bs => bs.map(x => x.title).join(','));
+const cardTools = await p.$$eval('.tf-tools button', bs => bs.map(x => x.getAttribute('aria-label')).join(','));
 await tool('Hide'); await p.waitForTimeout(100);
 console.log('hidden grid card stays flex here:', await p.$eval('.card', e => getComputedStyle(e).display), '| tools were:', cardTools);
 await tool('Show'); await p.waitForTimeout(100);
@@ -79,7 +79,7 @@ console.log('Undo: srcset back:', await p.$eval('img.resp', i => i.getAttribute(
 console.log('bar buttons untouched by the site:', await p.$eval('.tf-bar .tf-button', e => { const c = getComputedStyle(e); return c.textTransform + ' ' + c.letterSpacing + ' ' + c.marginTop; }));
 /* 7. nothing drops in Preview */
 await p.keyboard.press('Escape');
-await p.click('.tf-bar button[title^="Preview"]').catch(() => p.click('.tf-bar .tf-button:nth-child(3)'));
+await p.click('.tf-bar button[aria-label="Preview"]').catch(() => p.click('.tf-bar .tf-button:nth-child(3)'));
 await p.waitForTimeout(200);
 const c1 = await count();
 await p.evaluate(() => { const dt = new DataTransfer(); dt.items.add(new File([new Uint8Array([137,80,78,71])], 'x.png', { type: 'image/png' })); const img = document.querySelector('img.resp'); for (const t of ['dragover', 'drop']) img.dispatchEvent(new DragEvent(t, { bubbles: true, cancelable: true, dataTransfer: dt })); });
@@ -89,7 +89,7 @@ await p.keyboard.press('Escape');
 /* 6. a page hidden, then Undo: its noindex goes too */
 await p.goto('http://127.0.0.1:8788/demo/contact.html?n#edit=test'); await p.waitForTimeout(500);
 if (!(await p.$('.tf-panel:not(.tf-pal):not(.tf-out)'))) { await p.click('.tf-pages'); await p.waitForTimeout(150); } await p.waitForTimeout(200);
-await p.hover('.tf-row[data-path="contact.html"]'); await p.click('.tf-row[data-path="contact.html"] button[title="More"], .tf-row[data-path="contact.html"] button:has-text("More")'); await p.waitForTimeout(200);
+await p.hover('.tf-row[data-path="contact.html"]'); await p.click('.tf-row[data-path="contact.html"] button[aria-label="More"], .tf-row[data-path="contact.html"] button:has-text("More")'); await p.waitForTimeout(200);
 await p.click('.tf-menu button:has-text("Hide")').catch(e => console.log('no Hide in the row menu:', e.message.split('\n')[0]));
 await p.waitForTimeout(800);
 const ni = () => p.evaluate(() => !!document.querySelector('meta[name="robots"][content="noindex"]'));
