@@ -2661,11 +2661,22 @@
         if (pair) rules.push('[data-tf-tint="' + id + '"]{background-color:' + pair.g + '!important;color:' + pair.i + '!important}');
         var mixes = g0 && g1 && i0 && i1 && contrast(g0, i0) >= 2 && contrast(g1, i1) >= 2 /* not a picture ground, and an ink to read a mix from */
             && !(same('rgba(' + [g0.r, g0.g, g0.b, g0.a] + ')') === same('rgba(' + [g1.r, g1.g, g1.b, g1.a] + ')') && same('rgba(' + [i1.r, i1.g, i1.b, i1.a] + ')') === same('rgba(' + [i0.r, i0.g, i0.b, i0.a] + ')')); /* the same pair: nothing to bring along */
-        if (mixes) parts.forEach(function (n, j) {
+        /* a block whose own ink is no ink to read from (a see-through header over the page's green whose words all sit
+           on a pill and a button of their own, so it never writes on its ground): nothing in it is a mix of ground and ink
+           to carry over, but a part with a ground of its own still keeps the ink made for that ground, so a menu's pill
+           does not take the new ink its words were not made for */
+        var ownOnly = !mixes && !!pair;
+        if (mixes || ownOnly) parts.forEach(function (n, j) {
             if (own.some(function (o) { return o.contains(n); })) return; /* inside a part with its own ground: that part keeps its ink */
             if (n !== b && n.hasAttribute('data-tf-tint')) { own.push(n); return; } /* a part with a Look of its own keeps it: it is its choice, not the page's colours */
             var a = A[j], z = B[j], set = [];
             if (n === b) return; /* the block's own ground and ink are the class's */
+            if (ownOnly) {
+                if (!(a.image || opaque(a.backgroundColor))) return;
+                own.push(n); if (z.color !== a.color) set.push('color:' + a.color + '!important');
+                if (set.length) { mark(n, id + '-' + j); rules.push(new Array(depth + 1).join('[data-tf-t~="' + id + '-' + j + '"]') + '{' + set.join(';') + '}'); }
+                return;
+            }
             /* a part with a ground of its own that the site also shows on the new ground (a label: lime on the green
                sections, green on the light ones) takes the site's own look for it there, where its own would melt into the
                new ground or be worked out from it */
