@@ -916,8 +916,11 @@
     /* a line drawn on a part's edge, just inside it, with the part's own corners: never off the edge, never on its
        neighbour. The lines are ours, so a site's own transitions cannot delay them */
     function frame(box, r, of, at) {
-        /* a full-width element's box stays inside the page's sides: past the edge made the page scroll sideways */
-        var left = Math.max(-window.scrollX, r.left), right = Math.min(document.documentElement.clientWidth - window.scrollX, r.right);
+        /* a full-width element's box stays inside the page's sides: past the edge made the page scroll sideways. And
+           6 px in from them: a line on the window's very edge is lost in the bezel and under the scrollbar, and on a
+           band taller than the window those two sides are all that says it is selected */
+        var edge = -window.scrollX, far = document.documentElement.clientWidth - window.scrollX;
+        var left = r.left <= edge ? edge + 6 : r.left, right = r.right >= far ? far - 6 : r.right;
         put(box, left, r.top, at || of);
         box.style.width = Math.max(0, right - left) + 'px'; box.style.height = r.height + 'px';
         box.style.borderRadius = of ? getComputedStyle(of).borderRadius : '';
