@@ -1993,15 +1993,15 @@
         var best = i; sitePairs().forEach(function (p) { [p.g, p.i].forEach(function (c) { var v = rgbOf(c); if (v && contrast(g, v) > contrast(g, best)) best = v; }); });
         return contrast(g, best) >= 3 ? rgbText(best) : (lum(g) > .4 ? '#1d1d1f' : '#fff');
     }
-    /* the Look of a ground is the same four rows everywhere: light, dark, colour and inverted. A row that cannot be had
+    /* the Look of a ground is the same four rows everywhere: light, dark, accent and inverted. A row that cannot be had
        here stays, greyed, and says why. Each of the first three is the site's own: the ground the block has now, else
        the one it came with, else the first that keeps every word readable. A part that came see-through over a picture
        has one more row before them, clear: the way it came, the picture showing through. */
-    var KINDS = ['light', 'dark', 'colour'];
+    var KINDS = ['light', 'dark', 'accent']; /* accent: the site's own colour as a background; it names where the colour comes from and asks for no partner the way Light asks for Dark */
     function kindOf(bg) {
         var c = rgbOf(bg); if (!c || c.a === 0) return null;
         var mx = Math.max(c.r, c.g, c.b), mn = Math.min(c.r, c.g, c.b);
-        return mx - mn > 40 ? 'colour' : (0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b) / 255 > .5 ? 'light' : 'dark';
+        return mx - mn > 40 ? 'accent' : (0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b) / 255 > .5 ? 'light' : 'dark';
     }
     var PICTURE_GROUND = 'Its background is the picture. Click the picture to replace it.';
     var WHY = { move: 'It would move things here.', read: 'Some words would be hard to read on it.' };
@@ -2018,7 +2018,7 @@
             var pick = ok.filter(function (o) { return o.orig; })[0] || ok[0]; /* the same every time: what it came with, else the site's first */
             if (pick) return { o: pick, word: k };
             var bad = here.filter(function (o) { return o.why === 'read'; })[0] || here[0];
-            return { word: k, off: bad ? WHY[bad.why] : 'This site has no ' + (k === 'colour' ? 'coloured' : k) + ' background.' };
+            return { word: k, off: bad ? WHY[bad.why] : 'This site has no ' + k + ' background.' };
         });
         var f = list.filter(function (o) { return o.flip; })[0];
         var bare = !b.innerText.trim(); /* no words (a picture): only the ground shows, so the ground alone tells rows apart */
