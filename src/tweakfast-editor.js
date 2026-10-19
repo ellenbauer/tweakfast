@@ -819,7 +819,7 @@
             if (meta && e.shiftKey && (e.key === 'z' || e.key === 'Z') && !inField) { e.preventDefault(); redo(); return; }
             if (e.key === 'Enter' && held && !inField) { e.preventDefault(); begin(held); return; }
             /* a block is selected: the keys do what its toolbar buttons do. Undo takes any of it back. */
-            if (!inField && !e.target.closest('[data-tweakfast]') && toolsFor && tools.style.display !== 'none' && !picked && !menu && !panel && !pal && toolsFor.hasAttribute('data-tf-block')) {
+            if (!inField && !e.target.closest('[data-tweakfast]') && toolsFor && tools.style.display !== 'none' && (!picked || groundPicture(toolsFor, picked)) && !menu && !panel && !pal && toolsFor.hasAttribute('data-tf-block')) {
                 if (meta && !e.shiftKey && (e.key === 'd' || e.key === 'D')) { e.preventDefault(); copyBlock(); return; }
                 if ((e.key === 'Backspace' || e.key === 'Delete') && !meta) { e.preventDefault(); removeBlock(); return; }
                 if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') { e.preventDefault(); if (!upBtn.disabled) move(-1); return; }
@@ -1737,11 +1737,12 @@
         if (part && !ch) { hideTools(); return; }
         toolsFor = block;
         /* words or a picture inside the block are the thing: the toolbar names them and carries only what is theirs */
-        var on = editing || picked, inner = on && on !== block && block.contains(on);
+        var on = editing || picked, inner = on && on !== block && block.contains(on), ground = inner && on === picked && groundPicture(block, on);
+        if (ground) inner = false; /* a photo that is the section's whole ground: picking it is picking the section, Replace beside its own tools */
         nameWord.textContent = nameOf(inner ? on : block);
         nameTile.classList.toggle('tf-handle', !part && !inner); tip(nameTile, !part && !inner ? 'Drag to move' : '');
         blockOnly.forEach(function (n) { n.style.display = part || inner ? 'none' : ''; });
-        replaceBtn.style.display = inner && on === picked ? '' : 'none'; altBtn.style.display = ALT_ON && inner && on === picked && !isArt(on) ? '' : 'none'; /* a drawn box has no words to describe */
+        replaceBtn.style.display = (inner || ground) && on === picked ? '' : 'none'; altBtn.style.display = ALT_ON && (inner || ground) && on === picked && !isArt(on) ? '' : 'none'; /* a drawn box has no words to describe */
         if (inner) { lookBtn.style.display = on === editing && isButton(on) && choicesFor(on) ? '' : 'none'; swapBtn.style.display = 'none'; }
         sepSync();
         if (inner) { clearTimeout(lookTimer); tools.style.display = 'flex'; placeTools(); return; }
@@ -1780,9 +1781,9 @@
         if (!blockBox) { blockBox = el('span', 'tf-block-box'); blockBox.setAttribute('data-tweakfast', ''); document.body.appendChild(blockBox); }
         /* the words or picture being worked on inside the block: the tools sit just by it, and its line is the only one
            drawn; the block's own outline shows while the pointer is on the tools, to say what they act on */
-        var on = editing || held || picked, at = on && on !== toolsFor && toolsFor.contains(on) ? on.getBoundingClientRect() : null;
+        var on = editing || held || picked, at = on && on !== toolsFor && toolsFor.contains(on) && !groundPicture(toolsFor, on) ? on.getBoundingClientRect() : null;
         frame(blockBox, r, columnOf(toolsFor) && !onPicture(toolsFor) ? null : toolsFor, toolsFor);
-        var inner = (editing || picked) && toolsFor !== (editing || picked) && toolsFor.contains(editing || picked);
+        var inner = (editing || picked) && toolsFor !== (editing || picked) && toolsFor.contains(editing || picked) && !groundPicture(toolsFor, picked);
         blockBox.style.display = toolsFor.hasAttribute('data-tf-block') || sharedParts(document).indexOf(toolsFor) >= 0 || onPicture(toolsFor) ? 'block' : 'none'; /* the selected thing keeps its line */
         blockBox.classList.toggle('tf-block-inner', !!inner); blockBox.classList.toggle('tf-block-selected', !inner);
         if (hoverBox) hoverBox.style.display = toolsHover || !hoverEl ? 'none' : 'block'; /* one line at a time */ blockBox.classList.toggle('tf-block-moving', dragging); syncBlockHover();
@@ -2317,6 +2318,14 @@
             var q = img.getBoundingClientRect(), w = Math.min(q.right, r.right) - Math.max(q.left, r.left), h = Math.min(q.bottom, r.bottom) - Math.max(q.top, r.top);
             return w > 0 && h > 0 && w * h >= area * .95;
         });
+    }
+    /* the photo that is a section's whole ground (a first photo with the words laid over it): the section has no bare
+       spot left to click, so picking the photo picks the section too */
+    function groundPicture(b, img) {
+        if (!b || !img || img.tagName !== 'IMG' || !b.hasAttribute('data-tf-block') || !b.contains(img)) return false;
+        var r = b.getBoundingClientRect(), q = img.getBoundingClientRect(), area = r.width * r.height;
+        var w = Math.min(q.right, r.right) - Math.max(q.left, r.left), h = Math.min(q.bottom, r.bottom) - Math.max(q.top, r.top);
+        return area > 0 && w > 0 && h > 0 && w * h >= area * .95;
     }
     /* the boxes laid on a part whose ground is its own picture (the card on a first photo): the colour the eye sees
        there. Each is a part of its own, with its own Look: what is pointed at is what changes. Null when the part's
