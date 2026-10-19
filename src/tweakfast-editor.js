@@ -578,6 +578,7 @@
         held = null; editing = t; before = t.innerHTML; hrefBefore = t.getAttribute('href'); sizeBegin(t); fieldsBegin(t);
         var at = lettersBefore(t); flat = unbox(t); if (flat && at >= 0) caretAfter(t, at); /* the caret stays where the click put it */
         stripBegin(t);
+        wrapHold(t);
         t.setAttribute('contenteditable', 'true');
         t.classList.add('tf-editing');
         if (picked) unpick();
@@ -619,7 +620,9 @@
         t.removeAttribute('contenteditable');
         t.classList.remove('tf-editing');
         if (!t.className) t.removeAttribute('class');
+        wrapFree();
         stripEnd(t);
+        sizeFit(t); /* as the words stand without the caret: a long word that still spills is broken now, not left out of the page */
         var sizeWas = sizeEnd(t);
         var flatWas = flat; flat = null;
         if (flatWas && words(t) === flatWas.text) { t.innerHTML = before; flatWas = null; } /* nothing typed: the words keep their boxes as made */
@@ -636,6 +639,16 @@
         say('');
         if (after !== was && !t.textContent.trim() && !t.querySelector('img')) say('Emptied. Undo brings it back.');
     }
+    /* the browser lets any edited text break its long words (overflow-wrap: break-word while contenteditable), so a
+       word wider than its column wrapped nicely while typed and jumped out of the page the moment it was kept. While
+       edited, the words keep the page's own rule, so what is seen is what is kept; a spill is then the fit's to mend. */
+    var wrapPin = null;
+    function wrapHold(t) {
+        if (!wrapPin) { wrapPin = document.createElement('style'); wrapPin.setAttribute('data-tweakfast', ''); }
+        wrapPin.textContent = '.tf-editing{overflow-wrap:' + getComputedStyle(t).overflowWrap + '!important}';
+        document.head.appendChild(wrapPin);
+    }
+    function wrapFree() { if (wrapPin && wrapPin.parentNode) wrapPin.parentNode.removeChild(wrapPin); }
     /* a label that holds its field (First name, then the box to type in): only its words are typed in. The field
        takes no caret, and one taken away with the words (all selected, then typed over) comes back where it was */
     var fields = [];
@@ -692,6 +705,8 @@
             /* words kept on one line as made (white-space: nowrap) at the column's width: they take more lines */
             var ws = cs.whiteSpace;
             if (t.scrollWidth - t.clientWidth > size.sx + 1 && /^(nowrap|pre)$/.test(ws)) s.whiteSpace = ws === 'pre' ? 'pre-wrap' : 'normal';
+            /* one word wider than the column (a long name, letters typed without a space): it breaks where the column ends */
+            if (t.scrollWidth - t.clientWidth > size.sx + 1 && getComputedStyle(t).overflowWrap === 'normal') s.overflowWrap = 'anywhere';
             if (!size.down && spills(t, size)) { /* then downwards */
                 size.down = true;
                 var above = Math.max(parseFloat(cs.paddingTop) || 0, (size.h - size.th) / 2);
