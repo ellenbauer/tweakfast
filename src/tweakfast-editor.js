@@ -935,6 +935,11 @@
         node.style.left = x + 'px'; node.style.top = y + 'px';
     }
     /* held in the window while the page scrolls: inside something fixed, or something sticky that has reached its stop */
+    /* a part that rides with the screen (fixed, or sticky whether stuck right now or not): what is under it changes with every scroll */
+    function pinned(n) {
+        for (; n && n.nodeType === 1 && n !== document.body; n = n.parentElement) { var pos = getComputedStyle(n).position; if (pos === 'fixed' || pos === 'sticky') return true; }
+        return false;
+    }
     function inWindow(n) {
         if (n && n.nodeType !== 1) n = n.commonAncestorContainer || n.parentElement; /* a range of words: the part holding it */
         if (n && n.nodeType !== 1) n = n.parentElement;
@@ -2024,7 +2029,7 @@
         var list = grounds(b);
         if (!list.length) return KINDS.concat('inverted').map(function (k) { return { word: k, off: list.picture ? PICTURE_GROUND : 'This part cannot take another background.' }; });
         var rows = KINDS.map(function (k) {
-            var here = list.filter(function (o) { return !o.flip && kindOf(o.ground) === k; }), ok = here.filter(function (o) { return o.ok; });
+            var here = list.filter(function (o) { return !o.flip && !o.see && kindOf(o.ground) === k; }), ok = here.filter(function (o) { return o.ok; });
             var pick = ok.filter(function (o) { return o.orig; })[0] || ok[0]; /* the same every time: what it came with, else the site's first */
             if (pick) return { o: pick, word: k };
             var bad = here.filter(function (o) { return o.why === 'read'; })[0] || here[0];
@@ -2035,7 +2040,7 @@
         var groundAlike = function (x, y) { var p = rgbOf(x.ground), q = rgbOf(y.ground); return !!p && !!q && Math.abs(p.r - q.r) + Math.abs(p.g - q.g) + Math.abs(p.b - q.b) < 45; };
         var twin = f && f.ok && rows.filter(function (r) { return r.o && (alike(r.o, f) || sameByEye(r.o, f) || bare && groundAlike(r.o, f)); })[0]; /* swapped, it is a row already there */
         rows.push(twin ? { word: 'inverted', off: 'Same as ' + twin.word + ' here.' } : f && f.ok ? { o: f, word: 'inverted' } : { word: 'inverted', off: f ? WHY[f.why] : list.flipWhy || 'The background here is a picture.' });
-        var see = list.filter(function (o) { return o.orig && o.ok && o.plain && !rgbOf(o.ground); })[0];
+        var see = list.filter(function (o) { return o.orig && o.ok && (o.see || o.plain && !rgbOf(o.ground)); })[0];
         if (see) rows.unshift({ o: see, word: 'clear' });
         return rows;
     }
@@ -2268,10 +2273,14 @@
             /* a choice that reads well is kept unless one like it is there; one that does not, only to say why its row is grey */
             var put = function (o) {
                 if (o.flip) { list.push(o); return; }
-                if (o.ok) { if (!list.some(function (x) { return !x.flip && alike(x, o); })) list.push(o); } else off.push(o);
+                if (o.ok) { if (!list.some(function (x) { return !x.flip && !x.see && !o.see && alike(x, o); })) list.push(o); } else off.push(o);
             };
+            /* a see-through part pinned to the screen (a header riding over the page): what shows through it changes
+               with every scroll, so the way it came is one row, Clear, whatever is under it right now; the other rows
+               are the site's own colours laid on it, the same at the top of the page and at its end */
+            var see = first.plain && pinned(b);
             /* the ground it came with is always a choice: the way back needs no checking */
-            put(choice(from, null, first, { orig: true }));
+            put(choice(from, null, first, { orig: true, see: see }));
             var bare = Array.prototype.filter.call(b.classList, function (c) { return own.indexOf(c) < 0; });
             var tried = 0;
             [''].concat(names).forEach(function (c) {
@@ -2290,7 +2299,7 @@
                 });
             });
             if (!classOnly) {
-                var picture = cs.backgroundImage !== 'none' || !rgbOf(first.ground);
+                var picture = cs.backgroundImage !== 'none' || !see && !rgbOf(first.ground);
                 /* the site's own colour pairs laid on the block as they are: no class, so nothing can move */
                 if (!picture) sitePairs().forEach(function (p) {
                     if (list.some(function (x) { return x.ok && same(x.ground) === same(p.g); })) return; /* a class gives it already */
@@ -2299,9 +2308,10 @@
                 });
                 /* inverted: the ground it came with becomes its ink, and that ink its ground */
                 var gv = rgbOf(first.ground), iv = rgbOf(ink);
-                if (picture || !gv || !iv) list.flipWhy = 'The background here is a picture.';
+                if (see) list.flipWhy = 'It has no background of its own to swap.';
+                else if (picture || !gv || !iv) list.flipWhy = 'The background here is a picture.';
                 else if (contrast(blend(iv, gv), gv) < 3) list.flipWhy = 'Its words and background are too close to swap.';
-                else {
+                if (!see && !picture && gv && iv && contrast(blend(iv, gv), gv) >= 3) {
                     var fp = { g: rgbText(blend(iv, gv)), i: rgbText(gv), flip: true };
                     retint(b, from, fp); var okF = staysReadable(read, readings(b)), gF = groundLook(b); untint(b);
                     put(choice(from, fp, gF, { ok: okF, why: 'read', flip: true }));
