@@ -959,7 +959,7 @@
     /* ---- where a link goes ---- */
     /* While a link, or text with a link under the caret, is being edited, a small field under it shows the
        address. A new address is kept on Enter or when the edit ends; an empty field changes nothing. */
-    var linkBox = null, linkInput = null, linkFor = null, linkList = null, linkRange = null, linkLabel = null, linkRemove = null;
+    var linkBox = null, linkInput = null, linkFor = null, linkList = null, linkRange = null, linkLabel = null, linkRemove = null, linkTyped = false; /* typed by the owner since the field last turned to its words */
     function linkAt() {
         if (!editing) return null;
         if (editing.matches('a[href]')) return editing;
@@ -976,15 +976,13 @@
         if (!editing.contains(r.commonAncestorContainer) || !r.toString().trim()) return null;
         return r.cloneRange();
     }
-    function toggleLink() {
-        if (!editing) return;
-        if (linkBox && linkBox.parentNode) { hideLink(); editing.focus(); return; }
-        if (!linkAt() && !selectedWords()) { var sel = document.getSelection(), rg = document.createRange(); rg.selectNodeContents(editing); sel.removeAllRanges(); sel.addRange(rg); } /* no link, nothing chosen: all the words become one */
-        showLink(); if (linkInput) linkInput.focus();
-    }
+    /* the field is part of the toolbar whenever words are edited: "Goes to" with the address for a link, "Link to" empty for
+       plain words (an address typed there makes the chosen words a link, or all of them when nothing is chosen). The toolbar
+       away (a part with nothing else to offer), the field stands by the words on its own, as it did before. */
+    function linkHome() { return tools && tools.style.display === 'flex' && toolsFor && editing && toolsFor.contains(editing) ? tools : document.body; }
     function showLink() {
+        if (!editing) { hideLink(); return; }
         var a = linkAt(), rg = a ? null : selectedWords();
-        if (!a && !rg) { hideLink(); return; }
         if (!linkBox) {
             linkBox = el('div', 'tf-link'); linkBox.setAttribute('data-tweakfast', '');
             linkLabel = el('span', 'tf-link-label', 'Goes to'); linkBox.appendChild(linkLabel);
@@ -999,28 +997,33 @@
             linkRemove = el('button', 'tf-button tf-small', 'Remove'); linkRemove.type = 'button'; linkRemove.title = 'Remove the link, keep the words';
             linkRemove.addEventListener('click', removeLink);
             linkBox.appendChild(linkRemove);
+            linkInput.addEventListener('input', function () { linkTyped = true; });
             linkInput.addEventListener('blur', function () { applyLink(); });
             window.addEventListener('scroll', placeLink, true); window.addEventListener('resize', placeLink);
         }
-        if (a && a !== linkFor) { applyLink(); linkFor = a; linkRange = null; linkInput.value = a.getAttribute('href') || ''; }
-        if (!a) { linkFor = null; linkRange = rg; linkInput.value = ''; }
+        if (a && a !== linkFor) { applyLink(); linkFor = a; linkRange = null; linkInput.value = a.getAttribute('href') || ''; linkTyped = false; }
+        if (!a) { linkFor = null; linkRange = rg; linkInput.value = ''; linkTyped = false; }
         linkLabel.textContent = a ? 'Goes to' : 'Link to'; linkInput.placeholder = a ? '' : 'A page of the site, or an address';
         linkRemove.style.display = a ? '' : 'none'; linkBox.querySelector('.tf-link-open').style.display = a ? '' : 'none';
         /* the site's pages, offered as the owner types */
-        if (!linkBox.parentNode) {
-            linkList.textContent = '';
-            findPages();
-            pageList().concat(otherList()).forEach(function (pg) { var o = el('option'); o.value = pg.path; o.label = pg.name; linkList.appendChild(o); }); /* the menu's pages, then the others */
-            document.body.appendChild(linkBox);
+        var home = linkHome();
+        if (linkBox.parentNode !== home) {
+            if (!linkBox.parentNode) {
+                linkList.textContent = '';
+                findPages();
+                pageList().concat(otherList()).forEach(function (pg) { var o = el('option'); o.value = pg.path; o.label = pg.name; linkList.appendChild(o); }); /* the menu's pages, then the others */
+            }
+            linkBox.classList.toggle('tf-link-in', home === tools);
+            if (home === tools) { tools.insertBefore(linkBox, nameTile.nextElementSibling.nextSibling); linkBox.style.width = ''; linkBox.style.left = linkBox.style.top = ''; sepSync(); } /* right after the name's hairline */
+            else document.body.appendChild(linkBox);
         }
-        placeLink();
+        if (linkBox.parentNode === tools) placeTools(); else placeLink();
     }
     function placeLink() {
-        if (!linkBox || !linkBox.parentNode || !(linkFor || linkRange)) return;
-        var r = (linkFor || linkRange).getBoundingClientRect(), w = Math.min(360, window.innerWidth - 16);
+        if (!linkBox || !linkBox.parentNode || linkBox.parentNode === tools || !editing) return; /* in the toolbar it goes where the toolbar goes */
+        var r = (linkFor || linkRange || editing).getBoundingClientRect(), w = Math.min(360, window.innerWidth - 16);
         linkBox.style.width = w + 'px';
-        if (popAt(linkBox, linkBtn)) return;
-        put(linkBox, Math.max(8, Math.min(r.left, window.innerWidth - w - 8)), bubbleTop(r, linkBox.offsetHeight || 40), linkFor || linkRange);
+        put(linkBox, Math.max(8, Math.min(r.left, window.innerWidth - w - 8)), bubbleTop(r, linkBox.offsetHeight || 40), linkFor || editing);
     }
     /* a bubble goes under its element; at the foot of the window, or over the bar, it goes above instead.
        Under the page's end it would lengthen the page: the white strip below the footer. */
@@ -1041,7 +1044,10 @@
         if (r.top - 6 - h >= 8) return r.top - 6 - h;
         return Math.max(8, floor - h);
     }
-    function hideLink() { if (linkBox && linkBox.parentNode) linkBox.remove(); linkFor = null; linkRange = null; }
+    function hideLink() {
+        var was = linkBox && linkBox.parentNode; if (was) linkBox.remove(); linkFor = null; linkRange = null; linkTyped = false; if (linkInput) linkInput.value = '';
+        if (was === tools && toolsFor && toolsFor.isConnected && tools.style.display === 'flex') { sepSync(); placeTools(); } /* the toolbar shrinks back and re-centres */
+    }
     /* the words become a link; the text step at the end of the edit carries it, so Undo takes it back as one */
     function makeLink(to) {
         var rg = linkRange, a = document.createElement('a'); a.setAttribute('href', to);
@@ -1064,7 +1070,8 @@
         linkFor = null; hideLink(); editing.focus();
     }
     function applyLink() {
-        if (linkRange && linkInput) { var dest = address(linkInput.value); if (dest) makeLink(dest); return; }
+        if (!linkFor && !linkRange && linkTyped && editing && linkInput && linkInput.value.trim()) { linkRange = document.createRange(); linkRange.selectNodeContents(editing); } /* nothing chosen: all the words become the link */
+        if (linkRange && linkInput) { var dest = address(linkInput.value); if (dest) makeLink(dest); else linkRange = null; return; }
         var a = linkFor; if (!a || !linkInput) return;
         var to = address(linkInput.value), was = a.getAttribute('href');
         if (!to || to === was) return;
@@ -1364,7 +1371,7 @@
     var upBtn = null, downBtn = null; /* the block tools' Move up and Move down; Move left and Move right when the block sits beside its own */
     var swapBtn = null; /* Swap sides, on a block of two big parts side by side */
     var lookBtn = null; /* Look: a button takes another button's look, a section another background, both from the site */
-    var blockOnly = [], nameTile = null, nameWord = null, replaceBtn = null, altBtn = null, linkBtn = null; /* the tools a block has and the header or a footer has not: they only take a Look */
+    var blockOnly = [], nameTile = null, nameWord = null, replaceBtn = null, altBtn = null; /* the tools a block has and the header or a footer has not: they only take a Look */
     function isRepeated(node) {
         var p = node.parentElement; if (!p) return false;
         var kin = 0;
@@ -1648,7 +1655,6 @@
         blockOnly = [];
         replaceBtn = button('Replace', function () { if (picked) swapPicture(picked); }); replaceBtn.title = 'Another picture'; tools.appendChild(replaceBtn);
         altBtn = button('Describes', function () { var i = altBox && altBox.querySelector('input'); if (i) { i.focus(); i.select(); } }); altBtn.title = 'What the picture shows, for blind readers and Google'; tools.appendChild(altBtn);
-        linkBtn = iconButton('link', 'Link', toggleLink); linkBtn.title = 'Where these words go'; tools.appendChild(linkBtn);
         lookBtn = button('Look', openLooks); lookBtn.className += ' tf-look-open'; lookBtn.title = 'Give it another look from this site'; tools.appendChild(lookBtn);
         upBtn = iconButton('up', 'Move up', function () { move(-1); }); tools.appendChild(upBtn);
         downBtn = iconButton('down', 'Move down', function () { move(1); }); tools.appendChild(downBtn);
@@ -1662,6 +1668,12 @@
         tools.addEventListener('mouseenter', function () { toolsHover = true; placeTools(); });
         tools.addEventListener('mouseleave', function () { toolsHover = false; placeTools(); }); /* the tools stay until another block is hovered */
     }
+    /* the hairline only parts the name from something: a button that shows, or the link field */
+    function sepSync() {
+        if (!tools) return;
+        var any = (linkBox && linkBox.parentNode === tools) || Array.prototype.some.call(tools.querySelectorAll(':scope > .tf-button'), function (b) { return b.style.display !== 'none'; });
+        nameTile.nextElementSibling.style.display = any ? '' : 'none';
+    }
     function showTools(block) {
         if (!block || !block.isConnected) { hideTools(); return; }
         /* the header or a footer itself: it stays where it is, on every page; only its Look */
@@ -1674,9 +1686,8 @@
         nameTile.classList.toggle('tf-handle', !part && !inner); nameTile.title = !part && !inner ? 'Drag to move' : '';
         blockOnly.forEach(function (n) { n.style.display = part || inner ? 'none' : ''; });
         replaceBtn.style.display = inner && on === picked ? '' : 'none'; altBtn.style.display = ALT_ON && inner && on === picked && !isArt(on) ? '' : 'none'; /* a drawn box has no words to describe */
-        linkBtn.style.display = inner && on === editing && !isButton(on) ? '' : 'none';
         if (inner) { lookBtn.style.display = on === editing && isButton(on) && choicesFor(on) ? '' : 'none'; swapBtn.style.display = 'none'; }
-        nameTile.nextElementSibling.style.display = Array.prototype.some.call(tools.querySelectorAll('.tf-button'), function (b) { return b.style.display !== 'none'; }) ? '' : 'none'; /* the hairline only parts the name from something */
+        sepSync();
         if (inner) { clearTimeout(lookTimer); tools.style.display = 'flex'; placeTools(); return; }
         var hidden = block.hasAttribute('data-tf-hidden'); relabel(hideBtn, hidden ? 'eye' : 'eyeOff', hidden ? 'Show' : 'Hide');
         var kin = kinOf(block), at = kin.indexOf(block); upBtn.disabled = at <= 0; downBtn.disabled = at >= kin.length - 1; /* at an end, that way is off */
@@ -1736,8 +1747,9 @@
            inside; no room above (the header, the top of the window): below the line instead */
         var left = Math.max(8, Math.min(r.left + (r.width - w) / 2, window.innerWidth - w - 8));
         if (at && inner) left = Math.max(8, Math.min(Math.max(r.left, Math.min(at.left + (at.width - w) / 2, r.right - w)), window.innerWidth - w - 8)); /* words or a picture inside the block: centred on them, kept within the block's width */
-        var top = r.top - h - 8;
-        if (top < floor) top = r.bottom + 8 <= window.innerHeight - h - 8 ? r.bottom + 8 : floor;
+        var vb = at && inner ? at : r; /* words or a picture inside the block: above them, not above the whole block */
+        var top = vb.top - h - 8;
+        if (top < floor) top = vb.bottom + 8 <= window.innerHeight - h - 8 ? vb.bottom + 8 : floor;
         var barTop = bar.getBoundingClientRect().top; if (card) barTop = Math.min(barTop, card.getBoundingClientRect().top); barTop -= 8; /* the bar and the welcome card: never under them, the band just above instead */
         if (top + h > barTop && top < window.innerHeight) top = Math.max(floor, barTop - h);
         var held_ = top < floor; top = Math.max(floor, top);
@@ -3813,7 +3825,7 @@
         [['pencil', 'Words', 'Click any text to type. Enter keeps it, Shift+Enter starts a new line, Esc puts it back. Tab goes on to the next text.'],
          ['grip', 'Blocks', 'Point at a part of the page to see its tools: Look, Move, Hide, Copy, Remove. Drag the dots to move it anywhere.'],
          ['picture', 'Pictures', ALT_ON ? 'Click a picture once to describe it, twice to choose a new one. Drag inside it to pick the part that shows.' : 'Click a picture once to select it, twice to choose a new one. Drag inside it to pick the part that shows.'],
-         ['link', 'Links', 'While you type in a link, the Goes to field below it says where it leads.'],
+         ['link', 'Links', 'While you edit words, the toolbar says where they lead. Type a page or an address under Link to and the words become a link.'],
          ['page', 'Pages', 'Site lists your pages. Use More on a page to rename it, hide it, remove it, set its words for Google, or bring back an older version.'],
          ['check', 'Making it live', 'Nothing changes for readers until you press Done. The number on Done shows your changes; click it to see them. Undo takes back the last one, even after Done.'],
          ['keys', 'Keys', [[mod + 'Z', 'Undo'], [shift + 'Z', 'Redo'], [mod + 'S', 'Done'], [mod + 'K', 'Search everything']]],
@@ -4706,16 +4718,17 @@
             '.tf-button:hover{background:var(--tf-fill-hover)}.tf-button:active{background:var(--tf-fill-press);transform:scale(.98)}.tf-button:focus-visible{outline:2px solid var(--tf-accent);outline-offset:2px}.tf-button:disabled{opacity:.38;cursor:default;transform:none}.tf-button:disabled:hover{background:transparent}' +
             '.tf-button.tf-primary{background:var(--tf-primary);color:var(--tf-primary-ink);font-weight:600}.tf-button.tf-primary:hover{background:var(--tf-primary);filter:brightness(.94)}.tf-button.tf-primary:disabled{background:transparent;color:inherit}.tf-button.tf-primary:disabled:hover{background:transparent}.tf-button.tf-quiet{background:transparent;color:inherit;opacity:.7}.tf-button.tf-quiet:hover{background:var(--tf-fill-hover);opacity:1}.tf-button.tf-on,.tf-button.tf-on:hover{background:var(--tf-on-fill);color:var(--tf-on-ink)}' +
             '.tf-count{display:inline-block;min-width:18px;height:18px;padding:0 5px;border-radius:6px;background:var(--tf-accent);color:#fff;font-size:11px;font-weight:600;line-height:18px;text-align:center;visibility:hidden;box-sizing:border-box}' +
-            '.tf-status{position:fixed;left:50%;max-width:min(460px,calc(100% - 32px));padding:9px 14px;border-radius:12px;font:13.5px/1.4 var(--tf-font);z-index:2147483000;text-align:center}' +
-            '.tf-status.tf-error::before{content:"";display:inline-block;width:14px;height:14px;margin:0 7px 3px 0;vertical-align:middle;background:url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 14 14%27%3E%3Ccircle cx=%277%27 cy=%277%27 r=%277%27 fill=%27%23ff453a%27/%3E%3Cpath d=%27M7 3.6v4.2%27 stroke=%27%23fff%27 stroke-width=%271.7%27 stroke-linecap=%27round%27/%3E%3Ccircle cx=%277%27 cy=%2710.4%27 r=%27.95%27 fill=%27%23fff%27/%3E%3C/svg%3E") center/contain no-repeat}' +
-            '.tf-status.tf-live::before{content:"";display:inline-block;width:14px;height:14px;margin:0 7px 3px 0;vertical-align:middle;background:url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 14 14%27%3E%3Ccircle cx=%277%27 cy=%277%27 r=%277%27 fill=%27%2330d158%27/%3E%3Cpath d=%27M4 7.2l2 2 4-4.4%27 fill=%27none%27 stroke=%27%23fff%27 stroke-width=%271.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E") center/contain no-repeat}' +
-            '.tf-status .tf-offer{height:26px;padding:0 10px;margin-left:4px;font-size:12px;vertical-align:middle}' +
+            '.tf-status{position:fixed;left:50%;display:flex;align-items:center;justify-content:center;gap:7px;max-width:min(460px,calc(100% - 32px));padding:9px 14px;border-radius:12px;font:13.5px/1.4 var(--tf-font);z-index:2147483000;text-align:center}' +
+            '.tf-status.tf-error::before{content:"";display:block;flex:none;width:14px;height:14px;background:url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 14 14%27%3E%3Ccircle cx=%277%27 cy=%277%27 r=%277%27 fill=%27%23ff453a%27/%3E%3Cpath d=%27M7 3.6v4.2%27 stroke=%27%23fff%27 stroke-width=%271.7%27 stroke-linecap=%27round%27/%3E%3Ccircle cx=%277%27 cy=%2710.4%27 r=%27.95%27 fill=%27%23fff%27/%3E%3C/svg%3E") center/contain no-repeat}' +
+            '.tf-status.tf-live::before{content:"";display:block;flex:none;width:14px;height:14px;background:url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 14 14%27%3E%3Ccircle cx=%277%27 cy=%277%27 r=%277%27 fill=%27%2330d158%27/%3E%3Cpath d=%27M4 7.2l2 2 4-4.4%27 fill=%27none%27 stroke=%27%23fff%27 stroke-width=%271.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E") center/contain no-repeat}' +
+            '.tf-status .tf-offer{flex:none;height:26px;padding:0 10px;margin-left:4px;font-size:12px}' +
             '.tf-editing{min-height:1em;outline:0}.tf-edit-box{position:absolute;display:none;box-sizing:border-box;border:2px solid #0a84ff;border-radius:4px;pointer-events:none;z-index:2147482999}' +
             '.tf-hover{cursor:text}img.tf-hover,[data-tf-art].tf-hover{cursor:pointer}.tf-link.tf-art .tf-link-label,.tf-link.tf-art .tf-input{display:none}.tf-link.tf-art{padding-left:4px}.tf-hover-box,.tf-block-hover,.tf-block-box{position:absolute;display:none;box-sizing:border-box;border:1px dashed #0a84ff;opacity:1;border-radius:4px;pointer-events:none;z-index:2147482999}.tf-block-box.tf-block-selected{border:2px solid #0a84ff;opacity:1}.tf-block-box.tf-block-inner{border:1px dashed #0a84ff;opacity:1}.tf-block-box.tf-block-moving{border:2px solid #0a84ff;opacity:1;box-shadow:0 12px 32px rgba(0,0,0,.18)}' +
             '.tf-tag{position:absolute;display:none;height:18px;padding:0 6px;border-radius:6px;background:#0a84ff;color:#fff;font:500 11px/18px -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;letter-spacing:.02em;white-space:nowrap;pointer-events:none;z-index:2147483000}' +
             '.tf-link{position:absolute;display:flex;align-items:center;gap:6px;padding:4px 4px 4px 12px;border-radius:12px;font:13.5px/1.2 var(--tf-font);z-index:2147483000}' +
+            ':root:has(#tf-style) .tf-tools .tf-link.tf-link-in{position:static;transform:none;animation:none;background:none;-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:none;padding:0 0 0 6px;gap:4px;z-index:auto}.tf-link-in .tf-input{flex:none;width:220px}.tf-tools-dock .tf-link-in{flex:1;min-width:0}.tf-tools-dock .tf-link-in .tf-input{flex:1;width:auto;min-width:72px}' +
             '.tf-link-label{white-space:nowrap;color:var(--tf-muted)}.tf-link .tf-input{flex:1;height:32px;padding:0 10px;font-size:13.5px;border-radius:8px}.tf-link .tf-small{flex:none;height:32px;padding:0 10px;background:var(--tf-fill)}.tf-link-open{appearance:none;flex:none;display:flex;align-items:center;justify-content:center;width:32px;height:32px;border:0;border-radius:8px;background:var(--tf-fill);color:inherit;cursor:pointer;transition:background .12s}.tf-link-open:hover{background:var(--tf-fill-hover)}.tf-link-open:focus-visible{outline:2px solid var(--tf-accent);outline-offset:2px}' +
-            '.tf-words{padding:4px 6px 6px;font-size:13px}.tf-captioned{display:block}.tf-caption{display:block;margin:10px 0 6px 2px;font:500 11px/1.2 var(--tf-font);letter-spacing:.02em;text-transform:uppercase;color:var(--tf-muted)}.tf-words .tf-input,.tf-add .tf-input,.tf-add .tf-select{display:block;width:100%}.tf-area{height:32px;min-height:32px;padding:7px 10px;resize:none;line-height:18px;overflow:hidden;box-sizing:border-box}.tf-preview{padding:10px 12px;border-radius:10px;background:var(--tf-fill);font:13px/1.4 arial,sans-serif}.tf-preview-title{color:var(--tf-result);font-size:15px;line-height:1.3;overflow-wrap:anywhere}.tf-preview-url{color:var(--tf-muted);font-size:12px;margin:2px 0 4px}.tf-preview-desc{color:var(--tf-muted)}' +
+            '.tf-words{padding:4px 6px 6px;font-size:13px}.tf-captioned{display:block}.tf-caption{display:block;margin:10px 0 6px 2px;font:500 11px/1.2 var(--tf-font);letter-spacing:.02em;text-transform:uppercase;color:var(--tf-muted)}.tf-words .tf-input,.tf-add .tf-input,.tf-add .tf-select{display:block;width:100%}.tf-words .tf-area{height:32px;min-height:32px;padding:7px 10px;resize:none;line-height:18px;overflow:hidden;box-sizing:border-box}.tf-preview{padding:10px 12px;border-radius:10px;background:var(--tf-fill);font:13px/1.4 arial,sans-serif}.tf-preview-title{color:var(--tf-result);font-size:15px;line-height:1.3;overflow-wrap:anywhere}.tf-preview-url{color:var(--tf-muted);font-size:12px;margin:2px 0 4px}.tf-preview-desc{color:var(--tf-muted)}' +
             '.tf-tools{position:absolute;display:none;align-items:center;gap:3px;padding:4px;border-radius:12px;font:13.5px/1 var(--tf-font);z-index:2147483000}' +
             '.tf-tools.tf-tools-dock{position:fixed;left:8px;right:8px;--tf-x:0;transform:none;max-width:none;justify-content:space-between;overflow-x:auto;scrollbar-width:none}' +
             '.tf-name{display:inline-flex;align-items:center;gap:2px;height:32px;padding:0 8px 0 10px;border-radius:8px;color:var(--tf-muted);font-size:13.5px;white-space:nowrap;flex:none}.tf-name .tf-grip{display:none;width:16px;height:16px;border-radius:0;color:inherit}.tf-name.tf-handle{padding-left:6px;cursor:grab;touch-action:none;user-select:none}.tf-name.tf-handle .tf-grip{display:inline-flex;margin-right:3px}.tf-name.tf-handle:hover{background:var(--tf-fill-hover);color:inherit}.tf-name.tf-handle:active{cursor:grabbing}.tf-name .tf-grip:hover{background:none}' +
@@ -4732,7 +4745,7 @@
             '.tf-panel-title{flex:1;min-width:0;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:600 15px/1.2 var(--tf-font)}' +
             '.tf-row{position:relative;display:flex;align-items:center;gap:8px;min-height:40px;padding:0 6px 0 4px;border-radius:10px;font-size:14px;transition:background .12s}.tf-row:hover,.tf-row.tf-open,.tf-row:focus-within{background:var(--tf-fill)}.tf-row-grip{opacity:0;transition:opacity .12s}.tf-row:hover .tf-row-grip,.tf-row.tf-open .tf-row-grip,.tf-row-moving .tf-row-grip{opacity:1}.tf-row-moving{background:var(--tf-lift);box-shadow:0 8px 24px rgba(0,0,0,.35)}.tf-rename{flex:1;min-width:0;height:28px}.tf-row-note,.tf-row-tag{color:var(--tf-muted);flex:none;height:18px;line-height:18px;font-size:11px;font-weight:600;padding:0 6px;border-radius:6px;background:var(--tf-fill)}.tf-row-hidden .tf-row-name{color:var(--tf-muted)}.tf-row-plain{padding:6px 6px 6px 10px}.tf-row-plain:hover{background:none}.tf-row-plain .tf-row-name{white-space:normal;line-height:1.4;font-size:13px;color:var(--tf-muted);cursor:default}.tf-row-plain .tf-row-name:hover{text-decoration:none}' +
             '.tf-row-name{flex:0 1 auto;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:inherit;text-decoration:none;padding:2px 0}.tf-row-name:hover{text-decoration:underline}.tf-row-name:focus{outline:none}.tf-row-name:focus-visible{outline:2px solid var(--tf-accent);outline-offset:2px;border-radius:4px}.tf-row.tf-here{background:var(--tf-fill)}.tf-row.tf-here:hover{background:var(--tf-fill-hover)}.tf-row.tf-here .tf-row-name{font-weight:600}.tf-row-check{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin-left:auto;color:var(--tf-muted);flex:none}.tf-row-check svg{width:14px;height:14px}.tf-row-check+.tf-row-acts{margin-left:0}' +
-            '.tf-row-acts{display:flex;gap:2px;align-items:center;flex:none;margin-left:auto;opacity:0;transition:opacity .12s}.tf-row:hover .tf-row-acts,.tf-row.tf-open .tf-row-acts,.tf-row:focus-within .tf-row-acts,.tf-versions .tf-row-acts{opacity:1}.tf-row-acts .tf-button{height:28px;padding:0 10px;font-size:13px}.tf-row-acts .tf-icon{width:28px}.tf-versions{padding:2px 0 0;font-size:13px}.tf-versions .tf-row{padding-left:10px}.tf-versions .tf-caption{margin-left:10px}.tf-menu{position:fixed;width:220px;padding:4px;border-radius:12px;font:13.5px/1 var(--tf-font);z-index:2147483001}.tf-item{appearance:none;display:flex;align-items:center;gap:10px;width:100%;height:32px;padding:0 10px;border:0;border-radius:8px;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}.tf-item:hover,.tf-item:focus-visible{background:var(--tf-fill);outline:0}.tf-item:focus-visible{box-shadow:inset 0 0 0 2px var(--tf-accent)}.tf-item svg{width:16px;height:16px;color:var(--tf-muted);flex:none}.tf-item.tf-danger{color:var(--tf-bad-ink)}.tf-item.tf-danger svg{color:currentColor}.tf-helps{display:grid;gap:16px;padding:10px 8px 8px}.tf-help-row{display:grid;grid-template-columns:30px 1fr;gap:12px;align-items:start}.tf-help-icon{display:grid;place-items:center;width:30px;height:30px;border-radius:8px;background:var(--tf-fill);color:var(--tf-accent)}.tf-help-icon svg{width:16px;height:16px}.tf-help-title{font:600 13.5px/1.3 var(--tf-font);margin:1px 0 3px}.tf-help{margin:0;font-size:13px;line-height:1.45;color:var(--tf-muted)}.tf-help-keys{display:flex;flex-wrap:wrap;gap:6px 14px}.tf-keys span{display:inline-flex;align-items:center;gap:6px}.tf-kbd{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:20px;padding:0 6px;border-radius:5px;background:var(--tf-fill);box-shadow:0 0 0 1px var(--tf-hairline),0 1px 0 var(--tf-hairline);font:500 11.5px/1 var(--tf-font);color:inherit}.tf-share-line{display:flex;gap:6px;align-items:center}.tf-share-line .tf-input{flex:1;min-width:0}.tf-qr{width:168px;margin:2px 0 10px;border-radius:12px;overflow:hidden;line-height:0}.tf-qr svg{width:100%;height:auto;display:block}.tf-share-note{margin:4px 2px 2px;font-size:13px;line-height:1.45;color:var(--tf-muted)}.tf-changes{width:340px;max-width:calc(100vw - 16px);max-height:50vh;overflow:auto}.tf-changes .tf-row{min-height:36px;padding:0 2px 0 10px;font-size:13px}.tf-changes .tf-row-name{flex:1 1 auto;font-weight:400;color:inherit}.tf-changes .tf-row-acts{opacity:1}.tf-count{cursor:pointer}.tf-gap{height:1px;background:var(--tf-hairline);margin:6px 4px}.tf-note{padding:6px 10px 4px;color:var(--tf-muted);font-size:12px;line-height:1.4}' +
+            '.tf-row-acts{display:flex;gap:2px;align-items:center;flex:none;margin-left:auto;opacity:0;transition:opacity .12s}.tf-row:hover .tf-row-acts,.tf-row.tf-open .tf-row-acts,.tf-row:focus-within .tf-row-acts,.tf-versions .tf-row-acts{opacity:1}.tf-row-acts .tf-button{height:28px;padding:0 10px;font-size:13px}.tf-row-acts .tf-icon{width:28px}.tf-versions{padding:2px 0 0;font-size:13px}.tf-versions .tf-row{padding-left:10px}.tf-versions .tf-row-name{cursor:default}.tf-versions .tf-row-name:hover{text-decoration:none}.tf-versions .tf-caption{margin-left:10px}.tf-menu{position:fixed;width:220px;padding:4px;border-radius:12px;font:13.5px/1 var(--tf-font);z-index:2147483001}.tf-item{appearance:none;display:flex;align-items:center;gap:10px;width:100%;height:32px;padding:0 10px;border:0;border-radius:8px;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}.tf-item:hover,.tf-item:focus-visible{background:var(--tf-fill);outline:0}.tf-item:focus-visible{box-shadow:inset 0 0 0 2px var(--tf-accent)}.tf-item svg{width:16px;height:16px;color:var(--tf-muted);flex:none}.tf-item.tf-danger{color:var(--tf-bad-ink)}.tf-item.tf-danger svg{color:currentColor}.tf-helps{display:grid;gap:16px;padding:10px 8px 8px}.tf-help-row{display:grid;grid-template-columns:30px 1fr;gap:12px;align-items:start}.tf-help-icon{display:grid;place-items:center;width:30px;height:30px;border-radius:8px;background:var(--tf-fill);color:var(--tf-accent)}.tf-help-icon svg{width:16px;height:16px}.tf-help-title{font:600 13.5px/1.3 var(--tf-font);margin:1px 0 3px}.tf-help{margin:0;font-size:13px;line-height:1.45;color:var(--tf-muted)}.tf-help-keys{display:flex;flex-wrap:wrap;gap:6px 14px}.tf-help-keys span{display:inline-flex;align-items:center;gap:6px}.tf-kbd{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:20px;padding:0 6px;border-radius:5px;background:var(--tf-fill);box-shadow:0 0 0 1px var(--tf-hairline),0 1px 0 var(--tf-hairline);font:500 11.5px/1 var(--tf-font);color:inherit}.tf-share-line{display:flex;gap:6px;align-items:center}.tf-share-line .tf-input{flex:1;min-width:0}.tf-qr{width:168px;margin:2px 0 10px;border-radius:12px;overflow:hidden;line-height:0}.tf-qr svg{width:100%;height:auto;display:block}.tf-share-note{margin:4px 2px 2px;font-size:13px;line-height:1.45;color:var(--tf-muted)}.tf-changes{width:340px;max-width:calc(100vw - 16px);max-height:50vh;overflow:auto}.tf-changes .tf-row{min-height:36px;padding:0 2px 0 10px;font-size:13px}.tf-changes .tf-row-name{flex:1 1 auto;font-weight:400;color:inherit}.tf-changes .tf-row-acts{opacity:1}.tf-count{cursor:pointer}.tf-gap{height:1px;background:var(--tf-hairline);margin:6px 4px}.tf-note{padding:6px 10px 4px;color:var(--tf-muted);font-size:12px;line-height:1.4}' +
             '.tf-menu.tf-looks{width:min(340px,calc(100vw - 16px))}.tf-item.tf-look{height:auto;min-height:44px;padding:5px 6px;gap:12px}.tf-look-ground{flex:1 1 auto;min-width:0;display:flex;align-items:center;padding:8px 10px;border-radius:8px;overflow:hidden}.tf-look-sample{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.2;box-sizing:border-box}.tf-look-word{display:flex;align-items:center;justify-content:flex-end;gap:4px;flex:none;width:92px;color:var(--tf-muted);font-size:12px}.tf-look-word svg{width:13px;height:13px;color:var(--tf-primary)}.tf-item.tf-off{cursor:default}.tf-item.tf-off:hover{background:none}.tf-look-why{flex:1 1 auto;min-width:0;padding:4px 10px;color:var(--tf-muted);font-size:12px;line-height:1.35}.tf-menu.tf-grounds{width:min(280px,calc(100vw - 16px))}.tf-swatch-row{height:auto;min-height:52px;padding:4px;gap:10px}.tf-swatch{flex:1 1 auto;min-width:0;display:flex;align-items:center;height:44px;padding:0 14px;border-radius:9px;box-shadow:inset 0 0 0 1px rgba(127,127,127,.28);font:500 14px/1 var(--tf-font)}.tf-swatch{justify-content:space-between}.tf-swatch-tick{flex:none;display:flex}.tf-swatch-clear{color:#1d1d1f;background-color:#fff;background-image:linear-gradient(45deg,#e5e5ea 25%,transparent 25%,transparent 75%,#e5e5ea 75%),linear-gradient(45deg,#e5e5ea 25%,transparent 25%,transparent 75%,#e5e5ea 75%);background-size:12px 12px;background-position:0 0,6px 6px}.tf-swatch-name{padding:3px 6px;margin-left:-6px;border-radius:5px;background:rgba(255,255,255,.9)}.tf-swatch-tick svg{width:15px;height:15px;color:currentColor}.tf-off .tf-look-word{opacity:.55}.tf-menu-label{padding:8px 10px 4px;color:var(--tf-muted);font-size:12px;font-weight:600}' +
             '.tf-pal-field{display:flex;align-items:center;gap:10px;flex:none;height:48px;padding:0 12px 0 16px;border-bottom:1px solid var(--tf-hairline)}.tf-pal-field svg{width:16px;height:16px;color:var(--tf-muted);flex:none}.tf-pal-input{flex:1;min-width:0;border:0;padding:0;background:none;color:inherit;font:15px/1 var(--tf-font);outline:0}.tf-pal-input::placeholder{color:var(--tf-muted)}' +
             '.tf-key{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;border-radius:5px;background:var(--tf-fill);color:var(--tf-muted);font:500 11px/1 var(--tf-font);box-shadow:inset 0 -1px 0 var(--tf-hairline);flex:none}.tf-keys{display:flex;gap:3px;margin-left:auto}' +
