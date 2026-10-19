@@ -88,7 +88,7 @@ console.log('drop in Preview: picture kept:', await p.$eval('img.resp', i => !i.
 await p.keyboard.press('Escape');
 /* 6. a page hidden, then Undo: its noindex goes too */
 await p.goto('http://127.0.0.1:8788/demo/contact.html?n#edit=test'); await p.waitForTimeout(500);
-await p.click('.tf-button:has-text("Site")'); await p.waitForTimeout(200);
+if (!(await p.$('.tf-panel:not(.tf-pal):not(.tf-out)'))) { await p.click('.tf-pages'); await p.waitForTimeout(150); } await p.waitForTimeout(200);
 await p.hover('.tf-row[data-path="contact.html"]'); await p.click('.tf-row[data-path="contact.html"] button[title="More"], .tf-row[data-path="contact.html"] button:has-text("More")'); await p.waitForTimeout(200);
 await p.click('.tf-menu button:has-text("Hide")').catch(e => console.log('no Hide in the row menu:', e.message.split('\n')[0]));
 await p.waitForTimeout(800);

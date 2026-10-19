@@ -8,9 +8,16 @@ inline scripts that are app machinery, and script files bigger than 1 KB; a smal
 the tool's own comment markers, and adds the Tweakfast script line when it is missing. Written back in
 place. Nothing inside <main> is touched, and a badge goes only when it links to another site or is pinned
 to the screen. A page without <main> or without text of its own is named with one sentence and published
-as it is; only when no page has text of its own (an app, not a plain site) it exits 2. No tool is named
+as it is; only when no page has text of its own (an app, not a plain site) it exits 2. It also exits 2,
+publishing nothing, when a page is a site builder's export: heavier than HEAVY, or its boxes nested deeper
+than DEEP. Such a page half works: slow to open, a save soon over the size a page may have, and blocks that
+lose their look when moved or copied, because the look hangs on the builder's own boxes. No tool is named
 here; the rules are the same for every source."""
 import os, re, sys
+from html.parser import HTMLParser
+
+HEAVY = 512 * 1024  # bytes of HTML; plain pages weigh under 60 KB, a builder's export from 700 KB up
+DEEP = 24           # boxes inside boxes; plain pages go 6 to 14 deep, a builder's export 40
 
 # a tool's mark: named so outright, or a "badge" whose words say who made it (a site's own "New" badge stays)
 MARK = re.compile(r"""(?:id|class)=["'][^"']*(?:watermark|made-with|built-with|powered-by)[^"']*["']""", re.I)
@@ -61,6 +68,21 @@ def fixed(s, start, end):
 def outside_link(s, start, end):
     """the element links to another site (a tool's badge sends its readers home)"""
     return bool(re.search(r"""\bhref=["']?(?:https?:)?//""", s[start:end], re.I))
+
+class Depth(HTMLParser):
+    """how many boxes deep the page's body goes (drawings, scripts and styles left out)"""
+    EMPTY = {'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr'}
+    def __init__(self):
+        super().__init__(); self.now = self.most = 0
+    def handle_starttag(self, tag, attrs):
+        if tag not in self.EMPTY: self.now += 1; self.most = max(self.most, self.now)
+    def handle_endtag(self, tag):
+        if tag not in self.EMPTY: self.now = max(0, self.now - 1)
+
+def depth(s):
+    body = re.search(r'<body\b[\s\S]*', s, re.I)
+    d = Depth(); d.feed(re.sub(r'<(script|style|svg|template)\b[\s\S]*?</\1\s*>', ' ', body.group(0) if body else s, flags=re.I)); d.close()
+    return d.most
 
 def clean(s, where=None):
     out = {'scripts': 0, 'badges': 0, 'names': []}
@@ -117,10 +139,12 @@ def clean(s, where=None):
     text = re.sub(r'<[^>]+>', ' ', re.sub(r'<(script|style)\b[\s\S]*?</\1\s*>', ' ', body.group(0) if body else s, flags=re.I))
     out['main'] = bool(main)
     out['plain'] = len(text.split()) >= 20
+    out['heavy'] = len(s.encode('utf-8')) > HEAVY
+    out['deep'] = depth(s) > DEEP
     return s, out
 
 if __name__ == '__main__':
-    plain = 0
+    plain, builder = 0, 0
     for path in sys.argv[1:]:
         s = open(path, encoding='utf-8').read()
         s, out = clean(s, os.path.dirname(os.path.abspath(path)))
@@ -133,9 +157,16 @@ if __name__ == '__main__':
             note.append('%d %s (%s)' % (out['scripts'], 'script' if out['scripts'] == 1 else 'scripts', ', '.join(files)))
         if out['badges']: note.append('%d %s' % (out['badges'], 'badge' if out['badges'] == 1 else 'badges'))
         if note: print(name + ': taken out ' + ', '.join(note))
-        if not out['plain']: print(name + ': not a plain page. Its text is drawn by a program, so it shows little and has nothing to edit. Ask the maker for plain HTML (site/RULES.md).')
+        if out['heavy'] or out['deep']:
+            why = 'it weighs %d KB, where a plain page weighs under 60' % (len(s.encode('utf-8')) // 1024) if out['heavy'] else 'its boxes sit %d deep, where a plain page needs about 10' % depth(s)
+            print(name + ': made by a site builder, ' + why + '. Tweakfast would open slowly, fail to save, and break the look when blocks move or copy.')
+            builder += 1
+        elif not out['plain']: print(name + ': not a plain page. Its text is drawn by a program, so it shows little and has nothing to edit. Ask the maker for plain HTML (site/RULES.md).')
         elif not out['main']: print(name + ': no <main>, so its blocks cannot be moved or hidden. Put the page\'s own content inside one <main> element (site/RULES.md).')
         if out['plain']: plain += 1
+    if builder:
+        print('Nothing published. Rebuild %s as plain HTML first, with the same words, pictures and colours (site/RULES.md), then publish again.' % ('this page' if builder == 1 else 'these pages'))
+        sys.exit(2)
     if sys.argv[1:] and not plain:
         print('No page has text of its own: this is an app, not a plain site. Ask the maker for plain HTML (site/RULES.md).')
         sys.exit(2)

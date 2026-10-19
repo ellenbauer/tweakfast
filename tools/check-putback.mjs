@@ -9,7 +9,7 @@ p.on('pageerror', e => console.log('PAGEERROR', e.message)); p.on('dialog', d =>
 const edit = async (sel) => { await p.click(sel); await p.waitForTimeout(60); await p.click(sel); };
 const act = async (row, word) => { await p.hover(row); await p.click(row + ' button[title="More"]'); await p.click('.tf-menu button:has-text("' + word + '")'); };
 const status = () => p.$eval('.tf-status', s => s.textContent.trim());
-const openSite = async () => { if (!(await p.$('.tf-panel'))) await p.click('.tf-button:has-text("Site")'); };
+const openSite = async () => { if (!(await p.$('.tf-panel'))) if (!(await p.$('.tf-panel:not(.tf-pal):not(.tf-out)'))) { await p.click('.tf-pages'); await p.waitForTimeout(150); } };
 const done = async () => { await p.click('.tf-button:has-text("Done")'); await p.waitForFunction(() => /Live/.test(document.querySelector('.tf-status').textContent)); await p.waitForTimeout(100); };
 await p.goto('http://127.0.0.1:8788/demo/about.html?v=' + Date.now() + '#edit=test'); await p.waitForTimeout(500);
 await edit('header .logo'); await p.keyboard.press('Control+A'); await p.keyboard.press('Meta+A'); await p.keyboard.type('rose&fern'); await p.keyboard.press('Enter'); await p.waitForTimeout(400);

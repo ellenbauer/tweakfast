@@ -7,7 +7,7 @@ const edit = async (sel, o) => { await p.click(sel, o); await p.waitForTimeout(6
 const act = async (row, word) => { await p.hover(row); await p.click(row + ' button[title="More"]'); await p.click('.tf-menu button:has-text("' + word + '")'); };
 await p.goto('http://127.0.0.1:8787/demo/about.html#edit=test');
 const nav = () => p.evaluate(() => [...document.querySelectorAll('header nav a')].map(a => a.textContent + (a.hasAttribute('data-tf-hidden') ? '(hidden)' : '')).join(' | '));
-await p.click('.tf-button:has-text("Site")');
+if (!(await p.$('.tf-panel:not(.tf-pal):not(.tf-out)'))) { await p.click('.tf-pages'); await p.waitForTimeout(150); }
 console.log('panel rows:', await p.evaluate(() => [...document.querySelectorAll('.tf-row')].map(r => r.textContent.trim()).join(' / ')));
 /* the name is the way to the page, the current one is marked, the buttons show on the hovered row only */
 console.log('current page marked:', await p.$eval('.tf-row.tf-here .tf-row-name', e => e.textContent + ' bold=' + (getComputedStyle(e).fontWeight >= 600)), '| filled + check, no dot:', await p.$eval('.tf-row.tf-here', r => getComputedStyle(r).backgroundColor !== 'rgba(0, 0, 0, 0)' && !!r.querySelector('.tf-row-check svg') && getComputedStyle(r.querySelector('.tf-row-name'), '::before').content === 'none'), '| names are links:', await p.$$eval('.tf-row-name', es => es.every(e => e.tagName === 'A' && /\.html$/.test(e.getAttribute('href')))));
@@ -15,13 +15,13 @@ console.log('buttons hidden at rest:', await p.$eval('.tf-row:not(.tf-here) .tf-
 await p.hover('.tf-row:has-text("Home")'); await p.waitForTimeout(200);
 console.log('shown on the hovered row:', await p.$eval('.tf-row:has-text("Home") .tf-row-acts', e => getComputedStyle(e).opacity === '1'));
 await edit('h1'); await p.keyboard.press('End'); await p.keyboard.type(' G'); await p.keyboard.press('Enter'); await p.waitForTimeout(100);
-await p.click('.tf-button:has-text("Site")'); await p.click('.tf-row-name:has-text("Home")'); await p.waitForTimeout(100);
+if (!(await p.$('.tf-panel:not(.tf-pal):not(.tf-out)'))) { await p.click('.tf-pages'); await p.waitForTimeout(150); } await p.click('.tf-row-name:has-text("Home")'); await p.waitForTimeout(100);
 await p.waitForURL(/index\.html/); await p.waitForTimeout(400);
 console.log('with a change, the name just goes and the change comes along: on Home', /index\.html/.test(p.url()), '| count', await p.$eval('.tf-count', e => e.textContent), '| quiet:', !(await p.textContent('.tf-status')).includes('came back'), '| bar there:', !!(await p.$('.tf-bar')));
 await p.click('.tf-button:has-text("Undo")'); await p.waitForTimeout(200);
-await p.click('.tf-button:has-text("Site")'); await p.click('.tf-row-name:has-text("About")'); await p.waitForLoadState(); await p.waitForTimeout(300);
+if (!(await p.$('.tf-panel:not(.tf-pal):not(.tf-out)'))) { await p.click('.tf-pages'); await p.waitForTimeout(150); } await p.click('.tf-row-name:has-text("About")'); await p.waitForLoadState(); await p.waitForTimeout(300);
 console.log('clean, the name just goes: back on About:', /about\.html/.test(p.url()));
-await p.click('.tf-button:has-text("Site")');
+if (!(await p.$('.tf-panel:not(.tf-pal):not(.tf-out)'))) { await p.click('.tf-pages'); await p.waitForTimeout(150); }
 
 // hide Contact
 await act('.tf-row:has-text("Contact")', 'Hide from the menu');
@@ -50,7 +50,7 @@ for (const name of Object.keys(files).sort()) {
 console.log('plant list placeholders:', (files['plant-list.html'].match(/New heading|Date and time|Your text here\./g) || []).length, '| title:', (files['plant-list.html'].match(/<title>([^<]*)/) || [])[1]);
 /* Rename: the name becomes a field; Enter keeps; the menu says it on every page. Order: a row dragged by its grip; the menu follows on every page. */
 await p.goto('http://127.0.0.1:8787/demo/about.html?v=' + Date.now() + '#edit=test'); await p.waitForTimeout(400); /* a fresh load, not a hash change */
-await p.click('.tf-button:has-text("Site")'); await p.waitForTimeout(200);
+if (!(await p.$('.tf-panel:not(.tf-pal):not(.tf-out)'))) { await p.click('.tf-pages'); await p.waitForTimeout(150); } await p.waitForTimeout(200);
 await act('.tf-row:has-text("Events")', 'Rename'); await p.waitForTimeout(100);
 await p.keyboard.type('What is on'); await p.keyboard.press('Enter'); await p.waitForTimeout(600);
 console.log('renamed here:', await nav(), '| row says:', await p.$eval('.tf-row[data-path="events.html"] .tf-row-name', e => e.textContent), '| count:', await p.$eval('.tf-count', c => c.textContent));
@@ -67,12 +67,12 @@ await p.click('.tf-button:has-text("Undo")'); await p.waitForTimeout(100);
 console.log('Undo again: name back:', await nav());
 /* a logo link and the menu's Home to the same page are one row, named by the menu */
 await p.goto('http://127.0.0.1:8787/tools/check-pages.html#edit=test'); await p.waitForTimeout(300);
-await p.click('.tf-button:has-text("Site")'); await p.waitForTimeout(200);
+if (!(await p.$('.tf-panel:not(.tf-pal):not(.tf-out)'))) { await p.click('.tf-pages'); await p.waitForTimeout(150); } await p.waitForTimeout(200);
 console.log('marks of an earlier build healed at start:', await p.$eval('main', m => !m.getAttribute('style')), '| the page\'s own style kept:', await p.$eval('main h1', h => h.getAttribute('style') === 'color: rgb(20, 20, 20);'));
 console.log('one row per page:', await p.$$eval('.tf-row', rs => rs.map(r => r.querySelector('.tf-row-name').textContent + (r.classList.contains('tf-here') ? '*' : '')).join(' / ')));
 /* a logo link outside the menu group is not a menu entry: rows, Home, rename and order leave it alone */
 await p.goto('http://127.0.0.1:8787/tools/check-menu.html#edit=test'); await p.waitForTimeout(300);
-await p.click('.tf-button:has-text("Site")'); await p.waitForTimeout(200);
+if (!(await p.$('.tf-panel:not(.tf-pal):not(.tf-out)'))) { await p.click('.tf-pages'); await p.waitForTimeout(150); } await p.waitForTimeout(200);
 console.log('rows from the menu group only:', await p.$$eval('.tf-row', rs => rs.map(r => r.querySelector('.tf-row-name').textContent + (r.querySelector('.tf-row-note') ? '(Home)' : '')).join(' / ')), '| names have room:', await p.$eval('.tf-row-name', e => e.scrollWidth <= e.clientWidth + 1));
 await act('.tf-row[data-path="index.html"]', 'Rename'); await p.keyboard.type('Start'); await p.keyboard.press('Enter'); await p.waitForTimeout(300);
 console.log('rename Home: logo untouched:', await p.$eval('.logo', e => e.textContent === 'signal/coffee'), '| menu says Start:', await p.$eval('.navlinks a[href="index.html"]', e => e.textContent === 'Start'));

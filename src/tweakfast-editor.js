@@ -31,6 +31,8 @@
     var TEXT = 'h1,h2,h3,h4,h5,h6,p,li,figcaption,time,blockquote,dt,dd,td,th,summary,label,a,span,strong,em,small,cite,[data-tf="text"]';
     /* the icons: solid shapes with fine cut-outs, drawn by hand, 16 on a side, the button's colour */
     var ICON = {
+        chev: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M3.6 6.9 5 5.5l3 3 3-3 1.4 1.4L8 11.3z"/></svg>',
+        play: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4.5 2.9c0-.8.9-1.3 1.6-.9l7.2 4.9c.6.4.6 1.3 0 1.7L6.1 13.5c-.7.5-1.6 0-1.6-.9z"/></svg>',
         grip: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="5.5" cy="4" r="1.5"/><circle cx="10.5" cy="4" r="1.5"/><circle cx="5.5" cy="8" r="1.5"/><circle cx="10.5" cy="8" r="1.5"/><circle cx="5.5" cy="12" r="1.5"/><circle cx="10.5" cy="12" r="1.5"/></svg>',
         up: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 2.2l4.8 4.9-1.3 1.3-2.6-2.7v8.1H7.1V5.7L4.5 8.4 3.2 7.1z"/></svg>',
         down: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 13.8 3.2 8.9l1.3-1.3 2.6 2.7V2.2h1.8v8.1l2.6-2.7 1.3 1.3z"/></svg>',
@@ -75,8 +77,16 @@
 
     /* checks only: the unbundled editor lends its rules to the check scripts; a built editor never does */
     if (BUILD === 'dev') window.__tweakfastProbe = { textTarget: textTarget, isTextLeaf: isTextLeaf, pinned: pinned, isButton: isButton, looks: looks, blockTarget: blockTarget, sharedRootOf: sharedRootOf, grounds: grounds, groundClasses: groundClasses, choicesFor: choicesFor, readings: readings, layoutOf: layoutOf, staysReadable: staysReadable, retint: retint, untint: untint, pictureTarget: function (n) { return pictureTarget(n); } };
+    /* a page of the site typed with a part after it (index.html#services) once got https:// in front and led nowhere:
+       such links are set right as the page opens, and go out with the next Done */
+    function mendPageLinks() {
+        Array.prototype.forEach.call(document.querySelectorAll('a[href^="https://"], a[href^="http://"]'), function (a) {
+            var m = /^https?:\/\/([^\/?#]+)(.*)$/.exec(a.getAttribute('href')); if (m && /\.html?$/i.test(m[1])) a.setAttribute('href', m[1] + m[2]);
+        });
+    }
     function start() {
         if (bar) return;
+        mendPageLinks();
         injectStyle();
         bar = el('div', 'tf-bar');
         bar.setAttribute('data-tweakfast', '');
@@ -90,11 +100,13 @@
         doneCount = el('span', 'tf-count', '0'); doneBtn.appendChild(doneCount); /* how many changes Done makes live */
         doneCount.title = 'See the changes';
         doneCount.addEventListener('click', function (e) { e.stopPropagation(); e.preventDefault(); toggleChanges(); }); /* the count opens the list; the rest of the button is Done */
-        var leave = button('Leave', leave_);
-        leave.className += ' tf-quiet';
-        pagesBtn = button('Site', togglePages);
-        previewBtn = iconButton('eye', 'Preview', enterPreview); previewBtn.title = 'Preview: the page as readers see it';
-        bar.appendChild(leave); bar.appendChild(pagesBtn); bar.appendChild(previewBtn); bar.appendChild(undoBtn); bar.appendChild(doneBtn);
+        var leave = button('Leave', leave_); leave.className += ' tf-quiet'; symbolize(leave, 'leave');
+        symbolize(undoBtn, 'undo');
+        /* the page you are on; its menu lists the site's pages, Add a page and the door to the Site sheet */
+        pagesBtn = el('button', 'tf-button tf-pages'); pagesBtn.type = 'button'; pagesBtn.appendChild(el('span', 'tf-page-name', '')); pagesBtn.insertAdjacentHTML('beforeend', ICON.chev);
+        pagesBtn.addEventListener('click', togglePages); pagesBtn.title = 'The pages of the site'; pagesBtn.setAttribute('aria-haspopup', 'dialog'); /* the one door to the pages: the sheet, where a row jumps and More holds the rest */
+        previewBtn = iconButton('play', 'See it as readers do', enterPreview); previewBtn.title = 'Preview: the page as readers see it';
+        bar.appendChild(leave); bar.appendChild(pagesBtn); bar.appendChild(undoBtn); bar.appendChild(el('span', 'tf-sep')); bar.appendChild(previewBtn); bar.appendChild(doneBtn);
         document.body.appendChild(bar); document.body.appendChild(status);
         window.addEventListener('resize', placeNote);
         pageUpdated = takeUpdated(document);
@@ -165,7 +177,8 @@
         steps.push(mine);
         refresh();
         if (carried && d.tab === TAB) return; /* came along from the page before: the count on Done says it */
-        say((d.n === 1 ? 'A change' : d.n + ' changes') + ' from ' + when(d.at).replace(/^Today/, 'today') + ' came back. ' + (d.n === 1 ? 'It is' : 'They are') + ' not live yet.', 'stay');
+        /* they come back as one step (one Undo, one row, 1 on Done), so the words name no other number */
+        say((d.n === 1 ? 'A change' : 'Changes') + ' from ' + when(d.at).replace(/^Today/, 'today') + ' came back. ' + (d.n === 1 ? 'It is' : 'They are') + ' not live yet.', 'stay');
         offer('Throw away', function () { if (steps[steps.length - 1] === mine) undo(); else { var i = steps.lastIndexOf(mine); if (i >= 0) undoOne(i); } say(''); });
     }
 
@@ -424,11 +437,20 @@
        anything that is not itself text or a picture */
     function pictureUnder(e) {
         if (!document.elementsFromPoint) return null;
-        var list = document.elementsFromPoint(e.clientX, e.clientY);
+        var list = document.elementsFromPoint(e.clientX, e.clientY), top = list[0] && ownPart(list[0]);
         for (var i = 0; i < list.length; i++) {
             if (list[i].closest('[data-tweakfast]')) return null; /* never through our own bar, bubble or tools */
-            var pic = pictureTarget(list[i]); if (pic) return pic;
+            var pic = pictureTarget(list[i]); if (pic) return top && !top.contains(pic) ? null : pic; /* what is clicked is what changes: a floating header is not the photo under it */
             if (list[i].matches(TEXT)) return null;
+            var cs = getComputedStyle(list[i]); if (opaque(cs.backgroundColor) || cs.backgroundImage !== 'none') return null; /* a box with its own colour hides the picture there: only where the picture shows can it be picked */
+        }
+        return null;
+    }
+    /* the part a point belongs to on its own: the header, a footer, or a part pinned to the screen; null inside the page */
+    function ownPart(n) {
+        for (; n && n.nodeType === 1 && n !== document.body; n = n.parentElement) {
+            if (/^(HEADER|FOOTER)$/.test(n.tagName)) return n;
+            var pos = getComputedStyle(n).position; if (pos === 'fixed' || pos === 'sticky') return n;
         }
         return null;
     }
@@ -444,7 +466,7 @@
         if (asking && !status.contains(e.target)) say('');
         if (bar.contains(e.target) || status.contains(e.target) || (tools && tools.contains(e.target)) || (panel && panel.contains(e.target)) || (pal && pal.contains(e.target)) || (menu && menu.contains(e.target)) || (linkBox && linkBox.contains(e.target)) || (altBox && altBox.contains(e.target))) return;
         if (panel) closePages(); if (pal) closePal();
-        if (editing && editing.contains(e.target)) return;
+        if (editing && editing.contains(e.target)) { if (editing.closest('button')) e.preventDefault(); return; } /* a click in a button's words places the caret; it never sends the form */
         if (editing) commit();
         if (tools && !textTarget(e.target)) { var blk = toolAt(e.target, e.clientY); if (blk) showTools(blk); else hideTools(); } /* a tap works where there is no hover */
         var link = e.target.closest('a[href]');
@@ -466,8 +488,8 @@
     }
     /* a text kept with Enter or put back with Esc stays picked: the solid line, the block's tools, no caret. Enter or a click edits it again, Esc lets go. */
     function hold(t) {
-        hoverNone(); if (picked) unpick(); if (held && held !== t) unhold();
-        held = t; showEditBox();
+        hoverNone(); if (picked) unpick();
+        held = t; if (editBox && !editing && !picked) editBox.style.display = 'none'; /* Enter edits it again, Tab moves on; the eye sees its block selected, its toolbar up */
         var b = toolTarget(t); if (tools) { if (b) showTools(b); else hideTools(); }
     }
     function unhold() { held = null; if (editBox && !editing && !picked) editBox.style.display = 'none'; giveRoom(); }
@@ -480,9 +502,9 @@
     /* the hover line turns solid and stays while the text is edited; it follows the text as it grows */
     var editBox = null;
     function placeEdit() {
-        var on = editing || picked || held;
+        var on = editing || picked;
         if (!on || !editBox) return;
-        frame(editBox, on.getBoundingClientRect(), 3); editBox.style.display = 'block';
+        frame(editBox, on.getBoundingClientRect(), on); editBox.style.display = 'block';
     }
     function showEditBox() {
         if (!editBox) { editBox = el('span', 'tf-edit-box'); editBox.setAttribute('data-tweakfast', ''); document.body.appendChild(editBox); }
@@ -553,7 +575,7 @@
     function begin(t) {
         hoverNone();
         sharedBefore = sharedRootOf(t) ? cleanOuter(t) : null;
-        held = null; editing = t; before = t.innerHTML; hrefBefore = t.getAttribute('href');
+        held = null; editing = t; before = t.innerHTML; hrefBefore = t.getAttribute('href'); sizeBegin(t); fieldsBegin(t);
         var at = lettersBefore(t); flat = unbox(t); if (flat && at >= 0) caretAfter(t, at); /* the caret stays where the click put it */
         stripBegin(t);
         t.setAttribute('contenteditable', 'true');
@@ -593,10 +615,12 @@
         editing = null;
         if (editBox) editBox.style.display = 'none';
         giveRoom();
+        keepFields(); fieldsEnd();
         t.removeAttribute('contenteditable');
         t.classList.remove('tf-editing');
         if (!t.className) t.removeAttribute('class');
         stripEnd(t);
+        var sizeWas = sizeEnd(t);
         var flatWas = flat; flat = null;
         if (flatWas && words(t) === flatWas.text) { t.innerHTML = before; flatWas = null; } /* nothing typed: the words keep their boxes as made */
         if (!t.textContent.trim() && !t.querySelector('img,svg') && /^(\s|<br\s*\/?>)*$/i.test(t.innerHTML)) t.innerHTML = ''; /* an emptied text is empty, not a stray line break */
@@ -604,13 +628,98 @@
         var fix = stripFix; stripFix = null;
         if (flatWas && flatWas.label !== null) t.setAttribute('aria-label', spoken(t)); /* read aloud as now written */
         if (after !== was || hrefNow !== hrefWas) {
-            steps.push(function () { t.innerHTML = was; if (hrefWas !== null) t.setAttribute('href', hrefWas); if (flatWas && flatWas.label !== null) t.setAttribute('aria-label', flatWas.label); if (fix) fix(); });
+            steps.push(function () { t.innerHTML = was; if (hrefWas !== null) t.setAttribute('href', hrefWas); if (flatWas && flatWas.label !== null) t.setAttribute('aria-label', flatWas.label); if (fix) fix(); if (sizeWas) sizeWas(); });
             refresh();
             if (sharedBefore !== null) mirror(t, sharedBefore);
         }
         sharedBefore = null;
         say('');
         if (after !== was && !t.textContent.trim() && !t.querySelector('img')) say('Emptied. Undo brings it back.');
+    }
+    /* a label that holds its field (First name, then the box to type in): only its words are typed in. The field
+       takes no caret, and one taken away with the words (all selected, then typed over) comes back where it was */
+    var fields = [];
+    function fieldsBegin(t) {
+        fields = Array.prototype.map.call(t.querySelectorAll('input,textarea,select,button'), function (n) {
+            var o = { n: n, parent: n.parentNode, next: n.nextSibling, ce: n.getAttribute('contenteditable') };
+            n.setAttribute('contenteditable', 'false'); return o;
+        });
+    }
+    function keepFields() {
+        var t = editing; if (!t) return;
+        fields.forEach(function (o) {
+            if (t.contains(o.n)) return;
+            var parent = t.contains(o.parent) ? o.parent : t;
+            if (o.next && parent.contains(o.next) && o.next.parentNode === parent) parent.insertBefore(o.n, o.next); else if (o.next === null) parent.appendChild(o.n); else parent.insertBefore(o.n, parent.firstChild);
+        });
+    }
+    function fieldsEnd() { fields.forEach(function (o) { if (o.ce === null) o.n.removeAttribute('contenteditable'); else o.n.setAttribute('contenteditable', o.ce); }); fields = []; }
+    /* a box made to the size of its words (a pill of a fixed width and height): longer words would spill out of it.
+       While typing it grows instead, keeping its look: one line as made stays one line and widens, with the room it
+       had at its sides; when it meets the column it takes more lines and grows in height, with the room it had above
+       and below. Its size as made is its least. Words that fit the box as made leave it as made. */
+    var size = null;
+    function sizeBegin(t) {
+        size = null;
+        if (strip) return;
+        var rg = document.createRange(); rg.selectNodeContents(t);
+        var w = rg.getBoundingClientRect(), tops = {};
+        Array.prototype.forEach.call(rg.getClientRects(), function (q) { if (q.width) tops[Math.round(q.top)] = 1; });
+        var par = t.parentElement, pcs = getComputedStyle(par), col = par.clientWidth - (parseFloat(pcs.paddingLeft) || 0) - (parseFloat(pcs.paddingRight) || 0);
+        /* one line in a box of its own width (narrower than its column, a pill): it widens; a line as wide as the column only wraps */
+        size = { w: t.offsetWidth, h: t.offsetHeight, tw: w.width, th: w.height, one: Object.keys(tops).length <= 1 && t.offsetWidth < col - 1, sx: t.scrollWidth - t.clientWidth, sy: t.scrollHeight - t.clientHeight, touched: [], holders: [] };
+        /* the boxes holding the words, up to the page: how far each already spilled as made (a picture set past its edge,
+           a picture breathing), so only spilling more than that is the words' doing */
+        for (var n = t.parentElement; n && n !== document.body; n = n.parentElement) {
+            var ox = getComputedStyle(n).overflowY;
+            if (ox === 'auto' || ox === 'scroll') break; /* a box made to scroll: its words scroll in it */
+            size.holders.push({ el: n, spill: n.scrollHeight - n.clientHeight, below: n.getBoundingClientRect().bottom - t.getBoundingClientRect().bottom });
+        }
+    }
+    /* spilling more than as made: letters taller than their line already reach past the box a little */
+    function spills(t, z) { return t.scrollHeight - t.clientHeight > (z ? z.sy : 0) + 1 || t.scrollWidth - t.clientWidth > (z ? z.sx : 0) + 1; }
+    function touch(n) { if (!size.touched.some(function (x) { return x.el === n; })) size.touched.push({ el: n, style: n.getAttribute('style') }); }
+    function sizeFit(t) {
+        if (!size) return;
+        var cs = getComputedStyle(t), s = t.style;
+        if (cs.display !== 'inline' && spills(t, size)) { /* a run of words in a line has no size of its own */
+            touch(t); s.boxSizing = 'border-box'; s.maxWidth = '100%';
+            if (size.one && !size.side) { /* sideways first */
+                size.side = true;
+                var side = Math.max(parseFloat(cs.paddingLeft) || 0, (size.w - size.tw) / 2);
+                s.width = 'max-content'; s.minWidth = size.w + 'px'; s.paddingLeft = s.paddingRight = side + 'px';
+            }
+            /* words kept on one line as made (white-space: nowrap) at the column's width: they take more lines */
+            var ws = cs.whiteSpace;
+            if (t.scrollWidth - t.clientWidth > size.sx + 1 && /^(nowrap|pre)$/.test(ws)) s.whiteSpace = ws === 'pre' ? 'pre-wrap' : 'normal';
+            if (!size.down && spills(t, size)) { /* then downwards */
+                size.down = true;
+                var above = Math.max(parseFloat(cs.paddingTop) || 0, (size.h - size.th) / 2);
+                s.height = 'auto'; s.minHeight = size.h + 'px'; s.paddingTop = s.paddingBottom = above + 'px';
+            }
+        }
+        /* a box around the words made to a fixed height (a section, a card): it grows with them, from its size as made */
+        size.holders.forEach(function (x) {
+            var n = x.el;
+            if (n.scrollHeight - n.clientHeight <= x.spill + 1) return;
+            var made = n.offsetHeight, ns = getComputedStyle(n); touch(n);
+            n.style.height = 'auto'; n.style.maxHeight = 'none'; n.style.minHeight = made + 'px';
+            /* the room under the words as made, up to the room the box gives at its top: the words never end on its edge */
+            var want = Math.min(x.below, Math.max(parseFloat(ns.paddingTop) || 0, 24)), gap = n.getBoundingClientRect().bottom - t.getBoundingClientRect().bottom;
+            if (gap < want) n.style.paddingBottom = (parseFloat(ns.paddingBottom) || 0) + want - gap + 'px';
+        });
+    }
+    /* at the end: words that fit the boxes as made put them back as made; else the grown boxes stay. Gives the undo for it. */
+    function sizeEnd(t) {
+        var was = size; size = null;
+        if (!was || !was.touched.length) return null;
+        var put = function (list) { list.forEach(function (x) { if (x.style === null) x.el.removeAttribute('style'); else x.el.setAttribute('style', x.style); }); };
+        var now = was.touched.map(function (x) { return { el: x.el, style: x.el.getAttribute('style') }; });
+        put(was.touched);
+        var over = (getComputedStyle(t).display !== 'inline' && spills(t, was)) || was.holders.some(function (x) { return x.el.scrollHeight - x.el.clientHeight > x.spill + 1; });
+        if (!over) return null;
+        put(now);
+        return function () { put(was.touched); };
     }
     /* Tab keeps and opens the next text on the page, Shift+Tab the one before */
     function nextText(from, dir) {
@@ -674,6 +783,7 @@
     }
     function cancel() {
         var t = editing; if (!t) return;
+        fieldsEnd(); /* the fields come back with the words as they were */
         t.innerHTML = before;
         if (hrefBefore !== null) { t.setAttribute('href', hrefBefore); if (linkInput && linkFor === t) linkInput.value = hrefBefore; } /* Esc puts the address back too */
         commit();
@@ -690,11 +800,18 @@
             if (meta && !e.shiftKey && (e.key === 'z' || e.key === 'Z') && !inField) { e.preventDefault(); undo(); return; }
             if (meta && e.shiftKey && (e.key === 'z' || e.key === 'Z') && !inField) { e.preventDefault(); redo(); return; }
             if (e.key === 'Enter' && held && !inField) { e.preventDefault(); begin(held); return; }
+            /* a block is selected: the keys do what its toolbar buttons do. Undo takes any of it back. */
+            if (!inField && !e.target.closest('[data-tweakfast]') && toolsFor && tools.style.display !== 'none' && !picked && !menu && !panel && !pal && toolsFor.hasAttribute('data-tf-block')) {
+                if (meta && !e.shiftKey && (e.key === 'd' || e.key === 'D')) { e.preventDefault(); copyBlock(); return; }
+                if ((e.key === 'Backspace' || e.key === 'Delete') && !meta) { e.preventDefault(); removeBlock(); return; }
+                if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') { e.preventDefault(); if (!upBtn.disabled) move(-1); return; }
+                if (e.key === 'ArrowDown' || e.key === 'ArrowRight') { e.preventDefault(); if (!downBtn.disabled) move(1); return; }
+            }
             if (e.key === 'Tab' && !e.shiftKey && toolsFor && tools.style.display !== 'none' && !e.target.closest('[data-tweakfast]')) { /* from what is picked, Tab goes into its tools */
                 var tb = Array.prototype.filter.call(tools.querySelectorAll('button'), function (n) { return !n.disabled && n.getClientRects().length; })[0];
                 if (tb) { e.preventDefault(); tb.focus({ preventScroll: true }); return; }
             }
-            if (e.key === 'Escape' && !inField) { if (menu) closeMenu(); else if (panel) closePages(); else if (held) unhold(); else if (picked) unpick(); else { if (tools) hideTools(); hideAlt(); } say(''); }
+            if (e.key === 'Escape' && !inField) { if (menu) closeMenu(); else if (panel) closePages(); else if (held) { unhold(); if (tools) hideTools(); } else if (picked) unpick(); else { if (tools) hideTools(); hideAlt(); } say(''); }
             if (e.key === 'Escape' && asking) say('');
             return;
         }
@@ -708,6 +825,7 @@
         if (e.key === 'Escape') { e.preventDefault(); var tc = editing; cancel(); hold(tc); }
         if (e.key === 'Enter' && e.shiftKey) breakTip(null);
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); var tk = editing; commit(); hold(tk); breakTip(tk); }
+        if (e.key === ' ' && !meta && editing.closest('button')) { e.preventDefault(); document.execCommand('insertText', false, ' '); return; } /* in a button's words the space is a space, not a press of the button */
         if (e.key === 'Tab') {
             e.preventDefault();
             /* from a link's words, Tab walks into its Goes-to field first */
@@ -752,41 +870,90 @@
             if (el_ === hoverEl) { placeTag(); return; }
             hoverNone();
             hoverEl = el_; el_.classList.add('tf-hover');
+            if (el_.tagName === 'IMG' && !el_.contains(t)) document.getElementById('tf-style').classList.add('tf-through'); /* the picture lies under empty boxes: the hand shows all the same */
             if (!tag) { tag = el('span', 'tf-tag'); tag.setAttribute('data-tweakfast', ''); document.body.appendChild(tag); }
-            /* the tag says only what the eye cannot: a picture can be swapped, a link goes somewhere */
-            var what = el_.tagName === 'IMG' || el_.tagName === 'svg' ? 'Picture' : t.closest('a') && el_.contains(t.closest('a')) ? 'Link' : '';
+            /* the tag names the thing a click will take */
+            var lk = t.closest('a[href]'), what = lk && el_ !== lk && el_.contains(lk) ? 'Link' : nameOf(el_);
             tag.textContent = what;
             tag.style.display = what ? 'block' : 'none';
-            placeTag();
+            placeTag(); syncBlockHover();
         });
     }
     var hoverBox = null;
     function placeTag() {
         if (!hoverEl || !tag) return;
-        var r = hoverEl.getBoundingClientRect(), pad = hoverEl.tagName === 'IMG' ? 3 : 3;
-        put(tag, Math.max(4, r.left), Math.max(4, r.top - 22));
+        var r = hoverEl.getBoundingClientRect();
+        put(tag, Math.max(4, r.left), Math.max(4, r.top - 22), hoverEl);
         if (!hoverBox) { hoverBox = el('span', 'tf-hover-box'); hoverBox.setAttribute('data-tweakfast', ''); document.body.appendChild(hoverBox); }
-        frame(hoverBox, r, pad); hoverBox.style.display = 'block';
+        frame(hoverBox, r, hoverEl); hoverBox.style.display = toolsHover ? 'none' : 'block'; /* one line at a time */
     }
-    /* a box drawn around a rect: the lines are ours, so a site's own transitions cannot delay them */
-    function frame(box, r, pad) {
-        /* a full-width element's box stays inside the page's sides: 3 px past the edge made the page scroll sideways */
-        var left = Math.max(-window.scrollX, r.left - pad), right = Math.min(document.documentElement.clientWidth - window.scrollX, r.right + pad);
-        put(box, left, r.top - pad);
-        box.style.width = Math.max(0, right - left) + 'px'; box.style.height = (r.height + 2 * pad) + 'px';
+    /* a line drawn on a part's edge, just inside it, with the part's own corners: never off the edge, never on its
+       neighbour. The lines are ours, so a site's own transitions cannot delay them */
+    function frame(box, r, of, at) {
+        /* a full-width element's box stays inside the page's sides: past the edge made the page scroll sideways */
+        var left = Math.max(-window.scrollX, r.left), right = Math.min(document.documentElement.clientWidth - window.scrollX, r.right);
+        put(box, left, r.top, at || of);
+        box.style.width = Math.max(0, right - left) + 'px'; box.style.height = r.height + 'px';
+        box.style.borderRadius = of ? getComputedStyle(of).borderRadius : '';
     }
     /* our overlays sit in the page (absolute), so they scroll with it as one piece; a window-fixed box moved by
-       scroll events lags a frame behind on a phone. Window coordinates in, page coordinates set. */
-    function put(node, x, y) {
+       scroll events lags a frame behind on a phone. Window coordinates in, page coordinates set. A part that stays put
+       in the window while the page scrolls (in a fixed header, a stuck sticky one) is framed in the window instead: in
+       the page, its line rode off with the scroll for a frame and snapped back. */
+    function put(node, x, y, of) {
         var b = document.body;
+        if (of && inWindow(of)) { node.style.position = 'fixed'; node.style.left = x + 'px'; node.style.top = y + 'px'; return; }
+        if (node.style.position === 'fixed' && node !== tools) node.style.position = '';
         if (getComputedStyle(b).position !== 'static') { var br = b.getBoundingClientRect(); x -= br.left + b.clientLeft; y -= br.top + b.clientTop; }
         else { x += window.scrollX; y += window.scrollY; }
         node.style.left = x + 'px'; node.style.top = y + 'px';
     }
+    /* held in the window while the page scrolls: inside something fixed, or something sticky that has reached its stop */
+    function inWindow(n) {
+        if (n && n.nodeType !== 1) n = n.commonAncestorContainer || n.parentElement; /* a range of words: the part holding it */
+        if (n && n.nodeType !== 1) n = n.parentElement;
+        for (; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+            var cs = getComputedStyle(n);
+            if (cs.position === 'fixed') return true;
+            if (cs.position === 'sticky') { var stop = parseFloat(cs.top); if (!isNaN(stop) && Math.abs(n.getBoundingClientRect().top - stop) < 1) return true; }
+        }
+        return false;
+    }
     function hoverNone() {
+        var st = document.getElementById('tf-style'); if (st) st.classList.remove('tf-through');
         if (hoverEl) { hoverEl.classList.remove('tf-hover'); if (!hoverEl.className) hoverEl.removeAttribute('class'); hoverEl = null; }
         if (tag) tag.style.display = 'none';
         if (hoverBox) hoverBox.style.display = 'none';
+        syncBlockHover();
+    }
+    /* what a thing is called, on its hover tag and at the front of its toolbar */
+    function nameOf(n) {
+        var tg = n.tagName;
+        if (tg === 'IMG' || tg === 'svg' || tg === 'PICTURE' || n.hasAttribute('data-tf-art')) return 'Picture';
+        if (/^H[1-6]$/.test(tg)) return 'Heading';
+        if (tg === 'BUTTON' || isButton(n)) return 'Button';
+        if (tg === 'A') return 'Link';
+        if (tg === 'FIGCAPTION') return 'Caption';
+        if (tg === 'TIME') return 'Date';
+        if (tg === 'HEADER') return 'Header'; if (tg === 'FOOTER') return 'Footer'; if (tg === 'NAV') return 'Menu';
+        if (tg === 'TR') return 'Row';
+        if (/^(LI|DT|DD)$/.test(tg)) return n.hasAttribute('data-tf-block') ? 'Item' : 'Text';
+        if (n.hasAttribute('data-tf-block')) return isRepeated(n) && n.getBoundingClientRect().width < n.ownerDocument.documentElement.clientWidth - 1 ? 'Card' : 'Section'; /* two sections alike are still sections: a card is narrower than the page */
+        return isTextLeaf(n) ? 'Text' : 'Block';
+    }
+    /* the pointer over a block, not over words or a picture in it: a dashed line round the block and its name.
+       The selected block has its own solid line, so no hover line on it. */
+    var blockHover = null, blockHoverEl = null;
+    function hoverBlock(b) { blockHoverEl = b; syncBlockHover(); }
+    function syncBlockHover() {
+        var b = blockHoverEl;
+        if (!blockHover) { if (!b) return; blockHover = el('span', 'tf-block-hover'); blockHover.setAttribute('data-tweakfast', ''); document.body.appendChild(blockHover); }
+        if (!b || !b.isConnected || hoverEl || editing || dragging || b === toolsFor || toolsHover) { blockHover.style.display = 'none'; if (!hoverEl && tag) tag.style.display = 'none'; return; }
+        var r = b.getBoundingClientRect();
+        frame(blockHover, r, columnOf(b) && !onPicture(b) ? null : b, b); blockHover.style.display = 'block';
+        if (!tag) { tag = el('span', 'tf-tag'); tag.setAttribute('data-tweakfast', ''); document.body.appendChild(tag); }
+        tag.textContent = nameOf(b); tag.style.display = 'block';
+        put(tag, Math.max(4, r.left), Math.max(4, r.top - 22), b);
     }
 
     /* ---- where a link goes ---- */
@@ -808,6 +975,12 @@
         var r = sel.getRangeAt(0);
         if (!editing.contains(r.commonAncestorContainer) || !r.toString().trim()) return null;
         return r.cloneRange();
+    }
+    function toggleLink() {
+        if (!editing) return;
+        if (linkBox && linkBox.parentNode) { hideLink(); editing.focus(); return; }
+        if (!linkAt() && !selectedWords()) { var sel = document.getSelection(), rg = document.createRange(); rg.selectNodeContents(editing); sel.removeAllRanges(); sel.addRange(rg); } /* no link, nothing chosen: all the words become one */
+        showLink(); if (linkInput) linkInput.focus();
     }
     function showLink() {
         var a = linkAt(), rg = a ? null : selectedWords();
@@ -846,10 +1019,21 @@
         if (!linkBox || !linkBox.parentNode || !(linkFor || linkRange)) return;
         var r = (linkFor || linkRange).getBoundingClientRect(), w = Math.min(360, window.innerWidth - 16);
         linkBox.style.width = w + 'px';
-        put(linkBox, Math.max(8, Math.min(r.left, window.innerWidth - w - 8)), bubbleTop(r, linkBox.offsetHeight || 40));
+        if (popAt(linkBox, linkBtn)) return;
+        put(linkBox, Math.max(8, Math.min(r.left, window.innerWidth - w - 8)), bubbleTop(r, linkBox.offsetHeight || 40), linkFor || linkRange);
     }
     /* a bubble goes under its element; at the foot of the window, or over the bar, it goes above instead.
        Under the page's end it would lengthen the page: the white strip below the footer. */
+    /* a field or menu opened from the toolbar: 8 under it, its left edge on the button that opened it; no room below:
+       8 above the toolbar. On a phone the toolbar is docked at the bottom, so the field keeps to its element instead. */
+    function popAt(box, anchor) {
+        if (!tools || tools.style.display === 'none' || tools.classList.contains('tf-tools-dock') || !anchor || anchor.style.display === 'none') return false;
+        var tr = tools.getBoundingClientRect(), ar = anchor.getBoundingClientRect(), w = box.offsetWidth, h = box.offsetHeight || 40;
+        var left = Math.max(8, Math.min(ar.left, window.innerWidth - w - 8)), top = tr.bottom + 8, floor = window.innerHeight - 8;
+        if (bar && bar.getBoundingClientRect().top < floor) floor = bar.getBoundingClientRect().top - 8;
+        if (top + h > floor) top = tr.top - h - 8;
+        put(box, left, Math.max(8, top), toolsFor); return true;
+    }
     function bubbleTop(r, h) {
         var floor = window.innerHeight - 8;
         if (bar && bar.getBoundingClientRect().top < floor) floor = bar.getBoundingClientRect().top - 8;
@@ -900,6 +1084,7 @@
         for (var i = 0; i < pages.length; i++) if (pages[i].name.trim().toLowerCase() === low || pages[i].path.toLowerCase() === low || pages[i].path.replace(/\.html$/, '').toLowerCase() === low) return pages[i].path; /* a page by its name */
         if (/^www\./i.test(v)) return 'https://' + v;
         var host = v.split(/[\/?#]/)[0];
+        if (/\.html?$/i.test(host) || pages.some(function (pg) { return pg.path.toLowerCase() === host.toLowerCase(); })) return v; /* a page of the site with a part after it: index.html#services */
         if (/^[\w-]+(\.[\w-]+)+(:\d+)?$/.test(host) && (host !== v || !/\.html?$/i.test(v))) return 'https://' + v; /* shop.com, shop.com/menu.html */
         return v;
     }
@@ -915,9 +1100,6 @@
             altBox.appendChild(el('span', 'tf-link-label', 'Describes'));
             altInput = el('input', 'tf-input'); altInput.type = 'text'; altInput.autocomplete = 'off'; altInput.placeholder = 'What the picture shows, for blind readers and Google';
             altBox.appendChild(altInput);
-            var replace = el('button', 'tf-button tf-small', 'Replace'); replace.type = 'button';
-            replace.addEventListener('click', function () { if (altFor) swapPicture(altFor); });
-            altBox.appendChild(replace);
             altInput.addEventListener('blur', function () { applyAlt(); });
             altInput.addEventListener('keydown', function (e) {
                 if (e.key === 'Enter') { e.preventDefault(); applyAlt(); unpick(); }
@@ -927,22 +1109,24 @@
         }
         if (altFor && altFor !== img) applyAlt();
         altFor = img; altInput.value = isArt(img) ? '' : (img.getAttribute('alt') || '');
-        altBox.classList.toggle('tf-art', isArt(img)); /* a drawn box has no words to describe: Replace only */
+        if (isArt(img)) { if (altBox.parentNode) altBox.remove(); return; } /* a drawn box has no words to describe: Replace, in the toolbar, is all */
         if (!altBox.parentNode) document.body.appendChild(altBox);
         placeAlt();
     }
     function placeAlt() {
         if (!altBox || !altBox.parentNode || !altFor) return;
         var r = altFor.getBoundingClientRect(), w = Math.min(420, Math.max(240, r.width), window.innerWidth - 16);
-        if (altBox.classList.contains('tf-art')) { altBox.style.width = ''; w = altBox.offsetWidth; } /* Replace alone: the bubble is as wide as its button */
-        else altBox.style.width = w + 'px';
-        put(altBox, Math.max(8, Math.min(r.left, window.innerWidth - w - 8)), bubbleTop(r, altBox.offsetHeight || 48));
+        altBox.style.width = w + 'px';
+        if (popAt(altBox, altBtn)) return;
+        put(altBox, Math.max(8, Math.min(r.left, window.innerWidth - w - 8)), bubbleTop(r, altBox.offsetHeight || 48), altFor);
     }
     function hideAlt() { applyAlt(); if (altBox && altBox.parentNode) altBox.remove(); altFor = null; }
     /* a click selects a picture: the solid line and its small bar; a second click, Replace, or a dropped file swaps it */
     var picked = null;
     function pick(img) {
-        hoverNone(); picked = img; showEditBox(); clearBar(img); showAlt(img);
+        hoverNone(); picked = img; showEditBox(); clearBar(img);
+        if (tools) { var bk = toolTarget(img); if (bk) showTools(bk); else hideTools(); } /* the toolbar first: the Describes field hangs from it */
+        showAlt(img);
         if (isArt(img) && img.tagName !== 'svg' && drawnWords(img)) once('drawn', 'The words on this box are drawn by the site\'s style and cannot be changed here. A photo covers them.');
     }
     function drawnWords(n) {
@@ -968,7 +1152,7 @@
         if (r.bottom > top && r.top > 8) window.scrollBy({ top: Math.min(r.bottom - top, r.top - 8), behavior: motion() });
     }
     function giveRoom() { if (room && !editing && !picked) room.style.height = '0'; }
-    function unpick() { picked = null; if (editBox && !editing) editBox.style.display = 'none'; hideAlt(); giveRoom(); }
+    function unpick() { picked = null; if (editBox && !editing) editBox.style.display = 'none'; hideAlt(); giveRoom(); if (tools && toolsFor) showTools(toolsFor); }
     function applyAlt() {
         var img = altFor; if (!img || !altInput || isArt(img)) return;
         var to = altInput.value.trim(), was = img.getAttribute('alt');
@@ -1178,17 +1362,25 @@
     var upBtn = null, downBtn = null; /* the block tools' Move up and Move down; Move left and Move right when the block sits beside its own */
     var swapBtn = null; /* Swap sides, on a block of two big parts side by side */
     var lookBtn = null; /* Look: a button takes another button's look, a section another background, both from the site */
-    var blockOnly = []; /* the tools a block has and the header or a footer has not: they only take a Look */
+    var blockOnly = [], nameTile = null, nameWord = null, replaceBtn = null, altBtn = null, linkBtn = null; /* the tools a block has and the header or a footer has not: they only take a Look */
     function isRepeated(node) {
         var p = node.parentElement; if (!p) return false;
-        var kin = 0, sig = signature(node);
-        for (var c = p.firstElementChild; c; c = c.nextElementSibling) if (signature(c) === sig && !c.hasAttribute('data-tweakfast')) kin++;
+        var kin = 0;
+        for (var c = p.firstElementChild; c; c = c.nextElementSibling) if (sameKind(c, node) && !c.hasAttribute('data-tweakfast')) kin++;
         return kin >= 2;
+    }
+    /* two of a kind: the same tag and classes; or a kind with a colour or a side of its own (benefit benefit-lime,
+       benefit benefit-cream benefit-flip): a class in common and the same parts inside, in the same order */
+    function sameKind(a, b) {
+        if (signature(a) === signature(b)) return true;
+        if (a.tagName !== b.tagName || !Array.prototype.some.call(a.classList, function (c) { return c.indexOf('tf-') !== 0 && b.classList.contains(c); })) return false;
+        var inside = function (n) { return Array.prototype.map.call(n.children, function (k) { return k.tagName + '.' + (k.classList[0] || ''); }).join(' '); };
+        return a.children.length > 0 && inside(a) === inside(b);
     }
     function signature(n) { return n.tagName + '.' + Array.prototype.slice.call(n.classList).filter(function (c) { return c.indexOf('tf-') !== 0; }).sort().join('.'); }
     /* what the tools are for: a block, else the header or a footer the pointer is in */
     function toolTarget(node) {
-        var b = blockTarget(node); if (b) return b;
+        var b = blockTarget(node); if (b) return boxOn(b, node) || b; /* a card laid on the part's picture is a part of its own */
         if (!node || node.nodeType !== 1 || node.closest('[data-tweakfast],[data-tf="fixed"]')) return null;
         return sharedRootOf(node);
     }
@@ -1219,7 +1411,7 @@
     function markBlocks() {
         var main = document.querySelector('main') || document.body;
         markBlocksIn(main, true);
-        sharedParts(document).forEach(function (part) { if (!main.contains(part)) markBlocksIn(part, false); }); /* repeated things in the header and footers too, not the logo or the menu */
+        sharedParts(document).forEach(function (part) { if (!main.contains(part) && part.tagName === 'FOOTER') markBlocksIn(part, false); }); /* repeated things in footers too (columns, rows of links); the header is one part with one Look: its logo, menu and buttons are edited by click, never moved one by one */
     }
     /* what holds the page's sections: the main part, or the one plain wrapper a site put inside it (no ground, no
        frame of its own), as deep as such wrappers go */
@@ -1258,23 +1450,15 @@
         listening = true;
         /* the tools sit above their block; on the way up to them the mouse may cross another block, so while it
            heads toward the tools a new block takes over only after a short rest. Heading anywhere else, at once. */
-        var pending = null, timer = 0;
-        function towardTools() {
-            if (!toolsFor || !ptPrev || !ptNow) return false;
-            var r = tools.getBoundingClientRect();
-            var nx = Math.max(r.left, Math.min(ptNow.x, r.right)) - ptNow.x, ny = Math.max(r.top, Math.min(ptNow.y, r.bottom)) - ptNow.y;
-            if (Math.abs(nx) + Math.abs(ny) > 300) return false;
-            return (ptNow.x - ptPrev.x) * nx + (ptNow.y - ptPrev.y) * ny > 0;
-        }
+        /* hover draws the line and the name; the tools come with a click (a tap on a phone), and stay until Esc or a click elsewhere */
         function offer(b) {
-            if (!b || b === toolsFor || b === pending) return;
-            pending = b; clearTimeout(timer);
-            if (!towardTools()) { showTools(b); pending = null; return; }
-            timer = setTimeout(function () { if (pending) showTools(pending); pending = null; }, 350);
+            if (coarse()) return;
+            if (b === blockHoverEl) { syncBlockHover(); return; }
+            hoverBlock(b || null);
         }
         document.addEventListener('mouseover', function (e) {
             if (previewing) return;
-            if (tools.contains(e.target)) { clearTimeout(timer); pending = null; return; }
+            if (tools.contains(e.target) || e.target.closest('[data-tweakfast]')) { hoverBlock(null); return; }
             offer(toolAt(e.target, e.clientY));
         });
         /* beside a column the pointer stays over the page around it, which sends no new mouseover going up or down:
@@ -1310,7 +1494,7 @@
         var still = function (e) { var i = moving.indexOf(e.target); if (i >= 0) moving.splice(i, 1); placeAll(); };
         ['transitionrun', 'animationstart'].forEach(function (k) { document.addEventListener(k, follow, true); });
         ['transitionend', 'transitioncancel', 'animationend', 'animationcancel'].forEach(function (k) { document.addEventListener(k, still, true); });
-        document.addEventListener('input', function (e) { if (editing && editing.contains(e.target)) { placeEdit(); if (toolsFor) placeTools(); } }, true);
+        document.addEventListener('input', function (e) { if (editing && editing.contains(e.target)) { keepFields(); sizeFit(editing); placeEdit(); if (toolsFor) placeTools(); } }, true);
         window.addEventListener('resize', function () { if (toolsFor) placeTools(); placePanel(); });
     }
     function addPlus(parent) {
@@ -1343,7 +1527,8 @@
         var leads = rowPage(last); if (leads) { if (!panel) togglePages(); if (panel) openView({ kind: 'add', like: leads }); return; } /* each row leads to its own page: a new row is a new page */
         var twin = makeTwin(last), parentWas = cleanOuter(parent);
         parent.insertBefore(twin, plus);
-        steps.push(function () { twin.remove(); });
+        var back = rowRoom(parent);
+        steps.push(function () { twin.remove(); if (back) back(); });
         mirror(parent, parentWas);
         refresh();
         showTools(twin);
@@ -1454,9 +1639,14 @@
     function buildTools() {
         tools = el('div', 'tf-tools');
         tools.setAttribute('data-tweakfast', '');
-        var grip = el('span', 'tf-grip'); blockOnly = [grip]; grip.innerHTML = ICON.grip; grip.title = 'Drag to move'; grip.setAttribute('aria-label', 'Drag to move');
-        grip.addEventListener('pointerdown', startDrag);
-        tools.appendChild(grip);
+        /* the name of the thing leads the toolbar; for a block the tile is also the handle: grip dots before the name, drag it to move */
+        nameTile = el('span', 'tf-name'); var grip = el('span', 'tf-grip'); grip.innerHTML = ICON.grip; nameTile.appendChild(grip); nameWord = el('span', 'tf-name-word', ''); nameTile.appendChild(nameWord);
+        nameTile.addEventListener('pointerdown', function (e) { if (nameTile.classList.contains('tf-handle')) startDrag(e); });
+        tools.appendChild(nameTile); tools.appendChild(el('span', 'tf-sep'));
+        blockOnly = [];
+        replaceBtn = button('Replace', function () { if (picked) swapPicture(picked); }); replaceBtn.title = 'Another picture'; tools.appendChild(replaceBtn);
+        altBtn = button('Describes', function () { var i = altBox && altBox.querySelector('input'); if (i) { i.focus(); i.select(); } }); altBtn.title = 'What the picture shows, for blind readers and Google'; tools.appendChild(altBtn);
+        linkBtn = iconButton('link', 'Link', toggleLink); linkBtn.title = 'Where these words go'; tools.appendChild(linkBtn);
         lookBtn = button('Look', openLooks); lookBtn.className += ' tf-look-open'; lookBtn.title = 'Give it another look from this site'; tools.appendChild(lookBtn);
         upBtn = iconButton('up', 'Move up', function () { move(-1); }); tools.appendChild(upBtn);
         downBtn = iconButton('down', 'Move down', function () { move(1); }); tools.appendChild(downBtn);
@@ -1476,7 +1666,16 @@
         var part = !block.hasAttribute('data-tf-block'), ch = part ? choicesFor(block) : lookKnown(block);
         if (part && !ch) { hideTools(); return; }
         toolsFor = block;
-        blockOnly.forEach(function (n) { n.style.display = part ? 'none' : ''; });
+        /* words or a picture inside the block are the thing: the toolbar names them and carries only what is theirs */
+        var on = editing || picked, inner = on && on !== block && block.contains(on);
+        nameWord.textContent = nameOf(inner ? on : block);
+        nameTile.classList.toggle('tf-handle', !part && !inner); nameTile.title = !part && !inner ? 'Drag to move' : '';
+        blockOnly.forEach(function (n) { n.style.display = part || inner ? 'none' : ''; });
+        replaceBtn.style.display = inner && on === picked ? '' : 'none'; altBtn.style.display = inner && on === picked && !isArt(on) ? '' : 'none'; /* a drawn box has no words to describe */
+        linkBtn.style.display = inner && on === editing && !isButton(on) ? '' : 'none';
+        if (inner) { lookBtn.style.display = on === editing && isButton(on) && choicesFor(on) ? '' : 'none'; swapBtn.style.display = 'none'; }
+        nameTile.nextElementSibling.style.display = Array.prototype.some.call(tools.querySelectorAll('.tf-button'), function (b) { return b.style.display !== 'none'; }) ? '' : 'none'; /* the hairline only parts the name from something */
+        if (inner) { clearTimeout(lookTimer); tools.style.display = 'flex'; placeTools(); return; }
         var hidden = block.hasAttribute('data-tf-hidden'); relabel(hideBtn, hidden ? 'eye' : 'eyeOff', hidden ? 'Show' : 'Hide');
         var kin = kinOf(block), at = kin.indexOf(block); upBtn.disabled = at <= 0; downBtn.disabled = at >= kin.length - 1; /* at an end, that way is off */
         /* the arrows point the way the block's own sit: beside each other, left and right */
@@ -1504,45 +1703,56 @@
         var has = !!choicesFor(block); block._tfLook = { at: era, has: has }; return has;
     }
     var blockBox = null, toolsHover = false;
-    function hideTools() { toolsFor = null; tools.style.display = 'none'; if (blockBox) blockBox.style.display = 'none'; }
+    function hideTools() { toolsFor = null; tools.style.display = 'none'; if (blockBox) blockBox.style.display = 'none'; hidePlusUnder(null); }
     function placeTools() {
         if (!toolsFor || !toolsFor.isConnected) { hideTools(); return; }
         var r = toolsFor.getBoundingClientRect();
-        if (columnOf(toolsFor)) { var pw = document.documentElement.clientWidth; r = { left: 0, right: pw, width: pw, top: r.top, bottom: r.bottom, height: r.height }; } /* a section is the band the eye sees, edge to edge */
+        if (columnOf(toolsFor) && !onPicture(toolsFor)) { var pw = document.documentElement.clientWidth; r = { left: 0, right: pw, width: pw, top: r.top, bottom: r.bottom, height: r.height }; } /* a section is the band the eye sees, edge to edge */
         if (!blockBox) { blockBox = el('span', 'tf-block-box'); blockBox.setAttribute('data-tweakfast', ''); document.body.appendChild(blockBox); }
         /* the words or picture being worked on inside the block: the tools sit just by it, and its line is the only one
            drawn; the block's own outline shows while the pointer is on the tools, to say what they act on */
         var on = editing || held || picked, at = on && on !== toolsFor && toolsFor.contains(on) ? on.getBoundingClientRect() : null;
-        frame(blockBox, r, 6); blockBox.style.display = (toolsFor.hasAttribute('data-tf-block') || sharedParts(document).indexOf(toolsFor) >= 0) && (!at || toolsHover || dragging) ? 'block' : 'none'; blockBox.classList.toggle('tf-block-moving', dragging);
+        frame(blockBox, r, columnOf(toolsFor) && !onPicture(toolsFor) ? null : toolsFor, toolsFor);
+        var inner = (editing || picked) && toolsFor !== (editing || picked) && toolsFor.contains(editing || picked);
+        blockBox.style.display = toolsFor.hasAttribute('data-tf-block') || sharedParts(document).indexOf(toolsFor) >= 0 || onPicture(toolsFor) ? 'block' : 'none'; /* the selected thing keeps its line */
+        blockBox.classList.toggle('tf-block-inner', !!inner); blockBox.classList.toggle('tf-block-selected', !inner);
+        if (hoverBox) hoverBox.style.display = toolsHover || !hoverEl ? 'none' : 'block'; /* one line at a time */ blockBox.classList.toggle('tf-block-moving', dragging); syncBlockHover();
         if (coarse()) { /* a finger: the tools wait in a strip just above the bar, where the thumb is, never over the words a tap is meant for */
             tools.classList.add('tf-tools-dock'); tools.style.left = tools.style.top = tools.style.position = '';
             blockBox.style.visibility = ''; placeNote(); return;
         }
         tools.classList.remove('tf-tools-dock'); tools.style.bottom = '';
-        var w = tools.offsetWidth, own = r; /* the tools sit in the top right corner of the outline the eye sees: a band's is the window's edge */
-        var left = Math.min((at || own).right - w - 4, window.innerWidth - w - 8);
-        var h = tools.offsetHeight, top = r.top - 14, floor = 8, cover = topCover(), under = null;
+        var w = tools.offsetWidth, h = tools.offsetHeight, floor = 8, cover = topCover(), under = null;
         if (cover && !cover.contains(toolsFor)) { /* a menu fixed at the top: the tools and the outline stay below it, never on it */
             floor = cover.getBoundingClientRect().bottom + 8; under = zUnder(cover);
             /* the outline slides under the menu as the page scrolls, drawn just beneath it: moved by the page itself, it
                cannot lag. Cut short by us each frame it ran a frame behind the scroll; only when the menu has no layer of its own */
-            if (r.top < floor - 8) { var cut = floor - 8 - r.top; r = { left: r.left, right: r.right, width: r.width, top: floor - 8, bottom: r.bottom, height: Math.max(0, r.height - cut) }; if (under === null) frame(blockBox, r, 6); }
+            if (r.top < floor - 8) { var cut = floor - 8 - r.top; r = { left: r.left, right: r.right, width: r.width, top: floor - 8, bottom: r.bottom, height: Math.max(0, r.height - cut) }; if (under === null) frame(blockBox, r, columnOf(toolsFor) && !onPicture(toolsFor) ? null : toolsFor, toolsFor); }
         }
         blockBox.style.zIndex = under === null ? '' : String(under);
-        /* words being typed: the tools keep to the block's own corner, so they read as the block's, not the words'; only
-           when that corner would cover the words do they step beside them */
-        if (at && editing === on) {
-            var cl = Math.max(8, Math.min(own.right - w - 4, window.innerWidth - w - 8)), ct = Math.max(floor, r.height < h * 2 ? r.top - h - 6 : top);
-            if (cl >= at.right || cl + w <= at.left || ct >= at.bottom || ct + h <= at.top) { at = null; left = cl; }
-        }
-        if (at) { top = at.top - h - 10; if (top < floor) top = picked === on ? Math.max(floor, at.top + 8) : at.bottom + 10; } /* above it; no room: under the words, or inside the picture's top corner, clear of its description */
-        else if (r.height < h * 2) { top = r.top - h - 6; if (top < floor) top = r.bottom + 6; } /* a small block, a button: the tools stand clear of it, so its words stay in reach */
+        /* the toolbar is the block's: centred above its line, 8 off it, and it stays there while the owner clicks around
+           inside; no room above (the header, the top of the window): below the line instead */
+        var left = Math.max(8, Math.min(r.left + (r.width - w) / 2, window.innerWidth - w - 8));
+        if (at && inner) left = Math.max(8, Math.min(Math.max(r.left, Math.min(at.left + (at.width - w) / 2, r.right - w)), window.innerWidth - w - 8)); /* words or a picture inside the block: centred on them, kept within the block's width */
+        var top = r.top - h - 8;
+        if (top < floor) top = r.bottom + 8 <= window.innerHeight - h - 8 ? r.bottom + 8 : floor;
+        var barTop = bar.getBoundingClientRect().top; if (card) barTop = Math.min(barTop, card.getBoundingClientRect().top); barTop -= 8; /* the bar and the welcome card: never under them, the band just above instead */
+        if (top + h > barTop && top < window.innerHeight) top = Math.max(floor, barTop - h);
         var held_ = top < floor; top = Math.max(floor, top);
-        var gone = at ? at.bottom < floor : r.bottom < top + h; /* scrolled up under the menu: nothing left of it to work on */
+        var gone = r.bottom < floor || r.top > window.innerHeight; /* scrolled away, or up under the menu: nothing left of it to work on */
         tools.style.visibility = blockBox.style.visibility = gone ? 'hidden' : '';
         /* held below the menu, the tools stay put in the window while the page scrolls: fixed there, they need no moving */
         if (held_ && cover) { tools.style.position = 'fixed'; tools.style.left = Math.max(8, left) + 'px'; tools.style.top = top + 'px'; }
-        else { tools.style.position = ''; put(tools, Math.max(8, left), top); }
+        else { tools.style.position = ''; put(tools, Math.max(8, left), top, toolsFor); }
+        placeLink(); placeAlt(); /* the fields hang from the toolbar, so they go where it goes */
+        hidePlusUnder(gone ? null : { left: left, top: top, right: left + w, bottom: top + h });
+    }
+    /* an "add one more" mark the toolbar would cover is out of the way while the toolbar is there */
+    function hidePlusUnder(box) {
+        Array.prototype.forEach.call(document.querySelectorAll('.tf-plus'), function (pl) {
+            var q = pl.getBoundingClientRect(), under = !!box && q.left < box.right && q.right > box.left && q.top < box.bottom && q.bottom > box.top;
+            pl.classList.toggle('tf-plus-under', under);
+        });
     }
     /* the layer just beneath a fixed menu, for our outline to pass under it; null when the menu has no layer of its own */
     function zUnder(cover) {
@@ -1580,6 +1790,7 @@
     /* the row is mirrored, not reordered: the page keeps its order, so on a phone, where the two stack, the first stays
        on top; each side keeps the widths it had and reads as before */
     function swapSides() {
+        if (editing && toolsFor && toolsFor.contains(editing)) commit(); /* typed words are kept before the block acts */
         var b = toolsFor, two = b && twoSides(b); if (!two) return;
         var all = [two.row].concat(two.parts), was = all.map(function (n) { return n.getAttribute('style'); }), from = all.map(function (n) { return n.getBoundingClientRect(); }), outerWas = cleanOuter(b);
         var mirrored = two.row.style.direction && two.parts[0].style.direction && two.row.style.direction !== two.parts[0].style.direction;
@@ -1658,16 +1869,34 @@
         if (isButton(block)) { list = still(function () { return looks(block); }); return list.length > 1 ? { t: block, list: list } : null; }
         if (!block.getClientRects().length || block.matches('li,tr,td,th,dt,dd')) return null;
         var big = isBig(block);
-        /* a big part (a section, the header, a footer) always has its Look; a card has one when another ground of the site fits it */
-        if (!big && !grounds(block, true).some(function (o) { return o.ok && !o.now; })) return null;
+        /* a small part with no ground of its own (a picture with words under it, on the section's ground) is not a card:
+           it has no Look, so a colour never lands as a box behind it */
+        var sides;
+        if (!big && openToPage(block)) {
+            /* unless its ground is drawn by what it holds, all in one colour (a card and the round badge beside it):
+               then that is the card, and its parts take a new ground together */
+            var inner = groundedKids(block); if (!inner) return null;
+            sides = [{ part: inner[0], also: inner.slice(1) }];
+        }
         /* parts that cover the block's ground (two halves) are chosen for one by one */
-        if (covered(block)) { var sides = coverParts(block); return sides.length ? { t: block, sides: sides } : null; }
-        return { t: block, sides: [{ part: block }] };
+        else sides = covered(block) ? coverParts(block) : [{ part: block }];
+        /* a Look with nothing to offer is not there at all (a section whose ground is its picture, or one ground only):
+           a button that only says no is noise */
+        sides = sides.filter(function (s) { return groundRows(s.part).some(function (r) { return !r.off && !r.o.now; }); }); /* only the one it has: nothing to choose either */
+        return sides.length ? { t: block, sides: sides } : null;
+    }
+    /* the parts straight inside a block that draw a ground of their own, all one colour, the biggest first; else null */
+    function groundedKids(b) {
+        var kids = Array.prototype.filter.call(b.children, function (c) { if (c.hasAttribute('data-tweakfast') || !c.getClientRects().length) return false; var cs = getComputedStyle(c); return cs.backgroundImage === 'none' && opaque(cs.backgroundColor); });
+        if (!kids.length || kids.some(function (c) { return same(getComputedStyle(c).backgroundColor) !== same(getComputedStyle(kids[0]).backgroundColor); })) return null;
+        var area = function (c) { var r = c.getBoundingClientRect(); return r.width * r.height; };
+        return kids.sort(function (x, y) { return area(y) - area(x); });
     }
     /* a big part: a section, the header, a footer, a block straight in main */
-    function isBig(b) { var d = b.ownerDocument, m = d.querySelector('main'); return !!(b.parentElement && (b.parentElement.matches('main') || m && b.parentElement === sectionsIn(m)) || b.matches('section,header,footer') || sharedParts(d).indexOf(b) >= 0); }
+    function isBig(b) { var d = b.ownerDocument, m = d.querySelector('main'); return !!(b.parentElement && (b.parentElement.matches('main') || m && b.parentElement === sectionsIn(m)) || b.matches('section,header,footer') || sharedParts(d).indexOf(b) >= 0 || onPicture(b)); }
     function openLooks() {
-        var b = toolsFor, ch = choicesFor(b); if (!ch) { lookBtn.style.display = 'none'; return; }
+        hideLink();
+        var b = editing && isButton(editing) && toolsFor !== editing ? editing : toolsFor, ch = choicesFor(b); if (!ch) { lookBtn.style.display = 'none'; return; }
         var t = ch.t;
         var wordsOf = function (n) { var w = (n || t).textContent.replace(/\s+/g, ' ').trim(); return !w ? 'Aa' : w.length > 26 ? w.slice(0, 24).trim() + '\u2026' : w; };
         if (!ch.sides) {
@@ -1679,14 +1908,15 @@
         ch.sides.forEach(function (s, n) {
             if (s.label) { if (n) items.push('gap'); items.push({ label: s.label }); }
             var rows = groundRows(s.part).filter(function (r) { return !r.off; });
-            if (!rows.length) items.push({ note: 'This part cannot take another background.' });
-            rows.forEach(function (r) { items.push(swatchItem(r, function (o) { takeGround(s.part, o, t); })); });
+            if (!rows.length) items.push({ note: grounds(s.part).picture ? PICTURE_GROUND : 'This part cannot take another background.' });
+            rows.forEach(function (r) { items.push(swatchItem(r, function (o) { takeGround(s.part, o, t, s.also); })); });
         });
         openMenu(lookBtn, items);
     }
     /* only what can be had and looks different is offered: a row that cannot be had here is left out */
     function swatchItem(r, take) {
-        return { swatch: { ground: r.o.ground, ink: nameInk(r.o.ground, r.o.look.color) }, word: r.word, now: r.o.now, fn: r.o.now ? function () {} : function () { take(r.o); } };
+        var sw = r.word === 'clear' ? { clear: true } : { ground: r.o.ground, ink: nameInk(r.o.ground, r.o.look.color) }; /* clear: the see-through grid of a colour picker, not the picture under it */
+        return { swatch: sw, word: r.word, now: r.o.now, fn: r.o.now ? function () {} : function () { take(r.o); } };
     }
     /* the row's name is written in the words' colour on that ground; where the part has no words to judge it by (a
        picture), that colour may not read, and the name takes the site's colour that reads best there */
@@ -1697,13 +1927,15 @@
     }
     /* the Look of a ground is the same four rows everywhere: light, dark, colour and inverted. A row that cannot be had
        here stays, greyed, and says why. Each of the first three is the site's own: the ground the block has now, else
-       the one it came with, else the first that keeps every word readable. */
+       the one it came with, else the first that keeps every word readable. A part that came see-through over a picture
+       has one more row before them, clear: the way it came, the picture showing through. */
     var KINDS = ['light', 'dark', 'colour'];
     function kindOf(bg) {
         var c = rgbOf(bg); if (!c || c.a === 0) return null;
         var mx = Math.max(c.r, c.g, c.b), mn = Math.min(c.r, c.g, c.b);
         return mx - mn > 40 ? 'colour' : (0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b) / 255 > .5 ? 'light' : 'dark';
     }
+    var PICTURE_GROUND = 'Its background is the picture. Click the picture to replace it.';
     var WHY = { move: 'It would move things here.', read: 'Some words would be hard to read on it.' };
     /* two grounds the eye cannot tell apart: the background and its words both close */
     function sameByEye(a, b) {
@@ -1712,7 +1944,7 @@
     }
     function groundRows(b) {
         var list = grounds(b);
-        if (!list.length) return KINDS.concat('inverted').map(function (k) { return { word: k, off: 'This part cannot take another background.' }; });
+        if (!list.length) return KINDS.concat('inverted').map(function (k) { return { word: k, off: list.picture ? PICTURE_GROUND : 'This part cannot take another background.' }; });
         var rows = KINDS.map(function (k) {
             var here = list.filter(function (o) { return !o.flip && kindOf(o.ground) === k; }), ok = here.filter(function (o) { return o.ok; });
             var pick = ok.filter(function (o) { return o.orig; })[0] || ok[0]; /* the same every time: what it came with, else the site's first */
@@ -1725,6 +1957,8 @@
         var groundAlike = function (x, y) { var p = rgbOf(x.ground), q = rgbOf(y.ground); return !!p && !!q && Math.abs(p.r - q.r) + Math.abs(p.g - q.g) + Math.abs(p.b - q.b) < 45; };
         var twin = f && f.ok && rows.filter(function (r) { return r.o && (alike(r.o, f) || sameByEye(r.o, f) || bare && groundAlike(r.o, f)); })[0]; /* swapped, it is a row already there */
         rows.push(twin ? { word: 'inverted', off: 'Same as ' + twin.word + ' here.' } : f && f.ok ? { o: f, word: 'inverted' } : { word: 'inverted', off: f ? WHY[f.why] : list.flipWhy || 'The background here is a picture.' });
+        var see = list.filter(function (o) { return o.orig && o.ok && o.plain && !rgbOf(o.ground); })[0];
+        if (see) rows.unshift({ o: see, word: 'clear' });
         return rows;
     }
     /* the parts that cover a block's ground, named by where they sit */
@@ -1793,7 +2027,30 @@
         var fit = Math.min(parseFloat(ts.fontSize), 18); if (/px$/.test(ts.letterSpacing)) o.letterSpacing = parseFloat(ts.letterSpacing) * fit / parseFloat(ts.fontSize) + 'px'; /* tight heading letters stay tight, not on top of each other */
         o.fontSize = fit + 'px';
         var own = cs.backgroundImage !== 'none' ? cs.backgroundImage : cs.backgroundColor, clear = cs.backgroundImage === 'none' && !opaque(cs.backgroundColor);
-        var g = { look: o, ground: clear ? groundOf(b.parentElement || b) : own, plain: clear }; g.key = same(g.ground) + '|' + same(cs.color); return g; /* a choice is the ground the eye sees, and its ink */
+        var pic = clear && pictureBehind(b);
+        var g = { look: o, ground: pic || (clear ? groundOf(b.parentElement || b) : own), plain: clear }; g.key = same(g.ground) + '|' + same(cs.color); return g; /* a choice is the ground the eye sees, and its ink */
+    }
+    /* a see-through part over a picture that is not one of its own boxes (a header floating on the first photo): the
+       eye sees the picture, not the colour of the boxes it sits in. Five points of the part are looked under; when most
+       show a picture, that picture (as a background, for its swatch) is its ground, else null */
+    function pictureBehind(b) {
+        var r = b.getBoundingClientRect(), hits = 0, pic = null;
+        if (!r.width || !r.height) return null;
+        [[.5, .5], [.15, .3], [.85, .3], [.15, .7], [.85, .7]].forEach(function (f) {
+            var x = r.left + r.width * f[0], y = r.top + r.height * f[1];
+            if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return;
+            var under = document.elementsFromPoint(x, y);
+            for (var i = 0; i < under.length; i++) {
+                var n = under[i];
+                if (n === b || b.contains(n) || n.closest('[data-tweakfast]')) continue;
+                if (n.contains(b)) break; /* down to its own boxes: their colour shows */
+                var ns = getComputedStyle(n);
+                if (n.tagName === 'IMG' && n.currentSrc) { hits++; pic = pic || 'url("' + n.currentSrc + '") center / cover'; break; }
+                if (/url\(/.test(ns.backgroundImage)) { hits++; pic = pic || ns.backgroundImage + ' center / cover'; break; }
+                if (opaque(ns.backgroundColor)) break;
+            }
+        });
+        return hits >= 3 ? pic : null;
     }
     /* ---- reading ---- */
     function same(c) { var v = rgbOf(c); return v ? [v.r, v.g, v.b, v.a].map(function (x) { return Math.round(x * 100) / 100; }).join(',') : c; }
@@ -1922,8 +2179,9 @@
     /* the choices are worked out from the block as the page came, never from what it took since: the same rows every
        time the menu opens, and the one it has now is ticked */
     function groundsNow(b, classOnly) {
-        var list = [], off = [];
-        if (!isButton(b) && !b.matches('li,tr,td,th,dt,dd') && b.getClientRects().length && !covered(b)) {
+        var list = [], off = [], full = !isButton(b) && fullPicture(b);
+        if (full) list.picture = true; /* its own picture covers all of its ground: a colour there would never show */
+        if (!full && !isButton(b) && !b.matches('li,tr,td,th,dt,dd') && b.getClientRects().length && !covered(b)) {
             var was = b.getAttribute('class'), tintWas = tintState(b), held = tintPair(b), from = groundFrom(b);
             untint(b); putAttr(b, 'class', from); /* as it came */
             var names = groundClasses(), own = names.filter(function (c) { return b.classList.contains(c); }), base = layoutOf(b), first = groundLook(b), read = readings(b);
@@ -1981,6 +2239,41 @@
         b[classOnly ? '_tfGroundsC' : '_tfGrounds'] = { at: era, list: list };
         return list;
     }
+    /* a part whose own picture covers all of it (a first photo with the words laid over it): what the eye sees as its
+       ground is that picture, so another ground colour would change nothing on the screen */
+    function fullPicture(b) {
+        var r = b.getBoundingClientRect(), area = r.width * r.height; if (!area) return false;
+        return Array.prototype.some.call(b.querySelectorAll('img'), function (img) {
+            var q = img.getBoundingClientRect(), w = Math.min(q.right, r.right) - Math.max(q.left, r.left), h = Math.min(q.bottom, r.bottom) - Math.max(q.top, r.top);
+            return w > 0 && h > 0 && w * h >= area * .95;
+        });
+    }
+    /* the boxes laid on a part whose ground is its own picture (the card on a first photo): the colour the eye sees
+       there. Each is a part of its own, with its own Look: what is pointed at is what changes. Null when the part's
+       ground is not a picture */
+    function pictureBoxes(b) {
+        if (!fullPicture(b)) return null;
+        var r = b.getBoundingClientRect(), area = r.width * r.height, out = [];
+        Array.prototype.forEach.call(b.querySelectorAll('*'), function (n) {
+            if (n.tagName === 'IMG' || n.closest('[data-tweakfast]') || isButton(n) || out.some(function (o) { return o.contains(n); })) return;
+            var cs = getComputedStyle(n); if (cs.backgroundImage !== 'none' || !opaque(cs.backgroundColor)) return;
+            var q = n.getBoundingClientRect(), a = q.width * q.height; if (a < area * .04 || a >= area * .95) return; /* a field or a tag is too small to be a ground */
+            out.push(n);
+        });
+        if (out.length === 2) {
+            var p = out[0].getBoundingClientRect(), q = out[1].getBoundingClientRect(), beside = sameRow(out[0], out[1]), firstLeads = beside ? p.left < q.left : p.top < q.top;
+            if (!firstLeads) out.reverse();
+            return [{ part: out[0], label: beside ? 'Left' : 'Top' }, { part: out[1], label: beside ? 'Right' : 'Bottom' }];
+        }
+        return out.map(function (n, i) { return out.length > 1 ? { part: n, label: 'Part ' + (i + 1) } : { part: n }; });
+    }
+    function boxesOf(b) {
+        if (b._tfBoxes && b._tfBoxes.at === era) return b._tfBoxes.list;
+        var list = (pictureBoxes(b) || []).map(function (o) { return o.part; }); b._tfBoxes = { at: era, list: list }; return list;
+    }
+    /* the box on the block's picture that holds the node, else null */
+    function boxOn(b, node) { var l = boxesOf(b); for (var i = 0; i < l.length; i++) if (l[i].contains(node)) return l[i]; return null; }
+    function onPicture(n) { var b = n.parentElement && n.parentElement.closest('[data-tf-block]'); return !!b && boxesOf(b).indexOf(n) >= 0; }
     function rgbText(v) { return 'rgb(' + Math.round(v.r) + ', ' + Math.round(v.g) + ', ' + Math.round(v.b) + ')'; }
     /* the colour pairs this site paints with: the page's own, and each ground class's background with the ink it brings */
     var pairsSeen = null;
@@ -2019,12 +2312,17 @@
     }
     /* a ground taken: its class, and the colours laid on it when it is a pair (inverted, or a colour of the site);
        holder is the block whose tools stay up (a section, when one of its halves took it) */
-    function takeGround(b, o, holder) {
-        var was = b.getAttribute('class'), outerWas = cleanOuter(b), tintWas = tintState(b), from = groundFrom(b);
-        putAttr(b, 'class', o.cls); retint(b, from, o.pair);
-        steps.push(function () { putAttr(b, 'class', was); setTint(b, tintWas); });
+    function takeGround(b, o, holder, also) {
+        /* parts that go with it (the badge beside a card) take their own choice of the same colour, in the same step */
+        var list = [{ b: b, o: o }].concat((also || []).map(function (n) {
+            var m = grounds(n).filter(function (x) { return x.ok && !x.flip === !o.flip && same(x.ground) === same(o.ground); })[0];
+            return m ? { b: n, o: m } : null;
+        }).filter(Boolean));
+        var saved = list.map(function (x) { return { b: x.b, was: x.b.getAttribute('class'), outerWas: cleanOuter(x.b), tintWas: tintState(x.b), from: groundFrom(x.b) }; });
+        list.forEach(function (x, i) { putAttr(x.b, 'class', x.o.cls); retint(x.b, saved[i].from, x.o.pair); });
+        steps.push(function () { saved.forEach(function (v) { putAttr(v.b, 'class', v.was); setTint(v.b, v.tintWas); }); });
         refresh();
-        if (sharedParts(document).indexOf(b) >= 0) mirrorGround(b, was, tintWas); else mirror(b, outerWas);
+        saved.forEach(function (v) { if (sharedParts(document).indexOf(v.b) >= 0) mirrorGround(v.b, v.was, v.tintWas); else mirror(v.b, v.outerWas); });
         showTools(holder || b);
         once('ground', 'The colours come from this site. Undo brings the old ones back.');
     }
@@ -2142,7 +2440,7 @@
        is a mix of the old ground and the old ink is laid again as the same mix of the new ones, so quiet words stay
        quiet and lines stay faint, in the site's own two colours. A part on a ground of another colour (a lime sticker)
        keeps the ink it had. The colours sit in one style element inside the block: the way back takes it out. */
-    var TINT = { color: 'color', backgroundColor: 'background-color', borderTopColor: 'border-top-color', borderRightColor: 'border-right-color', borderBottomColor: 'border-bottom-color', borderLeftColor: 'border-left-color', webkitTextStrokeColor: '-webkit-text-stroke-color' }; /* the outline of outlined words too */
+    var TINT = { color: 'color', backgroundColor: 'background-color', accentColor: 'accent-color', borderTopColor: 'border-top-color', borderRightColor: 'border-right-color', borderBottomColor: 'border-bottom-color', borderLeftColor: 'border-left-color', webkitTextStrokeColor: '-webkit-text-stroke-color' }; /* the outline of outlined words too */
     function tintStyle(b) { for (var c = b.firstElementChild; c; c = c.nextElementSibling) if (c.tagName === 'STYLE' && c.hasAttribute('data-tf-tint')) return c; return null; }
     /* the class the block's colours were made for: kept in its tint, so it lasts past a reload */
     /* the colours laid on a block as a pair, kept in its tint: { g, i, flip } */
@@ -2187,6 +2485,50 @@
         });
         return out;
     }
+    /* another of the part's kind (its tag and a class in common), outside the block, with a ground of its own and on
+       the ground g: its ground and ink as they show, or null */
+    function kinOn(n, g, b) {
+        var names = Array.prototype.filter.call(n.classList, function (c) { return c.indexOf('tf-') !== 0; }); if (!names.length || !g) return null;
+        var hit = null;
+        names.some(function (c) {
+            var list; try { list = document.querySelectorAll(n.tagName + '.' + CSS.escape(c)); } catch (e) { return false; }
+            for (var i = 0; i < list.length && i < 60; i++) {
+                var m = list[i]; if (m === n || b.contains(m) || m.closest('[data-tweakfast]') || !m.getClientRects().length) continue;
+                var cs = getComputedStyle(m), under = behind(m.parentElement);
+                if (cs.backgroundImage !== 'none' || !opaque(cs.backgroundColor) || !under || contrast(under, g) > 1.05) continue;
+                if (contrast(rgbOf(cs.backgroundColor), g) < 1.15) continue; /* one that melts into it is no example */
+                hit = { bg: cs.backgroundColor, ink: cs.color }; return true;
+            }
+            return false;
+        });
+        return hit;
+    }
+    /* a picture drawn in one colour on a see-through ground (a logo, an icon as a file): that colour, else null. Such a
+       picture is part of the words around it: when the ground changes, it takes the new ink as the words do */
+    function flatInk(img) {
+        if (img._tfFlat !== undefined && img._tfFlat.src === img.currentSrc) return img._tfFlat.ink;
+        var ink = null;
+        try {
+            if (img.complete && img.naturalWidth) {
+                var w = 48, h = Math.max(1, Math.round(w * img.naturalHeight / img.naturalWidth)), c = document.createElement('canvas'); c.width = w; c.height = h;
+                var x = c.getContext('2d'); x.drawImage(img, 0, 0, w, h);
+                var d = x.getImageData(0, 0, w, h).data, n = 0, clear = 0, sum = [0, 0, 0], all = [];
+                for (var i = 0; i < d.length; i += 4) { if (d[i + 3] < 24) { clear++; continue; } if (d[i + 3] < 200) continue; n++; sum[0] += d[i]; sum[1] += d[i + 1]; sum[2] += d[i + 2]; all.push(i); }
+                if (n > 8 && clear > (w * h) * .1) {
+                    var m = sum.map(function (v) { return Math.round(v / n); });
+                    if (all.every(function (i) { return Math.abs(d[i] - m[0]) + Math.abs(d[i + 1] - m[1]) + Math.abs(d[i + 2] - m[2]) < 40; })) ink = 'rgb(' + m.join(', ') + ')';
+                }
+            }
+        } catch (e) {} /* a picture from another site cannot be read: it stays as it is */
+        img._tfFlat = { src: img.currentSrc, ink: ink };
+        return ink;
+    }
+    /* the picture's own shape, painted in a colour: its pixels move out of sight, its shape lets the colour through */
+    function paintedIn(img, colour) {
+        var fit = getComputedStyle(img).objectFit, size = fit === 'contain' || fit === 'cover' || fit === 'scale-down' ? (fit === 'cover' ? 'cover' : 'contain') : '100% 100%';
+        var url = 'url("' + (img.getAttribute('src') || '').replace(/"/g, '%22') + '") 50% 50%/' + size + ' no-repeat';
+        return ['object-position:-99999px 0', 'background:' + colour, '-webkit-mask:' + url, 'mask:' + url].map(function (x) { return x + '!important'; });
+    }
     /* a colour as the same mix of ground and ink on the new pair, or null when it is a colour of its own */
     function remix(c, g0, i0, g1, i1) {
         var v = rgbOf(c); if (!v || v.a === 0) return null;
@@ -2227,9 +2569,22 @@
             if (own.some(function (o) { return o.contains(n); })) return; /* inside a part with its own ground: that part keeps its ink */
             if (n !== b && n.hasAttribute('data-tf-tint')) { own.push(n); return; } /* a part with a Look of its own keeps it: it is its choice, not the page's colours */
             var a = A[j], z = B[j], set = [];
-            var bgOwn = a.image || opaque(a.backgroundColor) && !remix(a.backgroundColor, g0, i0, g1, i1);
             if (n === b) return; /* the block's own ground and ink are the class's */
+            /* a part with a ground of its own that the site also shows on the new ground (a label: lime on the green
+               sections, green on the light ones) takes the site's own look for it there, where its own would melt into the
+               new ground or be worked out from it */
+            var ownBg = !a.image && opaque(a.backgroundColor) && rgbOf(a.backgroundColor);
+            var kin = ownBg && (contrast(ownBg, g1) < 1.15 || remix(a.backgroundColor, g0, i0, g1, i1)) && kinOn(n, g1, b); /* only where its own would melt in or be worked out */
+            if (kin) {
+                own.push(n);
+                if (same(kin.bg) !== same(z.backgroundColor)) set.push('background-color:' + kin.bg + '!important');
+                if (same(kin.ink) !== same(z.color)) set.push('color:' + kin.ink + '!important');
+                if (set.length) { mark(n, id + '-' + j); rules.push(new Array(depth + 1).join('[data-tf-t~="' + id + '-' + j + '"]') + '{' + set.join(';') + '}'); }
+                return;
+            }
+            var bgOwn = a.image || opaque(a.backgroundColor) && !remix(a.backgroundColor, g0, i0, g1, i1);
             if (bgOwn) { own.push(n); if (z.color !== a.color) set.push('color:' + a.color + '!important'); }
+            if (n.tagName === 'IMG') { var flat = flatInk(n), mf = flat && remix(flat, g0, i0, g1, i1); if (mf && same(mf) !== same(flat)) set = set.concat(paintedIn(n, mf)); }
             for (var k in TINT) {
                 if (bgOwn && !/^border/.test(k)) continue; /* its own ground and ink stay; its edge meets the block's ground */
                 if (/^border/.test(k) && !a.lines[['borderTopColor', 'borderRightColor', 'borderBottomColor', 'borderLeftColor'].indexOf(k)]) continue;
@@ -2394,6 +2749,12 @@
         for (var up = n.parentElement; up && up !== doc.body; up = up.parentElement) { var sel = own(up) + ' ' + own(n); if (one(sel)) return sel; }
         return 'body' + pathFrom(doc.body, n).map(function (s) { return '>:nth-child(' + (s.i + 1) + ')'; }).join('');
     }
+    /* no background, shadow or line of its own as the site made it: the ground around shows through */
+    function openToPage(n) {
+        if (!bareAsMade(n, true)) return false;
+        var cs = getComputedStyle(n);
+        return ['Top', 'Right', 'Bottom', 'Left'].every(function (k) { return !(parseFloat(cs['border' + k + 'Width']) > 0) || seeThrough(cs['border' + k + 'Color']); });
+    }
     /* a part as the site made it, before any Look here: no ground of its own, so the page shows through */
     function bareAsMade(n, plain) {
         var st = tintStyle(n), cls = n.getAttribute('class'), from = groundFrom(n);
@@ -2470,6 +2831,7 @@
         if (root.getAttribute && root.getAttribute('style') === '') root.removeAttribute('style');
     }
     function startDrag(e, byTouch) {
+        if (editing && toolsFor && toolsFor.contains(editing)) commit();
         var b = toolsFor; if (!b || e.button) return;
         if (!byTouch) e.preventDefault();
         var grip = byTouch ? null : e.currentTarget, parent = b.parentElement, prevNext = b.nextElementSibling, order = orderOf(parent), moved = false, parentWas = sharedRootOf(b) ? cleanOuter(parent) : null;
@@ -2594,6 +2956,7 @@
     }
     var skipClick = false;
     function move(dir) {
+        if (editing && toolsFor && toolsFor.contains(editing)) commit(); /* typed words are kept before the block acts */
         var b = toolsFor; if (!b) return;
         var kin = kinOf(b), i = kin.indexOf(b), j = i + dir;
         if (j < 0 || j >= kin.length) { say(dir < 0 ? 'Already at the top.' : 'Already at the bottom.'); return; }
@@ -2609,6 +2972,7 @@
     function orderOf(parent) { return Array.prototype.slice.call(parent.childNodes); }
     function putOrder(parent, order) { order.forEach(function (n) { parent.appendChild(n); }); }
     function toggleHidden() {
+        if (editing && toolsFor && toolsFor.contains(editing)) commit(); /* typed words are kept before the block acts */
         var b = toolsFor; if (!b) return;
         var wasHidden = b.hasAttribute('data-tf-hidden'), parentWas = cleanOuter(b.parentElement);
         setHidden(b, !wasHidden);
@@ -2620,6 +2984,7 @@
     }
     /* Remove takes the block out at once: no faded ghost; Undo brings it back, after Done the page's versions do */
     function removeBlock() {
+        if (editing && toolsFor && toolsFor.contains(editing)) commit(); /* typed words are kept before the block acts */
         var b = toolsFor; if (!b) return;
         if (b.parentElement.querySelector(':scope > .tf-plus') && kinOf(b).length < 2) { say('This is the last one, and the plus makes more from it. Hide it instead.', 'error'); return; }
         var parent = b.parentNode, next = b.nextElementSibling, parentWas = cleanOuter(parent);
@@ -2652,11 +3017,13 @@
         });
     }
     function copyBlock() {
+        if (editing && toolsFor && toolsFor.contains(editing)) commit(); /* typed words are kept before the block acts */
         var b = toolsFor; if (!b) return;
         if (isButton(b)) { copyButton(b); return; }
         var twin = makeTwin(b), parentWas = cleanOuter(b.parentElement);
         b.parentElement.insertBefore(twin, b.nextSibling);
-        steps.push(function () { twin.remove(); });
+        var back = rowRoom(b.parentElement);
+        steps.push(function () { twin.remove(); if (back) back(); });
         mirror(b.parentElement, parentWas);
         refresh();
         showTools(twin);
@@ -2675,16 +3042,101 @@
         var look = secondLook(b); if (look !== null) { if (look) twin.className = look; else twin.removeAttribute('class'); }
         var gap = document.createTextNode(' ');
         parent.insertBefore(gap, b.nextSibling); parent.insertBefore(twin, gap.nextSibling);
-        /* side by side in running layout one space is too tight between two buttons: a few more, between them, so the gap
-           stays between whichever way they are moved later */
-        if (!/flex|grid/.test(getComputedStyle(parent).display) && sameRow(b, twin) && Math.abs(twin.getBoundingClientRect().left - b.getBoundingClientRect().right) < 12) gap.nodeValue = '\u00a0\u00a0\u00a0 ';
+        var back = buttonRow(parent, b);
+        /* buttons in running text with other things beside them: one space is too tight between two, so a few more,
+           between them, so the gap stays between whichever way they are moved later */
+        if (!back && !/flex|grid/.test(getComputedStyle(parent).display) && sameRow(b, twin) && Math.abs(twin.getBoundingClientRect().left - b.getBoundingClientRect().right) < 12) gap.nodeValue = '\u00a0\u00a0\u00a0 ';
         if (twin.getAttribute('style') === '') twin.removeAttribute('style');
-        steps.push(function () { twin.remove(); gap.remove(); });
+        newButtons.push({ el: twin, word: b.tagName === 'A' ? 'Link' : 'Button' });
+        steps.push(function () { twin.remove(); gap.remove(); if (back) back(); });
         mirror(parent, parentWas);
         refresh();
         showTools(twin);
         var words = firstText(twin); if (words) begin(words); /* the words open at once, and Goes to with them */
         once('copybutton', 'A new button. Type its words; Goes to sets where it leads.');
+    }
+    /* a box holding only buttons becomes a row that wraps, with the same space between lines as between buttons, so a
+       button that runs onto a new line never lands on the one above. The space is the one the site already puts between
+       its buttons; without one, a quarter of the button's height. A row the site laid out wraps as it was made, and only
+       gets the space between lines when it has none. Gives back what puts the box as it was, or null. */
+    var newButtons = []; /* buttons added in this visit, with the word they came with: Done says which still have it */
+    function buttonRow(box, b) {
+        for (var c = box.firstElementChild; c; c = c.nextElementSibling) if (!c.hasAttribute('data-tweakfast') && !isButton(c)) return null;
+        var cs = getComputedStyle(box), styleWas = box.getAttribute('style'), texts = [];
+        var restore = function () { if (styleWas === null) box.removeAttribute('style'); else box.setAttribute('style', styleWas); texts.forEach(function (t) { t.n.nodeValue = t.was; }); };
+        if (/flex|grid/.test(cs.display)) {
+            if (cs.display.indexOf('flex') >= 0 && cs.flexWrap === 'nowrap' || parseFloat(cs.rowGap) > 0) return null;
+            box.style.rowGap = (parseFloat(cs.columnGap) > 0 ? cs.columnGap : siteGap(b) + 'px');
+            return restore;
+        }
+        for (var n = box.firstChild; n; n = n.nextSibling) if (n.nodeType === 3 && n.nodeValue !== ' ') { texts.push({ n: n, was: n.nodeValue }); n.nodeValue = ' '; } /* spaces made wider earlier would stand as a word of their own in the row */
+        var align = cs.textAlign;
+        box.style.display = cs.display.indexOf('inline') === 0 ? 'inline-flex' : 'flex';
+        box.style.flexWrap = 'wrap'; box.style.alignItems = 'center'; box.style.gap = siteGap(b) + 'px';
+        if (align === 'center') box.style.justifyContent = 'center';
+        else if (align === 'right' || align === 'end' && cs.direction !== 'rtl') box.style.justifyContent = 'flex-end';
+        return restore;
+    }
+    /* a row of cards laid out side by side, made for one line: when a new one runs onto a second line, the lines get the
+       same space between them as the cards have side by side, so it never sits right under the one above. Only where the
+       site put none; gives back what puts the row as it was, or null. */
+    function rowRoom(box) {
+        var cs = getComputedStyle(box);
+        if (!/flex|grid/.test(cs.display) || parseFloat(cs.rowGap) > 0 || !(parseFloat(cs.columnGap) > 0) || box.hasAttribute('data-tf-rows')) return null;
+        var seen = Array.prototype.filter.call(box.children, function (c) { return !c.hasAttribute('data-tweakfast') && c.getClientRects().length; });
+        if (seen.length < 2 || seen[seen.length - 1].getBoundingClientRect().top < seen[0].getBoundingClientRect().bottom - 1) return null; /* still one line */
+        var id = 'r' + Math.random().toString(36).slice(2, 8), rules = rowRules(box, id);
+        if (!rules.length) return null;
+        var st = rowStyle(id, rules);
+        box.setAttribute('data-tf-rows', id);
+        return function () { st.remove(); box.removeAttribute('data-tf-rows'); };
+    }
+    /* the site's own rules for the row, in their order and at their widths: where one sets the space between lines, that
+       space; where one sets only the space side by side, the same between lines. So a phone layout with one card a line
+       keeps its own spacing, and the space grows and shrinks with the page as the site's does */
+    function rowRules(box, id) {
+        var rules = [];
+        var walk = function (list, media) {
+            Array.prototype.forEach.call(list, function (r) {
+                if (r.cssRules && r.media) { walk(r.cssRules, media.concat(r.media.mediaText)); return; }
+                if (!r.selectorText || !r.style) return;
+                try { if (!box.matches(r.selectorText)) return; } catch (e) { return; }
+                var v = r.style.getPropertyValue('row-gap') || r.style.getPropertyValue('column-gap'); if (!v) return;
+                var rule = '[data-tf-rows="' + id + '"]{row-gap:' + v + '}';
+                rules.push(media.reduce(function (inner, m) { return '@media ' + m + '{' + inner + '}'; }, rule));
+            });
+        };
+        Array.prototype.forEach.call(document.styleSheets, function (sh) { if (sh.ownerNode && sh.ownerNode.closest && sh.ownerNode.closest('[data-tweakfast],[data-tf-rows]')) return; try { walk(sh.cssRules, []); } catch (e) {} });
+        return rules;
+    }
+    function rowStyle(id, rules) { /* in the head: a style inside the row would count as one of its children */
+        var st = document.createElement('style'); st.setAttribute('data-tf-rows', id); st.textContent = rules.join('\n');
+        document.head.appendChild(st); return st;
+    }
+    /* a row marked for its space between lines whose rule is missing gets it again: a draft brought back and a Redo put
+       the page's body back without the head, so the copied card sat right under the one above until Done and a reload */
+    function mendRows() {
+        var sheets = Array.prototype.slice.call(document.querySelectorAll('style[data-tf-rows]')), worn = [];
+        Array.prototype.forEach.call(document.querySelectorAll('[data-tf-rows]'), function (box) {
+            var id = box.getAttribute('data-tf-rows'); if (box.tagName === 'STYLE' || !id) return;
+            worn.push(id);
+            if (sheets.some(function (s) { return s.textContent.indexOf('"' + id + '"') >= 0; })) return;
+            var rules = rowRules(box, id); if (rules.length) rowStyle(id, rules); else box.removeAttribute('data-tf-rows');
+        });
+        sheets.forEach(function (s) { if (!worn.some(function (id) { return s.textContent.indexOf('"' + id + '"') >= 0; })) s.remove(); }); /* a rule no row wears any more (an Undo took the row back) goes, so Done does not save it */
+    }
+    function siteGap(b) {
+        var all = document.querySelectorAll('body *');
+        for (var i = 0; i < all.length; i++) {
+            var n = all[i], cs;
+            if (n.childElementCount < 2 || n.closest('[data-tweakfast]') || !isButton(n.firstElementChild) || !isButton(n.firstElementChild.nextElementSibling)) continue;
+            cs = getComputedStyle(n); if (/flex|grid/.test(cs.display) && parseFloat(cs.columnGap) > 0 && n.style.gap === '') return Math.round(parseFloat(cs.columnGap));
+        }
+        return Math.round(Math.min(24, Math.max(8, b.getBoundingClientRect().height / 4)));
+    }
+    function stillPlaceholder() {
+        newButtons = newButtons.filter(function (x) { return document.contains(x.el); });
+        return newButtons.filter(function (x) { return !x.el.hasAttribute('data-tf-hidden') && x.el.textContent.trim() === x.word; });
     }
     function secondLook(b) {
         var sig = signature(b), all = document.querySelectorAll('[data-tf-block]');
@@ -2805,7 +3257,7 @@
         var linksIn = function (doc) { Array.prototype.forEach.call(doc.querySelectorAll('a[href]'), function (a) { if (isPageLink(a) && !a.closest('[data-tweakfast]')) add(pathOf(a)); }); };
         pageList().forEach(function (pg) { add(pg.path); });
         linksIn(document);
-        var end = function () { finding = false; found = all; if (panel && view.kind === 'pages') renderPages(); };
+        var end = function () { finding = false; found = all; if (panel && view.kind === 'pages') renderPages(); if (pagesBtn) pageLabel(); };
         var running = 0, crawl = function () { /* four at a time */
             while (running < 4 && queue.length) (function (path) {
                 running++;
@@ -2841,8 +3293,8 @@
     }
     function openView(v) { var back = view && view.kind !== 'pages' && v.kind === 'pages'; view = v; if (panel) renderPages(back ? 'back' : 'forward'); }
     /* More on a row: a small menu under the button; a click elsewhere, Esc or a scroll takes it away */
-    function openMenu(anchor, items, row) {
-        var back = document.activeElement;
+    function openMenu(anchor, items, row, opts) {
+        var back = document.activeElement; opts = opts || {};
         closeMenu();
         menu = el('div', 'tf-menu'); menu.back = back; menu.setAttribute('data-tweakfast', ''); menu.setAttribute('role', 'menu');
         items.forEach(function (it) {
@@ -2852,7 +3304,8 @@
             if (it.swatch) { /* a background: a wide strip of it with its name written in its words' colour, always in our own font; a tick on the one it has */
                 menu.className += ' tf-grounds';
                 var sw = el('button', 'tf-item tf-swatch-row'); sw.setAttribute('role', 'menuitem');
-                var chip = el('span', 'tf-swatch', it.word.charAt(0).toUpperCase() + it.word.slice(1)); chip.style.background = it.swatch.ground; chip.style.color = it.swatch.ink;
+                var name_ = it.word.charAt(0).toUpperCase() + it.word.slice(1), chip = el('span', 'tf-swatch', it.swatch.clear ? '' : name_);
+                if (it.swatch.clear) { chip.className += ' tf-swatch-clear'; chip.appendChild(el('span', 'tf-swatch-name', name_)); } else { chip.style.background = it.swatch.ground; chip.style.color = it.swatch.ink; } /* clear: its name on a small white label, so it reads on the grid */
                 sw.appendChild(chip);
                 sw.type = 'button'; if (it.now) { var tk = el('span', 'tf-swatch-tick'); tk.innerHTML = ICON.check; chip.appendChild(tk); sw.setAttribute('aria-current', 'true'); }
                 sw.addEventListener('click', function () { closeMenu(); it.fn(); }); menu.appendChild(sw); return;
@@ -2866,14 +3319,19 @@
                 b.className += ' tf-look'; menu.className += ' tf-looks'; b.appendChild(it.sample);
                 var w = el('span', 'tf-look-word', it.word); if (it.now) { w.innerHTML = ICON.check; w.appendChild(document.createTextNode(it.word)); b.setAttribute('aria-current', 'true'); }
                 b.appendChild(w);
-            } else { b.innerHTML = ICON[it.icon]; b.appendChild(document.createTextNode(it.word)); }
+            } else {
+                b.innerHTML = it.icon ? ICON[it.icon] : ''; b.appendChild(document.createTextNode(it.word));
+                if (it.tag) b.appendChild(el('span', 'tf-row-tag', it.tag));
+                if (it.here) { b.className += ' tf-here'; b.setAttribute('aria-current', 'page'); var ck = el('span', 'tf-item-check'); ck.innerHTML = ICON.check; b.appendChild(ck); }
+            }
             b.addEventListener('click', function () { closeMenu(); it.fn(); });
             menu.appendChild(b);
         });
         document.body.appendChild(menu);
-        var r = anchor.getBoundingClientRect(), w = menu.offsetWidth, h = menu.offsetHeight;
-        var left = Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8)), top = r.bottom + 6;
-        if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6); /* no room below: above the button */
+        var r = anchor.getBoundingClientRect(), w = menu.offsetWidth, h = menu.offsetHeight, gap = 6, fromTools = tools && tools.contains(anchor);
+        if (fromTools) { var tr = tools.getBoundingClientRect(); r = { left: r.left, right: r.right, top: tr.top, bottom: tr.bottom }; gap = 8; opts.left = true; } /* from the toolbar: 8 under it, left edge on its button */
+        var left = Math.max(8, Math.min(opts.left ? r.left : r.right - w, window.innerWidth - w - 8)), top = r.bottom + gap;
+        if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - gap); /* no room below: above the button */
         menu.style.left = left + 'px'; menu.style.top = top + 'px';
         menu.row = row; if (row) row.classList.add('tf-open');
         setTimeout(function () { if (menu) { document.addEventListener('pointerdown', menuAway, true); window.addEventListener('scroll', menuScroll, true); } }, 0);
@@ -2887,6 +3345,25 @@
         if (menu.row) menu.row.classList.remove('tf-open');
         var m = menu; fade(menu); menu = null;
         if (m.contains(document.activeElement) && m.back && m.back.isConnected && m.back.getClientRects().length) m.back.focus({ preventScroll: true }); /* closed from the keyboard: back where it was opened */
+    }
+    /* a word on the desktop, its shape on a phone: the word stays in the button for the tooltip, screen readers and the checks */
+    function symbolize(b, icon) { var w = b.textContent; b.innerHTML = '<span class="tf-sym">' + ICON[icon] + '</span>'; b.appendChild(el('span', 'tf-bw', w)); b.className += ' tf-phone-sym'; }
+    function nameOfPath(path) { var p = path.split(/[?#]/)[0].replace(/\.html?$/, ''); if (!p || p === 'index') return 'Home'; p = p.replace(/[-_]+/g, ' '); return p.charAt(0).toUpperCase() + p.slice(1); }
+    function siteName() {
+        var logo = document.querySelector('header a[href]'), t = logo ? logo.textContent.replace(/\s+/g, ' ').trim() : '';
+        if (!t && logo) { var pic = logo.querySelector('img[alt]'); t = pic ? pic.alt.replace(/[.\s]+$/, '').trim() : ''; } /* a logo that is a picture: its alt names the site */
+        if (t.length > 2 && t.length < 40) return t;
+        /* the site's own title, never the tab's "Edit · ..." that setTab writes */
+        return (realTitle || document.title || 'This site').replace(/^Edit\s*\u00b7\s*/, '').split(/\s+[|\u2013\u2014\-\u00b7]\s+/)[0].trim() || 'This site';
+    }
+    /* the bar names the page you are on; a site with one page shows its own name */
+    /* every page the Pages sheet knows: the menu's, then the found and the added ones */
+    function allPages() { findPages(); var home = homePath(); return pageList().concat(otherList()).sort(function (a, b) { return (a.path === home ? 0 : 1) - (b.path === home ? 0 : 1); }); } /* Home first; the rest as the menu, then the others by name */
+    function pageLabel() {
+        var cur = here(), list = allPages(), name = null;
+        list.forEach(function (pg) { if (pg.path === cur) name = pg.name; });
+        if (!name) name = list.length ? (cur === homePath() ? 'Home' : nameOfPath(cur)) : siteName();
+        var n = pagesBtn.querySelector('.tf-page-name'); if (n && n.textContent !== name) n.textContent = name;
     }
     function togglePages() {
         if (panel) { closePages(); return; }
@@ -2924,7 +3401,7 @@
             everyMenu(function (nav) {
                 var links = menuLinks(nav);
                 for (var i = 0; i < links.length; i++) if (pathOf(links[i]) === pg.path && links[i].textContent.replace(/\s+/g, ' ').trim().length > 2) links[i].textContent = to; /* a logo keeps its mark */
-            }, function (failed) { if (!failed.length) say(''); });
+            }, function (failed, again, step) { if (!failed.length) { say(''); if (step) step.label = 'Renamed ' + pg.name + ' to ' + to; } });
         }
         function back() { if (done) return; done = true; row.replaceChild(name, field); }
         field.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); keep(); } if (e.key === 'Escape') { e.preventDefault(); back(); } e.stopPropagation(); });
@@ -2964,7 +3441,7 @@
             var now = rows().map(function (r) { return r.getAttribute('data-path'); });
             if (now.join() === was.join()) return;
             say('Working…');
-            everyMenu(function (nav) { reorderMenu(nav, now); }, function (failed) { if (!failed.length) say(''); });
+            everyMenu(function (nav) { reorderMenu(nav, now); }, function (failed, again, step) { if (!failed.length) { say(''); if (step) step.label = 'Menu in a new order'; } });
         }
         grip.addEventListener('pointermove', at); grip.addEventListener('pointerup', end); grip.addEventListener('pointercancel', end);
         window.addEventListener('pointerup', end, true); window.addEventListener('pointercancel', end, true);
@@ -2993,7 +3470,7 @@
         list.concat(otherList()).forEach(function (pg) {
             out.push({ group: 'Pages', icon: 'page', word: pg.name, tag: pg.path === here() ? 'This page' : pg.path === home ? 'Home' : pg.hidden ? 'hidden' : '', fn: function () { goTo(pg.path); } });
         });
-        out.push({ group: 'Actions', icon: 'eye', word: 'Preview', fn: enterPreview });
+        out.push({ group: 'Actions', icon: 'play', word: 'Preview', fn: enterPreview });
         if (list.length) out.push({ group: 'Actions', icon: 'plus', word: 'Add a page', fn: function () { if (!panel) togglePages(); openView({ kind: 'add' }); } });
         out.push({ group: 'Actions', icon: 'share', word: 'Share the site', fn: function () { if (!panel) togglePages(); if (panel) openView({ kind: 'share' }); } });
         out.push({ group: 'Actions', icon: 'help', word: 'Help', fn: function () { if (!panel) togglePages(); if (panel) openView({ kind: 'help' }); } });
@@ -3168,15 +3645,43 @@
     var freshWays = {};
     function dropFresh(pg) {
         var w = freshWays[pg.path], html = changes[pg.path];
-        if (w) { w.back(); markBlocks(); steps.push(function () { w.again(); markBlocks(); }); }
-        else { delete changes[pg.path]; delete freshPages[pg.path]; steps.push(function () { changes[pg.path] = html; freshPages[pg.path] = true; }); }
+        var st = w ? function () { w.again(); markBlocks(); } : function () { changes[pg.path] = html; freshPages[pg.path] = true; };
+        if (w) { w.back(); markBlocks(); } else { delete changes[pg.path]; delete freshPages[pg.path]; }
+        st.label = 'Removed page ' + pg.name; steps.push(st);
         refresh(); if (panel) renderPages();
         say(pg.name + ' is gone, with its rows and links. Undo brings it back.');
     }
-    /* the page's own ground, under the pages: the four rows of Look, made on every page */
+    /* how much of the page's ground the reader sees: the share of the page's height along which some of it is left bare
+       by the parts that paint over it (a colour, a picture). A page whose sections each own their ground leaves the body
+       showing nowhere, or in one strip behind the menu; a change to it would recolour that strip and call itself the
+       page. Boxes narrower than the page show it down both sides, on every row. Rects are taken as laid out in the page. */
+    function groundShows(b) {
+        var r = b.getBoundingClientRect(), top = r.top + pageYOffset, left = r.left + pageXOffset;
+        if (!r.width || !r.height) return 1;
+        var boxes = [], all = b.querySelectorAll('*');
+        for (var i = 0; i < all.length && boxes.length < 400; i++) {
+            var n = all[i]; if (n.hasAttribute('data-tweakfast') || n.closest('[data-tweakfast]') || !n.getClientRects().length) continue;
+            var cs = getComputedStyle(n); if (cs.visibility === 'hidden' || parseFloat(cs.opacity) < .5 || cs.position === 'fixed') continue;
+            var paints = n.tagName === 'IMG' && n.currentSrc || /url\(|gradient/.test(cs.backgroundImage) || opaque(cs.backgroundColor);
+            if (!paints) continue;
+            var q = n.getBoundingClientRect(); if (q.width < 2 || q.height < 2) continue;
+            boxes.push({ l: q.left + pageXOffset, t: q.top + pageYOffset, r: q.right + pageXOffset, b: q.bottom + pageYOffset });
+        }
+        var cols = 24, rows = Math.max(12, Math.min(120, Math.round(r.height / 60))), bare = 0;
+        for (var y = 0; y < rows; y++) for (var x = 0; x < cols; x++) {
+            var px = left + r.width * (x + .5) / cols, py = top + r.height * (y + .5) / rows, hit = false;
+            for (var k = 0; k < boxes.length && !hit; k++) { var o = boxes[k]; hit = px >= o.l && px < o.r && py >= o.t && py < o.b; }
+            if (!hit) { bare++; break; } /* one bare spot on this row is enough: the row shows the ground */
+        }
+        return bare / rows;
+    }
+    var EACH_PART = 'Each part of this page has its own background. Click a part to change it.';
+    /* the page's own ground, under the pages: the four rows of Look, made on every page. Where that ground is all but
+       hidden under the parts, there is no page background to offer: the row says so, and sends the owner to the parts */
     function pageGroundRow(body) {
         var b = pageGround(), now = kindOf(groundLook(b).ground);
         body.appendChild(el('div', 'tf-caption tf-ground-caption', 'Every page'));
+        if (groundShows(b) < .25) { var hid = el('div', 'tf-row tf-row-plain'); hid.appendChild(el('span', 'tf-row-name', EACH_PART)); body.appendChild(hid); return; }
         var row = el('div', 'tf-row'), name = el('a', 'tf-row-name', 'Page background'); name.href = '#';
         row.appendChild(name);
         if (now) row.appendChild(el('span', 'tf-row-note', now));
@@ -3354,7 +3859,7 @@
             step = pg.path === here()
                 ? function () { setWords(pg.path, origin, null); }
                 : function () { if (prev === undefined) delete changes[pg.path]; else changes[pg.path] = prev; };
-            setWords(pg.path, now, step);
+            step.label = 'Name and description of ' + pg.name; setWords(pg.path, now, step);
         }
         [title, desc].forEach(function (f) {
             f.addEventListener('input', function () { preview(); if (f === desc) grow(); });
@@ -3434,7 +3939,7 @@
         }, function (failed) {
             if (failed.length) return;
             delete changes[pg.path]; drops[pg.path] = true;
-            var st = steps.pop(); steps.push(function () { st(); delete drops[pg.path]; }); refresh();
+            var st = steps.pop(), st2 = function () { st(); delete drops[pg.path]; }; st2.label = 'Removed page ' + pg.name; steps.push(st2); refresh();
             say(pg.name + ' is out of the menu. Done takes the page away; Undo brings it back.');
         });
     }
@@ -3454,19 +3959,29 @@
                 var paths = otherPages(); if (paths.indexOf(pg.path) < 0 && pg.path !== here()) paths.push(pg.path);
                 job(function (finish) {
                     var was = pageHtml(), wasWords = wordsOf(document), led = ledger();
-                    var into = function (path, doc) { /* the version's page, or another page taking the version's shared parts */
+                    var bare = function (html) { /* the stamp sits wherever the server put it: compared without it, the head's blank space set aside */
+                        var d = parse(html), m = d.querySelector('meta[name="tweakfast-updated"]'); if (m) m.remove();
+                        if (d.head) Array.prototype.slice.call(d.head.childNodes).forEach(function (n) { if (n.nodeType === 3 && !n.data.trim()) n.remove(); });
+                        return serialize(d);
+                    };
+                    var into = function (path, doc, now) { /* the version's page, or another page taking the version's shared parts; `now` = that page as it is, so an unchanged page is not written */
                         if (path === pg.path) { if (path !== here()) putMeta(doc, 'meta[name="tweakfast-updated"]', 'name', 'tweakfast-updated', j.updated || ''); } /* the live page's stamp, so Done is not refused as stale */
                         if (path === here()) { putContent(doc); if (path === pg.path) setWords(here(), wordsOf(doc), null); }
-                        else led.put(path, serialize(doc));
+                        else { var out = serialize(doc); if (now === undefined || bare(now) !== bare(out)) led.put(path, out); }
                     };
                     if (pg.path === here()) { giveParts(vd, sharedParts(parse(pageHtml()))); into(here(), vd); }
                     else { var mine = parse(pageHtml()); if (giveParts(mine, null, parts)) into(here(), mine); }
                     eachPage(paths, function (path, html) {
                         if (html === null) return;
-                        if (path === pg.path) { giveParts(vd, sharedParts(parse(html))); into(path, vd); }
+                        if (path === pg.path) { giveParts(vd, sharedParts(parse(html))); into(path, vd, html); }
                         else { var doc = parse(html); if (giveParts(doc, null, parts)) into(path, doc); }
                     }, function () {
-                        steps.push(function () { putContent(parse(was)); setWords(here(), wasWords, null); led.back(); });
+                        if (pageHtml() === was && !led.wrote()) { /* already so: no change to count, nothing for Done */
+                            view = { kind: 'pages' }; finish();
+                            say((pg.path === here() ? 'The page' : pg.name) + ' is already ' + (at ? 'as it was at ' + label : label) + '. Nothing to make live.');
+                            return;
+                        }
+                        var st = function () { putContent(parse(was)); setWords(here(), wasWords, null); led.back(); }; st.label = 'Put back ' + label + (pg.path === here() ? '' : ' on ' + pg.name); steps.push(st);
                         view = { kind: 'pages' }; finish();
                         say(pg.path === here() ? 'The page is as it was at ' + label + '. Done makes it live, Undo takes it back.'
                             : pg.name + ' is as it was at ' + label + '. Open it to see; Done makes it live, Undo takes it back.');
@@ -3504,6 +4019,7 @@
         morphKids(document.body, doc.body, true); /* both sides compared in the saved form */
         liveHidden(document.body);
         markPictures(); markBlocks();
+        mendRows();
         var pics = document.querySelectorAll('img[data-tf-pos]'); for (var i = 0; i < pics.length; i++) enableDrag(pics[i]);
     }
     function ours(n) { return n.nodeType === 1 && (n.hasAttribute('data-tweakfast') || n.id === 'tf-style'); }
@@ -3644,8 +4160,9 @@
                 else { links[i].removeAttribute('hidden'); links[i].removeAttribute('data-tf-hidden'); }
             }
             if (pageOf(doc) === path) noindex(doc, on);
-        }, function (failed) {
+        }, function (failed, again, step) {
             if (!failed.length) say((on ? 'Hidden from the menu on every page. The page itself is kept.' : 'Back in the menu on every page.'));
+            if (!failed.length && step) { var nm = (pageList().concat(otherList()).filter(function (pg) { return pg.path === path; })[0] || { name: fileName(path) }).name; step.label = (on ? 'Hid page ' : 'Showed page ') + nm; }
         });
         /* the page itself, when it is not in the list of menus (it always is, but be safe) */
     }
@@ -3694,7 +4211,7 @@
                 if (failed.length) { takeOut(); mine.slice().reverse().forEach(function (f) { f(); }); delete changes[path]; refresh(); return; }
                 freshPages[path] = true;
                 var at = mine.length ? steps.lastIndexOf(mine[0]) : -1, html0 = changes[path], parts = mine.slice(), undoAll = function () { parts.slice().reverse().forEach(function (f) { f(); }); delete changes[path]; delete freshPages[path]; };
-                takeOut(); if (at >= 0 && at <= steps.length) { steps.splice(at, 0, undoAll); if (notes.length >= at && outNotes[0]) { outNotes[0].fn = undoAll; notes.splice(at, 0, outNotes[0]); } else if (notes.length > at) notes.length = at; } /* its name in the changes list goes with it */ else steps.push(undoAll);
+                undoAll.label = 'Added page ' + name; takeOut(); if (at >= 0 && at <= steps.length) { steps.splice(at, 0, undoAll); if (notes.length >= at && outNotes[0]) { outNotes[0].fn = undoAll; outNotes[0].label = undoAll.label; notes.splice(at, 0, outNotes[0]); } else if (notes.length > at) notes.length = at; } /* its name in the changes list goes with it */ else steps.push(undoAll);
                 refresh(); /* one Undo takes the links, the rows and the new file */
                 freshWays[path] = { back: undoAll, again: function () { agains.forEach(function (f) { f(); }); changes[path] = html0; freshPages[path] = true; } }; /* Remove the page, and Undo of that */
                 if (panel) openView({ kind: 'pages' });
@@ -3741,7 +4258,7 @@
         if (editing) cancel();
         if (!steps.length) { if (saves.length) undoSave(); return; }
         var step = steps.pop(), sn = snapshot();
-        if (step) step();
+        if (step) { step(); sn.label = step.label; }
         redos.push(sn); stepsSeen = steps.length;
         settle(); refresh(); say('');
         if (altFor) altInput.value = altFor.getAttribute('alt') || ''; /* the open field shows what Undo put back */
@@ -3751,7 +4268,7 @@
         if (saving || waitWork() || !redos.length) return;
         var sn = redos.pop(), now = snapshot();
         restore(sn);
-        steps.push(function () { restore(now); });
+        var st = function () { restore(now); }; st.label = sn.label; steps.push(st);
         stepsSeen = steps.length; settle(); refresh(); say('');
     }
     /* Undo past Done: the site goes back to how it was before the last Done of this visit */
@@ -3766,7 +4283,7 @@
             else { var d = parse(last.files[path]); putMeta(d, 'meta[name="tweakfast-updated"]', 'name', 'tweakfast-updated', last.at || ''); changes[path] = serialize(d); }
         }
         if (!n) { saves.push(last); say('That Done only added pages, and pages are not taken away here.', 'error'); return; }
-        steps.push(function () { restore(now); saves.push(last); });
+        var st = function () { restore(now); saves.push(last); }; st.label = 'Back to before the last Done'; steps.push(st);
         stepsSeen = steps.length; refresh();
         say('The site is as it was before the last Done. Done makes it live, Undo takes it back.' + (fresh.length ? ' Pages added then stay.' : ''));
     }
@@ -3783,6 +4300,7 @@
         noteSteps();
         if (menu && menu.classList.contains('tf-changes')) { if (steps.length) showChanges(); else closeMenu(); }
         if (panel) renderPages();
+        pageLabel();
         laterDraft();
     }
     /* ---- the changes list ----
@@ -3801,6 +4319,7 @@
             notes[notes.length - 1] = noteOf(top.from, now, top.fromCh !== nowCh, steps[steps.length - 1], top.fromCh);
         }
         for (i = notes.length; i < steps.length; i++) notes.push(noteOf(lastHtml, now, lastChanges !== nowCh, steps[i], lastChanges));
+        notes.forEach(function (n) { if (n.fn && n.fn.label) n.label = n.fn.label; }); /* a step named after its note was made (the menu steps name themselves once every page answered) */
         lastHtml = now; lastChanges = nowCh;
     }
     function snippet(n) {
@@ -3816,7 +4335,13 @@
         for (i = 0; i < n.childNodes.length; i++) if (n.childNodes[i].nodeType === 3) a.push('#' + n.childNodes[i].data);
         return a.join('\u0000');
     }
+    /* a step that names itself (fn.label: a version put back, a page added or removed) keeps that name; the diff still finds what to Show */
     function noteOf(fromHtml, toHtml, others, fn, fromCh) {
+        var note = noteDiff(fromHtml, toHtml, others, fn, fromCh);
+        if (fn && fn.label) note.label = fn.label;
+        return note;
+    }
+    function noteDiff(fromHtml, toHtml, others, fn, fromCh) {
         var note = { fn: fn, from: fromHtml, fromCh: fromCh, others: others, label: others ? 'Changed other pages' : 'Changed the page', area: null, before: null, show: null };
         var a = parse(fromHtml).body, b = parse(toHtml).body;
         if (!a || !b || a.outerHTML === b.outerHTML) return note;
@@ -3890,7 +4415,7 @@
         while (t.parentElement && t.parentElement !== document.body && !t.getClientRects().length) t = t.parentElement; /* a hidden part: its place */
         t.scrollIntoView({ block: 'center', behavior: motion() });
         var box = el('span', 'tf-hover-box tf-flash'); box.setAttribute('data-tweakfast', ''); document.body.appendChild(box);
-        var tick = function () { if (box.parentNode) { frame(box, t.getBoundingClientRect(), 3); box.style.display = 'block'; } };
+        var tick = function () { if (box.parentNode) { frame(box, t.getBoundingClientRect(), t); box.style.display = 'block'; } };
         tick(); var iv = setInterval(tick, 50);
         setTimeout(function () { clearInterval(iv); fade(box); }, 1600);
     }
@@ -3968,8 +4493,9 @@
                 for (var fp in files) { delete freshPages[fp]; if (found && found.indexOf(fp) < 0) found.push(fp); } /* saved: a page of the site now, listed as found */
                 refresh();
                 if (then) { then(); return; }
-                if (demo) { say('Done. In this demo only you see it. On your own site, everyone would.', 'live'); later(8000); return; }
-                say('Live.', 'live');
+                var left = stillPlaceholder(), word = left.every(function (x) { return x.word === left[0].word; }) ? '\u201c' + (left.length && left[0].word) + '\u201d' : 'their placeholder', still = !left.length ? '' : ' ' + (left.length === 1 ? 'One new button still says' : left.length + ' new buttons still say') + ' ' + word + '.';
+                if (demo) { say('Done. In this demo only you see it. On your own site, everyone would.' + still, 'live'); later(8000); return; }
+                say('Live.' + still, 'live');
                 offer('See the page', function () { window.open(location.pathname + location.search + '#view', '_blank'); });
                 later(8000);
             }).catch(function (e) {
@@ -4164,57 +4690,58 @@
     function injectStyle() {
         var s = el('style', darkGround() ? 'tf-light' : ''); s.id = 'tf-style';
         s.textContent =
-            '.tf-bar,.tf-status,.tf-link,.tf-tools,.tf-panel,.tf-card,.tf-menu,.tf-peek{--tf-time:.25s;--tf-spring:cubic-bezier(.3,1.2,.4,1);--tf-x:0;--tf-y:6px;--tf-accent:#0a84ff;--tf-ok:#30d158;--tf-bad:#ff453a;--tf-font:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;--tf-fill:rgba(255,255,255,.1);--tf-fill-hover:rgba(255,255,255,.18);--tf-fill-press:rgba(255,255,255,.26);--tf-muted:rgba(245,245,247,.6);--tf-hairline:rgba(255,255,255,.12);--tf-primary:#fff;--tf-primary-ink:#1d1d1f;--tf-lift:rgba(58,58,62,.96);--tf-result:#8ab4f8;--tf-bad-ink:#ff6b61;color:#f5f5f7;background:rgba(28,28,30,.78);-webkit-backdrop-filter:blur(24px) saturate(1.6);backdrop-filter:blur(24px) saturate(1.6);box-shadow:0 10px 30px rgba(0,0,0,.22),0 1px 2px rgba(0,0,0,.12),inset 0 0 0 1px rgba(255,255,255,.1);box-sizing:border-box;-webkit-font-smoothing:antialiased}' +
-            ':root:has(#tf-style.tf-light) :is(.tf-bar,.tf-status,.tf-link,.tf-tools,.tf-panel,.tf-card,.tf-menu,.tf-peek){--tf-fill:rgba(0,0,0,.06);--tf-fill-hover:rgba(0,0,0,.1);--tf-fill-press:rgba(0,0,0,.16);--tf-muted:rgba(29,29,31,.55);--tf-hairline:rgba(0,0,0,.08);--tf-primary:#1d1d1f;--tf-primary-ink:#fff;--tf-lift:rgba(255,255,255,.98);--tf-result:#1a0dab;--tf-bad-ink:#d70015;color:#1d1d1f;background:rgba(250,250,252,.82);box-shadow:0 10px 30px rgba(0,0,0,.22),0 1px 2px rgba(0,0,0,.12),inset 0 0 0 1px rgba(0,0,0,.08)}' +
+            '.tf-bar,.tf-status,.tf-link,.tf-tools,.tf-panel,.tf-card,.tf-menu,.tf-peek{--tf-time:.25s;--tf-spring:cubic-bezier(.3,1.2,.4,1);--tf-x:0;--tf-y:6px;--tf-accent:#0a84ff;--tf-ok:#30d158;--tf-bad:#ff453a;--tf-font:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;--tf-fill:rgba(255,255,255,.1);--tf-fill-hover:rgba(255,255,255,.18);--tf-fill-press:rgba(255,255,255,.26);--tf-muted:rgba(245,245,247,.6);--tf-hairline:rgba(255,255,255,.12);--tf-primary:#fff;--tf-primary-ink:#1d1d1f;--tf-lift:rgba(58,58,62,.96);--tf-result:#8ab4f8;--tf-bad-ink:#ff6b61;--tf-on-fill:rgba(10,132,255,.24);--tf-on-ink:#9ccaff;--tf-bad-fill:rgba(255,69,58,.18);--tf-bad-fill-hover:rgba(255,69,58,.3);color:#f5f5f7;background:rgba(28,28,30,.78);-webkit-backdrop-filter:blur(24px) saturate(1.6);backdrop-filter:blur(24px) saturate(1.6);box-shadow:0 10px 30px rgba(0,0,0,.22),0 1px 2px rgba(0,0,0,.12),inset 0 0 0 1px rgba(255,255,255,.1);box-sizing:border-box;-webkit-font-smoothing:antialiased}' +
+            ':root:has(#tf-style.tf-light) :is(.tf-bar,.tf-status,.tf-link,.tf-tools,.tf-panel,.tf-card,.tf-menu,.tf-peek){--tf-fill:rgba(0,0,0,.06);--tf-fill-hover:rgba(0,0,0,.1);--tf-fill-press:rgba(0,0,0,.16);--tf-muted:rgba(29,29,31,.55);--tf-hairline:rgba(0,0,0,.08);--tf-primary:#1d1d1f;--tf-primary-ink:#fff;--tf-lift:rgba(255,255,255,.98);--tf-result:#1a0dab;--tf-bad-ink:#d70015;--tf-on-fill:rgba(10,132,255,.16);--tf-on-ink:#0a84ff;--tf-bad-fill:rgba(255,69,58,.14);--tf-bad-fill-hover:rgba(255,69,58,.26);color:#1d1d1f;background:rgba(250,250,252,.82);box-shadow:0 10px 30px rgba(0,0,0,.22),0 1px 2px rgba(0,0,0,.12),inset 0 0 0 1px rgba(0,0,0,.08)}' +
             '@keyframes tf-in{from{opacity:0;transform:translate(var(--tf-x),var(--tf-y)) scale(.96)}to{opacity:1;transform:translate(var(--tf-x),0) scale(1)}}@keyframes tf-out{to{opacity:0;transform:translate(var(--tf-x),var(--tf-y)) scale(.97)}}@keyframes tf-view{from{opacity:0;transform:translateX(var(--tf-dx,14px))}}' +
             '.tf-bar,.tf-panel,.tf-card,.tf-menu,.tf-tools,.tf-link,.tf-peek{animation:tf-in var(--tf-time) var(--tf-spring) both}.tf-bar,.tf-panel,.tf-card,.tf-peek,.tf-status{--tf-x:-50%}.tf-panel{--tf-y:10px;transform-origin:50% 100%}.tf-menu{--tf-y:-6px;transform-origin:100% 0}.tf-tools{transform-origin:50% 100%}.tf-link{--tf-y:-6px;transform-origin:0 0}.tf-out{animation:tf-out .15s ease-in both;pointer-events:none}.tf-sheet-body.tf-forward{animation:tf-view var(--tf-time) var(--tf-spring) both}.tf-sheet-body.tf-back{--tf-dx:-14px;animation:tf-view var(--tf-time) var(--tf-spring) both}' +
             '.tf-status{opacity:0;visibility:hidden;transform:translate(-50%,6px) scale(.97);transition:opacity .15s ease-in,visibility .15s,transform .15s ease-in}.tf-status.tf-show{opacity:1;visibility:visible;transform:translate(-50%,0) scale(1);transition:opacity var(--tf-time),visibility 0s,transform var(--tf-time) var(--tf-spring)}' +
             /* the site's own rules for plain tags (button, input, a, p) must not reach the editor's parts; one class deep, so every rule below still wins */
             '[data-tweakfast],[data-tweakfast] :where(*){letter-spacing:normal;word-spacing:normal;text-transform:none;text-shadow:none;text-indent:0;float:none;font-style:normal}[data-tweakfast]{text-align:left}[data-tweakfast] :where(button,input,select,textarea){margin:0;min-width:0;max-width:none;box-shadow:none}[data-tweakfast] :where(a){text-decoration:none}' +
             '@media(prefers-reduced-motion:reduce){[data-tweakfast],[data-tweakfast] *{animation-duration:0s!important;transition-duration:0s!important}}' +
-            '.tf-bar{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);display:flex;align-items:center;gap:4px;max-width:calc(100% - 32px);padding:6px;border-radius:999px;font:14px/1.3 var(--tf-font);z-index:2147483000}' +
-            '.tf-bar .tf-button{height:36px;font-size:14px}' +
-            '.tf-button{appearance:none;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 12px;border:0;border-radius:999px;background:var(--tf-fill);color:inherit;font:500 13px/1 var(--tf-font);cursor:pointer;transition:background .12s,transform .08s;white-space:nowrap;box-sizing:border-box}' +
-            '.tf-button:hover{background:var(--tf-fill-hover)}.tf-button:active{background:var(--tf-fill-press);transform:scale(.98)}.tf-button:focus-visible{outline:2px solid var(--tf-accent);outline-offset:2px}.tf-button:disabled{opacity:.38;cursor:default;transform:none}.tf-button:disabled:hover{background:var(--tf-fill)}' +
-            '.tf-button.tf-primary{background:var(--tf-primary);color:var(--tf-primary-ink);font-weight:600}.tf-button.tf-primary:hover{background:var(--tf-primary);filter:brightness(.94)}.tf-button.tf-quiet{background:transparent;color:var(--tf-muted)}.tf-button.tf-quiet:hover{background:var(--tf-fill);color:inherit}.tf-button.tf-on{background:var(--tf-fill-press)}' +
-            '.tf-count{display:inline-block;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--tf-accent);color:#fff;font-size:11px;font-weight:600;line-height:18px;text-align:center;visibility:hidden;box-sizing:border-box}' +
-            '.tf-status{position:fixed;left:50%;max-width:min(460px,calc(100% - 32px));padding:9px 14px;border-radius:14px;font:13px/1.4 var(--tf-font);z-index:2147483000;text-align:center}' +
+            '.tf-bar{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);display:flex;align-items:center;gap:3px;max-width:calc(100% - 32px);padding:4px;border-radius:12px;font:13.5px/1.3 var(--tf-font);z-index:2147483000}' +
+            '.tf-bar .tf-button{height:32px;font-size:13.5px}.tf-sep{flex:none;width:1px;height:18px;margin:0 4px;background:var(--tf-hairline)}.tf-bar .tf-sym{display:none}.tf-pages{gap:5px}.tf-pages>svg{width:16px;height:16px;opacity:.7;margin:0 -4px 0 -2px;flex:none}.tf-page-name{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tf-item .tf-row-tag,.tf-item-check{margin-left:auto}.tf-item-check{display:inline-flex;color:var(--tf-muted)}.tf-item-check svg{width:16px;height:16px}.tf-item.tf-here{font-weight:600}' +
+            '.tf-button{appearance:none;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 11px;border:0;border-radius:8px;background:transparent;color:inherit;font:400 13.5px/1 var(--tf-font);cursor:pointer;transition:background .12s,transform .08s;white-space:nowrap;box-sizing:border-box}' +
+            '.tf-button:hover{background:var(--tf-fill-hover)}.tf-button:active{background:var(--tf-fill-press);transform:scale(.98)}.tf-button:focus-visible{outline:2px solid var(--tf-accent);outline-offset:2px}.tf-button:disabled{opacity:.38;cursor:default;transform:none}.tf-button:disabled:hover{background:transparent}' +
+            '.tf-button.tf-primary{background:var(--tf-primary);color:var(--tf-primary-ink);font-weight:600}.tf-button.tf-primary:hover{background:var(--tf-primary);filter:brightness(.94)}.tf-button.tf-primary:disabled{background:transparent;color:inherit}.tf-button.tf-primary:disabled:hover{background:transparent}.tf-button.tf-quiet{background:transparent;color:inherit;opacity:.7}.tf-button.tf-quiet:hover{background:var(--tf-fill-hover);opacity:1}.tf-button.tf-on,.tf-button.tf-on:hover{background:var(--tf-on-fill);color:var(--tf-on-ink)}' +
+            '.tf-count{display:inline-block;min-width:18px;height:18px;padding:0 5px;border-radius:6px;background:var(--tf-accent);color:#fff;font-size:11px;font-weight:600;line-height:18px;text-align:center;visibility:hidden;box-sizing:border-box}' +
+            '.tf-status{position:fixed;left:50%;max-width:min(460px,calc(100% - 32px));padding:9px 14px;border-radius:12px;font:13.5px/1.4 var(--tf-font);z-index:2147483000;text-align:center}' +
             '.tf-status.tf-error::before{content:"";display:inline-block;width:14px;height:14px;margin:0 7px 3px 0;vertical-align:middle;background:url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 14 14%27%3E%3Ccircle cx=%277%27 cy=%277%27 r=%277%27 fill=%27%23ff453a%27/%3E%3Cpath d=%27M7 3.6v4.2%27 stroke=%27%23fff%27 stroke-width=%271.7%27 stroke-linecap=%27round%27/%3E%3Ccircle cx=%277%27 cy=%2710.4%27 r=%27.95%27 fill=%27%23fff%27/%3E%3C/svg%3E") center/contain no-repeat}' +
             '.tf-status.tf-live::before{content:"";display:inline-block;width:14px;height:14px;margin:0 7px 3px 0;vertical-align:middle;background:url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 14 14%27%3E%3Ccircle cx=%277%27 cy=%277%27 r=%277%27 fill=%27%2330d158%27/%3E%3Cpath d=%27M4 7.2l2 2 4-4.4%27 fill=%27none%27 stroke=%27%23fff%27 stroke-width=%271.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E") center/contain no-repeat}' +
             '.tf-status .tf-offer{height:26px;padding:0 10px;margin-left:4px;font-size:12px;vertical-align:middle}' +
             '.tf-editing{min-height:1em;outline:0}.tf-edit-box{position:absolute;display:none;box-sizing:border-box;border:2px solid #0a84ff;border-radius:4px;pointer-events:none;z-index:2147482999}' +
-            '.tf-hover{cursor:text}img.tf-hover,[data-tf-art].tf-hover{cursor:pointer}.tf-link.tf-art .tf-link-label,.tf-link.tf-art .tf-input{display:none}.tf-link.tf-art{padding-left:4px}.tf-hover-box,.tf-block-box{position:absolute;display:none;box-sizing:border-box;border:1px solid #0a84ff;opacity:.65;border-radius:4px;pointer-events:none;z-index:2147482999}.tf-block-box{border-style:dashed;opacity:.6}.tf-block-box.tf-block-moving{border:2px solid #0a84ff;opacity:1;box-shadow:0 12px 32px rgba(0,0,0,.18)}' +
-            '.tf-tag{position:absolute;display:none;height:18px;padding:0 6px;border-radius:5px;background:#0a84ff;color:#fff;font:500 11px/18px -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;letter-spacing:.02em;white-space:nowrap;pointer-events:none;z-index:2147483000}' +
-            '.tf-link{position:absolute;display:flex;align-items:center;gap:6px;padding:4px 4px 4px 12px;border-radius:999px;font:13px/1.2 var(--tf-font);z-index:2147483000}' +
-            '.tf-link-label{white-space:nowrap;color:var(--tf-muted)}.tf-link .tf-input{flex:1;height:28px;padding:0 10px;font-size:13px}.tf-link .tf-small{flex:none;height:28px;padding:0 10px}.tf-link-open{appearance:none;flex:none;display:flex;align-items:center;justify-content:center;width:28px;height:28px;border:0;border-radius:50%;background:var(--tf-fill);color:inherit;cursor:pointer;transition:background .12s}.tf-link-open:hover{background:var(--tf-fill-hover)}.tf-link-open:focus-visible{outline:2px solid var(--tf-accent);outline-offset:2px}' +
+            '.tf-hover{cursor:text}img.tf-hover,[data-tf-art].tf-hover{cursor:pointer}.tf-link.tf-art .tf-link-label,.tf-link.tf-art .tf-input{display:none}.tf-link.tf-art{padding-left:4px}.tf-hover-box,.tf-block-hover,.tf-block-box{position:absolute;display:none;box-sizing:border-box;border:1px dashed #0a84ff;opacity:1;border-radius:4px;pointer-events:none;z-index:2147482999}.tf-block-box.tf-block-selected{border:2px solid #0a84ff;opacity:1}.tf-block-box.tf-block-inner{border:1px dashed #0a84ff;opacity:1}.tf-block-box.tf-block-moving{border:2px solid #0a84ff;opacity:1;box-shadow:0 12px 32px rgba(0,0,0,.18)}' +
+            '.tf-tag{position:absolute;display:none;height:18px;padding:0 6px;border-radius:6px;background:#0a84ff;color:#fff;font:500 11px/18px -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;letter-spacing:.02em;white-space:nowrap;pointer-events:none;z-index:2147483000}' +
+            '.tf-link{position:absolute;display:flex;align-items:center;gap:6px;padding:4px 4px 4px 12px;border-radius:12px;font:13.5px/1.2 var(--tf-font);z-index:2147483000}' +
+            '.tf-link-label{white-space:nowrap;color:var(--tf-muted)}.tf-link .tf-input{flex:1;height:32px;padding:0 10px;font-size:13.5px;border-radius:8px}.tf-link .tf-small{flex:none;height:32px;padding:0 10px;background:var(--tf-fill)}.tf-link-open{appearance:none;flex:none;display:flex;align-items:center;justify-content:center;width:32px;height:32px;border:0;border-radius:8px;background:var(--tf-fill);color:inherit;cursor:pointer;transition:background .12s}.tf-link-open:hover{background:var(--tf-fill-hover)}.tf-link-open:focus-visible{outline:2px solid var(--tf-accent);outline-offset:2px}' +
             '.tf-words{padding:4px 6px 6px;font-size:13px}.tf-captioned{display:block}.tf-caption{display:block;margin:10px 0 6px 2px;font:500 11px/1.2 var(--tf-font);letter-spacing:.02em;text-transform:uppercase;color:var(--tf-muted)}.tf-words .tf-input,.tf-add .tf-input,.tf-add .tf-select{display:block;width:100%}.tf-area{height:32px;min-height:32px;padding:7px 10px;resize:none;line-height:18px;overflow:hidden;box-sizing:border-box}.tf-preview{padding:10px 12px;border-radius:10px;background:var(--tf-fill);font:13px/1.4 arial,sans-serif}.tf-preview-title{color:var(--tf-result);font-size:15px;line-height:1.3;overflow-wrap:anywhere}.tf-preview-url{color:var(--tf-muted);font-size:12px;margin:2px 0 4px}.tf-preview-desc{color:var(--tf-muted)}' +
-            '.tf-tools{position:absolute;display:none;align-items:center;gap:2px;padding:4px;border-radius:999px;font:13px/1 var(--tf-font);z-index:2147483000}' +
-            '.tf-tools.tf-tools-dock{position:fixed;left:50%;--tf-x:-50%;transform:translateX(-50%);max-width:calc(100% - 16px);overflow-x:auto;scrollbar-width:none}' +
-            '.tf-tools .tf-button{height:28px;padding:0 10px;font-size:13px}.tf-tools .tf-icon{width:28px}.tf-button.tf-icon{padding:0;position:relative}.tf-button svg{width:16px;height:16px;flex:none}.tf-tools .tf-button svg{width:15px;height:15px}.tf-word{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}.tf-button.tf-danger:hover{background:rgba(255,69,58,.2);color:var(--tf-bad-ink)}' +
-            '.tf-grip{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:999px;color:var(--tf-muted);cursor:grab;touch-action:none;user-select:none;box-sizing:border-box;transition:background .12s,color .12s}.tf-grip svg{width:14px;height:14px}.tf-grip:hover{color:inherit;background:var(--tf-fill)}.tf-grip:active{cursor:grabbing}' +
+            '.tf-tools{position:absolute;display:none;align-items:center;gap:3px;padding:4px;border-radius:12px;font:13.5px/1 var(--tf-font);z-index:2147483000}' +
+            '.tf-tools.tf-tools-dock{position:fixed;left:8px;right:8px;--tf-x:0;transform:none;max-width:none;justify-content:space-between;overflow-x:auto;scrollbar-width:none}' +
+            '.tf-name{display:inline-flex;align-items:center;gap:2px;height:32px;padding:0 8px 0 10px;border-radius:8px;color:var(--tf-muted);font-size:13.5px;white-space:nowrap;flex:none}.tf-name .tf-grip{display:none;width:16px;height:16px;border-radius:0;color:inherit}.tf-name.tf-handle{padding-left:6px;cursor:grab;touch-action:none;user-select:none}.tf-name.tf-handle .tf-grip{display:inline-flex;margin-right:3px}.tf-name.tf-handle:hover{background:var(--tf-fill-hover);color:inherit}.tf-name.tf-handle:active{cursor:grabbing}.tf-name .tf-grip:hover{background:none}' +
+            '.tf-tools .tf-button{height:32px;padding:0 11px;font-size:13.5px}.tf-tools .tf-icon{width:32px}.tf-button.tf-icon{padding:0;position:relative}.tf-button svg{width:16px;height:16px;flex:none}.tf-tools .tf-button svg{width:16px;height:16px}.tf-word{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}.tf-button.tf-danger{background:var(--tf-bad-fill);color:var(--tf-bad-ink)}.tf-button.tf-danger:hover{background:var(--tf-bad-fill-hover);color:var(--tf-bad-ink)}' +
+            '.tf-grip{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;color:var(--tf-muted);cursor:grab;touch-action:none;user-select:none;box-sizing:border-box;transition:background .12s,color .12s}.tf-grip svg{width:16px;height:16px}.tf-grip:hover{color:inherit;background:var(--tf-fill-hover)}.tf-grip:active{cursor:grabbing}' +
             '.tf-card{position:fixed;left:50%;transform:translateX(-50%);width:min(340px,calc(100% - 32px));padding:18px 20px 16px;border-radius:18px;font:14px/1.45 var(--tf-font);z-index:2147483000;text-align:left}' +
             '.tf-card-title{margin:0 0 4px;font:600 16px/1.3 var(--tf-font);letter-spacing:-.01em;color:inherit}.tf-card-text{margin:0 0 12px;font:inherit;color:var(--tf-muted)}' +
             '.tf-card .tf-button{background:var(--tf-primary);color:var(--tf-primary-ink);font-weight:600;padding:0 14px}.tf-card .tf-button:hover{filter:brightness(.94)}.tf-card-tip{display:none}' +
             'body.tf-dragging{user-select:none;cursor:grabbing}.tf-moving{opacity:.92;transform:scale(1.015)}' +
-            '.tf-plus{display:flex;align-items:center;justify-content:center;padding:8px 0;cursor:pointer;list-style:none}li.tf-plus,dd.tf-plus,dt.tf-plus{justify-content:flex-start;padding:6px 0}tr.tf-plus{display:table-row}tr.tf-plus td{padding:6px 0;border:0}tr.tf-plus td span{margin:0}' +
+            '.tf-plus.tf-plus-under span{visibility:hidden}.tf-plus{display:flex;align-items:center;justify-content:center;padding:8px 0;cursor:pointer;list-style:none}li.tf-plus,dd.tf-plus,dt.tf-plus{justify-content:flex-start;padding:6px 0}tr.tf-plus{display:table-row}tr.tf-plus td{padding:6px 0;border:0}tr.tf-plus td span{margin:0}' +
             '.tf-plus span,tr.tf-plus td span{display:flex;align-items:center;justify-content:center;width:28px;height:28px;box-sizing:border-box;border:1.5px dashed #0a84ff;border-radius:50%;color:#0a84ff;font:300 22px/1 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;background:transparent;transition:background .12s,color .12s,border-color .12s}' +
             '.tf-plus:hover span{background:#0a84ff;color:#fff;border-style:solid}' +
             '.tf-panel{position:fixed;left:50%;bottom:76px;transform:translateX(-50%);display:flex;flex-direction:column;width:min(460px,calc(100% - 32px));padding:0;border-radius:18px;overflow:hidden;font:13px/1.4 var(--tf-font);z-index:2147483000}.tf-sheet-head{display:flex;align-items:center;gap:6px;flex:none;height:48px;padding:0 10px 0 16px;border-bottom:1px solid var(--tf-hairline)}.tf-sheet-head .tf-icon{width:32px;height:32px}.tf-sheet-head .tf-icon:first-child{margin-left:-6px}.tf-sheet-body{overflow:auto;min-height:0;padding:6px 8px 10px}' +
             '.tf-panel-title{flex:1;min-width:0;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:600 15px/1.2 var(--tf-font)}' +
-            '.tf-row{position:relative;display:flex;align-items:center;gap:8px;min-height:40px;padding:0 6px 0 4px;border-radius:10px;font-size:14px;transition:background .12s}.tf-row:hover,.tf-row.tf-open,.tf-row:focus-within{background:var(--tf-fill)}.tf-row-grip{opacity:0;transition:opacity .12s}.tf-row:hover .tf-row-grip,.tf-row.tf-open .tf-row-grip,.tf-row-moving .tf-row-grip{opacity:1}.tf-row-moving{background:var(--tf-lift);box-shadow:0 8px 24px rgba(0,0,0,.35)}.tf-rename{flex:1;min-width:0;height:28px}.tf-row-note,.tf-row-tag{color:var(--tf-muted);flex:none;font-size:12px;padding:2px 8px;border-radius:999px;background:var(--tf-fill)}.tf-row-hidden .tf-row-name{color:var(--tf-muted)}' +
+            '.tf-row{position:relative;display:flex;align-items:center;gap:8px;min-height:40px;padding:0 6px 0 4px;border-radius:10px;font-size:14px;transition:background .12s}.tf-row:hover,.tf-row.tf-open,.tf-row:focus-within{background:var(--tf-fill)}.tf-row-grip{opacity:0;transition:opacity .12s}.tf-row:hover .tf-row-grip,.tf-row.tf-open .tf-row-grip,.tf-row-moving .tf-row-grip{opacity:1}.tf-row-moving{background:var(--tf-lift);box-shadow:0 8px 24px rgba(0,0,0,.35)}.tf-rename{flex:1;min-width:0;height:28px}.tf-row-note,.tf-row-tag{color:var(--tf-muted);flex:none;height:18px;line-height:18px;font-size:11px;font-weight:600;padding:0 6px;border-radius:6px;background:var(--tf-fill)}.tf-row-hidden .tf-row-name{color:var(--tf-muted)}.tf-row-plain{padding:6px 6px 6px 10px}.tf-row-plain:hover{background:none}.tf-row-plain .tf-row-name{white-space:normal;line-height:1.4;font-size:13px;color:var(--tf-muted);cursor:default}.tf-row-plain .tf-row-name:hover{text-decoration:none}' +
             '.tf-row-name{flex:0 1 auto;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:inherit;text-decoration:none;padding:2px 0}.tf-row-name:hover{text-decoration:underline}.tf-row-name:focus{outline:none}.tf-row-name:focus-visible{outline:2px solid var(--tf-accent);outline-offset:2px;border-radius:4px}.tf-row.tf-here{background:var(--tf-fill)}.tf-row.tf-here:hover{background:var(--tf-fill-hover)}.tf-row.tf-here .tf-row-name{font-weight:600}.tf-row-check{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin-left:auto;color:var(--tf-muted);flex:none}.tf-row-check svg{width:14px;height:14px}.tf-row-check+.tf-row-acts{margin-left:0}' +
-            '.tf-row-acts{display:flex;gap:2px;align-items:center;flex:none;margin-left:auto;opacity:0;transition:opacity .12s}.tf-row:hover .tf-row-acts,.tf-row.tf-open .tf-row-acts,.tf-row:focus-within .tf-row-acts,.tf-versions .tf-row-acts{opacity:1}.tf-row-acts .tf-button{height:28px;padding:0 10px;font-size:13px}.tf-row-acts .tf-icon{width:28px}.tf-versions{padding:2px 0 0;font-size:13px}.tf-versions .tf-caption{margin-left:6px}.tf-menu{position:fixed;width:220px;padding:6px;border-radius:14px;font:13px/1 var(--tf-font);z-index:2147483001}.tf-item{appearance:none;display:flex;align-items:center;gap:10px;width:100%;height:32px;padding:0 10px;border:0;border-radius:8px;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}.tf-item:hover,.tf-item:focus-visible{background:var(--tf-fill);outline:0}.tf-item:focus-visible{box-shadow:inset 0 0 0 2px var(--tf-accent)}.tf-item svg{width:15px;height:15px;color:var(--tf-muted);flex:none}.tf-item.tf-danger{color:var(--tf-bad-ink)}.tf-item.tf-danger svg{color:currentColor}.tf-helps{display:grid;gap:16px;padding:10px 8px 8px}.tf-help-row{display:grid;grid-template-columns:30px 1fr;gap:12px;align-items:start}.tf-help-icon{display:grid;place-items:center;width:30px;height:30px;border-radius:8px;background:var(--tf-fill);color:var(--tf-accent)}.tf-help-icon svg{width:16px;height:16px}.tf-help-title{font:600 13.5px/1.3 var(--tf-font);margin:1px 0 3px}.tf-help{margin:0;font-size:13px;line-height:1.45;color:var(--tf-muted)}.tf-help-keys{display:flex;flex-wrap:wrap;gap:6px 14px}.tf-keys span{display:inline-flex;align-items:center;gap:6px}.tf-kbd{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:20px;padding:0 6px;border-radius:5px;background:var(--tf-fill);box-shadow:0 0 0 1px var(--tf-hairline),0 1px 0 var(--tf-hairline);font:500 11.5px/1 var(--tf-font);color:inherit}.tf-share-line{display:flex;gap:6px;align-items:center}.tf-share-line .tf-input{flex:1;min-width:0}.tf-qr{width:168px;margin:2px 0 10px;border-radius:12px;overflow:hidden;line-height:0}.tf-qr svg{width:100%;height:auto;display:block}.tf-share-note{margin:4px 2px 2px;font-size:13px;line-height:1.45;color:var(--tf-muted)}.tf-changes{width:340px;max-width:calc(100vw - 16px);max-height:50vh;overflow:auto}.tf-changes .tf-row{min-height:36px;padding:0 2px 0 10px;font-size:13px}.tf-changes .tf-row-name{flex:1 1 auto;font-weight:400;color:inherit}.tf-changes .tf-row-acts{opacity:1}.tf-count{cursor:pointer}.tf-gap{height:1px;background:var(--tf-hairline);margin:6px 4px}.tf-note{padding:6px 10px 4px;color:var(--tf-muted);font-size:12px;line-height:1.4}' +
-            '.tf-menu.tf-looks{width:min(340px,calc(100vw - 16px))}.tf-item.tf-look{height:auto;min-height:44px;padding:5px 6px;gap:12px}.tf-look-ground{flex:1 1 auto;min-width:0;display:flex;align-items:center;padding:8px 10px;border-radius:8px;overflow:hidden}.tf-look-sample{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.2;box-sizing:border-box}.tf-look-word{display:flex;align-items:center;justify-content:flex-end;gap:4px;flex:none;width:92px;color:var(--tf-muted);font-size:12px}.tf-look-word svg{width:13px;height:13px;color:var(--tf-primary)}.tf-item.tf-off{cursor:default}.tf-item.tf-off:hover{background:none}.tf-look-why{flex:1 1 auto;min-width:0;padding:4px 10px;color:var(--tf-muted);font-size:12px;line-height:1.35}.tf-menu.tf-grounds{width:min(280px,calc(100vw - 16px))}.tf-swatch-row{height:auto;min-height:52px;padding:4px;gap:10px}.tf-swatch{flex:1 1 auto;min-width:0;display:flex;align-items:center;height:44px;padding:0 14px;border-radius:9px;box-shadow:inset 0 0 0 1px rgba(127,127,127,.28);font:500 14px/1 var(--tf-font)}.tf-swatch{justify-content:space-between}.tf-swatch-tick{flex:none;display:flex}.tf-swatch-tick svg{width:15px;height:15px;color:currentColor}.tf-off .tf-look-word{opacity:.55}.tf-menu-label{padding:8px 10px 4px;color:var(--tf-muted);font-size:12px;font-weight:600}' +
+            '.tf-row-acts{display:flex;gap:2px;align-items:center;flex:none;margin-left:auto;opacity:0;transition:opacity .12s}.tf-row:hover .tf-row-acts,.tf-row.tf-open .tf-row-acts,.tf-row:focus-within .tf-row-acts,.tf-versions .tf-row-acts{opacity:1}.tf-row-acts .tf-button{height:28px;padding:0 10px;font-size:13px}.tf-row-acts .tf-icon{width:28px}.tf-versions{padding:2px 0 0;font-size:13px}.tf-versions .tf-row{padding-left:10px}.tf-versions .tf-caption{margin-left:10px}.tf-menu{position:fixed;width:220px;padding:4px;border-radius:12px;font:13.5px/1 var(--tf-font);z-index:2147483001}.tf-item{appearance:none;display:flex;align-items:center;gap:10px;width:100%;height:32px;padding:0 10px;border:0;border-radius:8px;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}.tf-item:hover,.tf-item:focus-visible{background:var(--tf-fill);outline:0}.tf-item:focus-visible{box-shadow:inset 0 0 0 2px var(--tf-accent)}.tf-item svg{width:16px;height:16px;color:var(--tf-muted);flex:none}.tf-item.tf-danger{color:var(--tf-bad-ink)}.tf-item.tf-danger svg{color:currentColor}.tf-helps{display:grid;gap:16px;padding:10px 8px 8px}.tf-help-row{display:grid;grid-template-columns:30px 1fr;gap:12px;align-items:start}.tf-help-icon{display:grid;place-items:center;width:30px;height:30px;border-radius:8px;background:var(--tf-fill);color:var(--tf-accent)}.tf-help-icon svg{width:16px;height:16px}.tf-help-title{font:600 13.5px/1.3 var(--tf-font);margin:1px 0 3px}.tf-help{margin:0;font-size:13px;line-height:1.45;color:var(--tf-muted)}.tf-help-keys{display:flex;flex-wrap:wrap;gap:6px 14px}.tf-keys span{display:inline-flex;align-items:center;gap:6px}.tf-kbd{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:20px;padding:0 6px;border-radius:5px;background:var(--tf-fill);box-shadow:0 0 0 1px var(--tf-hairline),0 1px 0 var(--tf-hairline);font:500 11.5px/1 var(--tf-font);color:inherit}.tf-share-line{display:flex;gap:6px;align-items:center}.tf-share-line .tf-input{flex:1;min-width:0}.tf-qr{width:168px;margin:2px 0 10px;border-radius:12px;overflow:hidden;line-height:0}.tf-qr svg{width:100%;height:auto;display:block}.tf-share-note{margin:4px 2px 2px;font-size:13px;line-height:1.45;color:var(--tf-muted)}.tf-changes{width:340px;max-width:calc(100vw - 16px);max-height:50vh;overflow:auto}.tf-changes .tf-row{min-height:36px;padding:0 2px 0 10px;font-size:13px}.tf-changes .tf-row-name{flex:1 1 auto;font-weight:400;color:inherit}.tf-changes .tf-row-acts{opacity:1}.tf-count{cursor:pointer}.tf-gap{height:1px;background:var(--tf-hairline);margin:6px 4px}.tf-note{padding:6px 10px 4px;color:var(--tf-muted);font-size:12px;line-height:1.4}' +
+            '.tf-menu.tf-looks{width:min(340px,calc(100vw - 16px))}.tf-item.tf-look{height:auto;min-height:44px;padding:5px 6px;gap:12px}.tf-look-ground{flex:1 1 auto;min-width:0;display:flex;align-items:center;padding:8px 10px;border-radius:8px;overflow:hidden}.tf-look-sample{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.2;box-sizing:border-box}.tf-look-word{display:flex;align-items:center;justify-content:flex-end;gap:4px;flex:none;width:92px;color:var(--tf-muted);font-size:12px}.tf-look-word svg{width:13px;height:13px;color:var(--tf-primary)}.tf-item.tf-off{cursor:default}.tf-item.tf-off:hover{background:none}.tf-look-why{flex:1 1 auto;min-width:0;padding:4px 10px;color:var(--tf-muted);font-size:12px;line-height:1.35}.tf-menu.tf-grounds{width:min(280px,calc(100vw - 16px))}.tf-swatch-row{height:auto;min-height:52px;padding:4px;gap:10px}.tf-swatch{flex:1 1 auto;min-width:0;display:flex;align-items:center;height:44px;padding:0 14px;border-radius:9px;box-shadow:inset 0 0 0 1px rgba(127,127,127,.28);font:500 14px/1 var(--tf-font)}.tf-swatch{justify-content:space-between}.tf-swatch-tick{flex:none;display:flex}.tf-swatch-clear{color:#1d1d1f;background-color:#fff;background-image:linear-gradient(45deg,#e5e5ea 25%,transparent 25%,transparent 75%,#e5e5ea 75%),linear-gradient(45deg,#e5e5ea 25%,transparent 25%,transparent 75%,#e5e5ea 75%);background-size:12px 12px;background-position:0 0,6px 6px}.tf-swatch-name{padding:3px 6px;margin-left:-6px;border-radius:5px;background:rgba(255,255,255,.9)}.tf-swatch-tick svg{width:15px;height:15px;color:currentColor}.tf-off .tf-look-word{opacity:.55}.tf-menu-label{padding:8px 10px 4px;color:var(--tf-muted);font-size:12px;font-weight:600}' +
             '.tf-pal-field{display:flex;align-items:center;gap:10px;flex:none;height:48px;padding:0 12px 0 16px;border-bottom:1px solid var(--tf-hairline)}.tf-pal-field svg{width:16px;height:16px;color:var(--tf-muted);flex:none}.tf-pal-input{flex:1;min-width:0;border:0;padding:0;background:none;color:inherit;font:15px/1 var(--tf-font);outline:0}.tf-pal-input::placeholder{color:var(--tf-muted)}' +
             '.tf-key{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;border-radius:5px;background:var(--tf-fill);color:var(--tf-muted);font:500 11px/1 var(--tf-font);box-shadow:inset 0 -1px 0 var(--tf-hairline);flex:none}.tf-keys{display:flex;gap:3px;margin-left:auto}' +
             '.tf-pal .tf-sheet-body{padding:8px 8px 10px}.tf-pal .tf-caption{margin:6px 0 4px 10px}.tf-pal-row{height:40px;padding:0 10px;border-radius:10px;font-size:14px}.tf-pal-row:hover{background:none}.tf-pal-row.tf-lit{background:var(--tf-fill)}.tf-pal-name{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tf-pal-row .tf-row-tag{margin-left:auto}.tf-pal-none{padding:10px 10px 6px;color:var(--tf-muted);font-size:13px}' +
             '.tf-add{padding:4px 6px 6px}.tf-add .tf-button{margin-top:14px}' +
-            '.tf-select,.tf-input{appearance:none;border:0;border-radius:10px;height:32px;padding:0 10px;font:inherit;background:var(--tf-fill);color:inherit;min-width:0;outline:0;box-sizing:border-box;transition:box-shadow .12s}.tf-select{flex:1}.tf-input{flex:2}.tf-select:focus,.tf-input:focus{box-shadow:0 0 0 2px var(--tf-accent)}.tf-input::placeholder{color:var(--tf-muted)}' +
+            '.tf-select,.tf-input{appearance:none;border:0;border-radius:10px;height:32px;padding:0 10px;font:inherit;background:var(--tf-fill);color:inherit;min-width:0;outline:0;box-sizing:border-box;transition:box-shadow .12s}.tf-select{flex:1}.tf-input{flex:2}.tf-select:focus,.tf-input:focus{outline:0;box-shadow:0 0 0 2px var(--tf-accent)}.tf-input::placeholder{color:var(--tf-muted)}' +
             '[data-tf-hidden]{opacity:.35}nav a[data-tf-hidden]{display:inline!important}' +
-            '.tf-bar .tf-icon{width:36px}.tf-peek{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);display:flex;padding:6px;border-radius:999px;font:14px/1.3 var(--tf-font);z-index:2147483000}.tf-peek .tf-button{height:36px;padding:0 14px;font-size:14px;background:transparent}.tf-peek .tf-button:hover{background:var(--tf-fill)}' +
+            '.tf-bar .tf-icon{width:32px}.tf-peek{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);display:flex;padding:4px;border-radius:12px;font:13.5px/1.3 var(--tf-font);z-index:2147483000}.tf-peek .tf-button{height:32px;padding:0 14px;font-size:13.5px;background:transparent}.tf-peek .tf-button:hover{background:var(--tf-fill-hover)}' +
             ':root:has(#tf-style.tf-previewing) [data-tweakfast]:not(.tf-peek){display:none!important}:root:has(#tf-style.tf-previewing) [data-tf-hidden]{display:none!important}:root:has(#tf-style.tf-previewing) .tf-hover,:root:has(#tf-style.tf-previewing) img.tf-picture{cursor:auto}' +
-            'img.tf-picture{cursor:pointer}' +
-            '@media(max-width:600px){.tf-bar{--tf-x:0;left:8px;right:8px;bottom:8px;transform:none;max-width:none;justify-content:space-between;gap:4px;border-radius:24px}.tf-bar .tf-button{height:34px;padding:0 11px}.tf-panel{width:calc(100% - 16px)}}@media(pointer:coarse){.tf-bar .tf-button,.tf-tools .tf-button,.tf-status .tf-offer,.tf-row-acts .tf-button,.tf-link .tf-small,.tf-versions .tf-button,.tf-add .tf-button{height:40px}.tf-grip{width:40px;height:40px}.tf-tools .tf-icon{width:40px}.tf-count{position:relative}.tf-count::after{content:"";position:absolute;inset:-11px -11px -11px -8px}.tf-link-open{width:40px;height:40px}.tf-plus span,tr.tf-plus td span{width:40px;height:40px}.tf-plus span svg{width:18px;height:18px}.tf-link .tf-input{height:40px}.tf-row-acts{opacity:1}.tf-row-acts .tf-icon{width:40px}.tf-row-grip{opacity:1}.tf-sheet-head .tf-icon{width:40px;height:40px}.tf-item{height:40px}.tf-bar .tf-icon{width:40px}.tf-peek .tf-button{height:40px}}';
+            'img.tf-picture{cursor:pointer}:root:has(#tf-style.tf-through) body *:not([data-tweakfast]):not([data-tweakfast] *){cursor:pointer}' +
+            '@media(max-width:600px){.tf-bar{--tf-x:0;left:8px;right:8px;bottom:8px;transform:none;max-width:none;justify-content:space-between;gap:3px;border-radius:12px}.tf-bar .tf-button{height:32px;padding:0 11px}.tf-bar .tf-sym{display:inline-flex}.tf-bar .tf-phone-sym{aspect-ratio:1;padding:0}.tf-bar .tf-phone-sym .tf-bw{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0)}.tf-page-name{max-width:34vw}.tf-panel{width:calc(100% - 16px)}}@media(pointer:coarse){.tf-bar .tf-button,.tf-tools .tf-button,.tf-status .tf-offer,.tf-row-acts .tf-button,.tf-link .tf-small,.tf-versions .tf-button,.tf-add .tf-button{height:40px}.tf-grip{width:40px;height:40px}.tf-name{height:40px}.tf-tools .tf-icon{width:40px}.tf-count{position:relative}.tf-count::after{content:"";position:absolute;inset:-11px -11px -11px -8px}.tf-link-open{width:40px;height:40px}.tf-plus span,tr.tf-plus td span{width:40px;height:40px}.tf-plus span svg{width:18px;height:18px}.tf-link .tf-input{height:40px}.tf-row-acts{opacity:1}.tf-row-acts .tf-icon{width:40px}.tf-row-grip{opacity:1}.tf-sheet-head .tf-icon{width:40px;height:40px}.tf-item{height:40px}.tf-bar .tf-icon{width:40px}.tf-peek .tf-button{height:40px}}';
         document.head.appendChild(s);
     }
     /* the page's ground, read once at the start: a light site gets dark glass, a dark site light glass */

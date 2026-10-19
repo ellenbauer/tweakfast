@@ -1,0 +1,31 @@
+/* Putting back a version the page already is: no change counted, Done stays off, the status says so.
+   Needs tools/fake-save-server.py on 8788, freshly started. */
+const PORT = process.env.TF_PORT || 8788;
+const { chromium } = await import(process.env.TF_PLAYWRIGHT || new URL('../node_modules/playwright-core/index.mjs', import.meta.url).pathname);
+const b = await chromium.launch({ executablePath: process.env.TF_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true });
+const p = await b.newPage({ viewport: { width: 1100, height: 800 } });
+p.on('pageerror', e => console.log('PAGEERROR', e.message)); p.on('dialog', d => d.dismiss());
+const edit = async (sel) => { await p.click(sel); await p.waitForTimeout(60); await p.click(sel); };
+const act = async (row, word) => { await p.hover(row); await p.click(row + ' button[title="More"]'); await p.click('.tf-menu button:has-text("' + word + '")'); };
+const status = () => p.$eval('.tf-status', s => s.textContent.trim());
+const count = () => p.$eval('.tf-count', c => getComputedStyle(c).visibility === 'visible' ? c.textContent : 'hidden').catch(() => 'no .tf-count');
+const openSite = async () => { if (!(await p.$('.tf-panel:not(.tf-pal):not(.tf-out)'))) { await p.click('.tf-pages'); await p.waitForTimeout(150); } };
+const original = async (row) => { await openSite(); await act(row, 'Versions'); await p.waitForTimeout(400); await p.click('.tf-versions .tf-row:has-text("The original") button'); await p.waitForTimeout(800); };
+const done = async () => { await p.click('.tf-button:has-text("Done")'); await p.waitForFunction(() => /Live/.test(document.querySelector('.tf-status').textContent)); await p.waitForTimeout(100); };
+await p.goto('http://127.0.0.1:' + PORT + '/demo/about.html?v=' + Date.now() + '#edit=test'); await p.waitForTimeout(500);
+await edit('main h1'); await p.keyboard.press('Control+A'); await p.keyboard.press('Meta+A'); await p.keyboard.type('Changed'); await p.keyboard.press('Enter'); await p.waitForTimeout(400);
+await done();
+await original('.tf-row:has-text("About")');
+console.log('1 changed page, The original: count', await count(), '| h1 back:', await p.$eval('main h1', e => e.textContent) !== 'Changed', '| says:', await status());
+await done();
+await original('.tf-row:has-text("About")');
+console.log('2 original live again, The original: count', await count(), '| says:', await status());
+await p.keyboard.press('Escape'); await p.waitForTimeout(100);
+await edit('header .logo'); await p.keyboard.press('Control+A'); await p.keyboard.press('Meta+A'); await p.keyboard.type('rose&fern'); await p.keyboard.press('Enter'); await p.waitForTimeout(600);
+await done();
+await original('.tf-row:has-text("Contact")');
+console.log('3 other page changed, its original: count', await count(), '| says:', await status());
+await done();
+await original('.tf-row:has-text("Contact")');
+console.log('4 other page original live again: count', await count(), '| says:', await status());
+await b.close();

@@ -4,7 +4,10 @@
    Cleaning a site for Tweakfast takes out the programs an app-building tool attached. Whatever they did is gone:
    a pointer drawn in their place, words that faded in, a menu button that opened the menu, pictures loaded late.
    Each page is opened as readers see it, with what Tweakfast mends on its own (the pointer, a Menu button, a part that
-   slid sideways, buttons left with nothing to do), and what still does not work is named in plain words. Nothing is changed. Needs Chrome (TF_CHROME) and playwright-core
+   slid sideways, buttons left with nothing to do), and what still does not work is named in plain words. A menu that opens
+   without a script (a menu button made of a label and a box, or a summary) is opened before its words are judged.
+   Pictures whose files carry empty see-through edges are listed too: the page looks right, but the editor's line goes
+   round the whole file, so they are cropped while the site is set up, each kept in its place. Nothing is changed. Needs Chrome (TF_CHROME) and playwright-core
    (TF_PLAYWRIGHT, else ../node_modules). */
 const { chromium } = await import(process.env.TF_PLAYWRIGHT || new URL('../node_modules/playwright-core/index.mjs', import.meta.url).pathname);
 const start = process.argv[2];
@@ -12,6 +15,7 @@ if (!start) { console.log('usage: tools/site-check.mjs <site address>'); process
 const home = new URL(start.endsWith('/') || /\.html?$/.test(start) ? start : start + '/');
 const b = await chromium.launch({ executablePath: process.env.TF_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true });
 const found = {}; /* kind -> [{ page, width, what }] */
+const edgesSeen = new Set();
 const note = (kind, page, width, what) => { (found[kind] = found[kind] || []).push({ page, width, what }); };
 
 /* the pages: the home page and every page of the same site it links to, as far as the links go */
@@ -36,7 +40,7 @@ for (const url of pages) for (const width of [1440, 390]) {
     const name = new URL(url).pathname.replace(/^\//, '') || 'index.html (home)';
     let p = await open(url, width); if (!p) { note('unreachable', name, width, 'the page did not load'); continue; }
     const r = await p.evaluate(() => {
-        const out = { pointer: [], unseen: [], late: [], wide: 0, boxes: 0 };
+        const out = { pointer: [], unseen: [], late: [], wide: 0, boxes: 0, edges: [] };
         const vis = el => { for (let n = el; n && n.nodeType === 1; n = n.parentElement) { const cs = getComputedStyle(n); if (cs.display === 'none' || n.hidden) return 'gone'; } return 'drawn'; };
         const opacity = el => { let o = 1; for (let n = el; n && n.nodeType === 1; n = n.parentElement) o *= +getComputedStyle(n).opacity; return o; };
         const words = el => el.textContent.replace(/\s+/g, ' ').trim().slice(0, 40);
@@ -45,15 +49,36 @@ for (const url of pages) for (const width of [1440, 390]) {
         /* words left invisible or out of reach: faded out, hidden, or moved off the page, waiting for a script */
         const texts = new Set(); const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT); let t;
         while ((t = w.nextNode())) { const el = t.parentElement; if (el && t.nodeValue.trim() && !el.closest('script,style,noscript,[aria-hidden="true"],template')) texts.add(el); }
-        for (const el of texts) {
-            if (vis(el) === 'gone') continue;
+        window.__unseen = el => {
+            if (vis(el) === 'gone') return '';
             const cs = getComputedStyle(el), r = el.getBoundingClientRect(), page = document.documentElement;
             const strip = n => { for (; n && n.nodeType === 1; n = n.parentElement) { const c = getComputedStyle(n); if (c.overflowX === 'auto' || c.overflowX === 'scroll' || c.animationName !== 'none') return true; } return false; }; /* a row that scrolls sideways shows the rest when swiped; a moving strip brings it round by itself */
             const why = opacity(el) < 0.05 ? 'faded out' : cs.visibility === 'hidden' ? 'hidden' : (r.right < 0 || r.left > page.scrollWidth || r.bottom < -window.scrollY - 50) && r.width && !strip(el.parentElement) ? 'off the page' : '';
-            if (why && cs.position !== 'fixed' && !el.closest('[role=dialog],dialog,[aria-modal]')) out.unseen.push(why + ': ' + words(el));
-        }
+            return why && cs.position !== 'fixed' && !el.closest('[role=dialog],dialog,[aria-modal]') ? why : '';
+        };
+        let k = 0;
+        for (const el of texts) { const why = window.__unseen(el); if (why) { el.setAttribute('data-site-unseen', k); out.unseen.push(k++ + '|' + why + ': ' + words(el)); } }
         /* pictures a script was to load */
         for (const img of document.images) if (vis(img) === 'drawn' && (!img.getAttribute('src') && (img.dataset.src || img.dataset.srcset) || img.complete && !img.naturalWidth && img.getAttribute('src'))) out.late.push(img.getAttribute('alt') || img.dataset.src || img.getAttribute('src') || 'a picture');
+        /* empty see-through edges in a picture's file: each side's empty share, from the picture drawn small (pictures from
+           another address cannot be read, and are left out) */
+        for (const img of new Set(document.images)) {
+            if (!img.complete || !img.naturalWidth || img.dataset.siteEdges) continue;
+            img.dataset.siteEdges = 1;
+            const f = Math.min(1, 400 / Math.max(img.naturalWidth, img.naturalHeight)), W = Math.max(1, Math.round(img.naturalWidth * f)), H = Math.max(1, Math.round(img.naturalHeight * f));
+            const c = document.createElement('canvas'); c.width = W; c.height = H;
+            let a; try { const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0, W, H); a = g.getImageData(0, 0, W, H).data; } catch (e) { continue; }
+            const empty = (x, y) => a[(y * W + x) * 4 + 3] < 8;
+            const row = y => { for (let x = 0; x < W; x++) if (!empty(x, y)) return false; return true; }, col = x => { for (let y = 0; y < H; y++) if (!empty(x, y)) return false; return true; };
+            let top = 0, bottom = 0, left = 0, right = 0;
+            while (top < H && row(top)) top++;
+            if (top === H) continue; /* nothing drawn at all: a spacer, not a picture */
+            while (row(H - 1 - bottom)) bottom++;
+            while (col(left)) left++;
+            while (col(W - 1 - right)) right++;
+            const sides = [['top', top / H], ['bottom', bottom / H], ['left', left / W], ['right', right / W]].filter(s => s[1] >= 0.03);
+            if (sides.length) out.edges.push((img.getAttribute('src') || '').split('?')[0] + ': empty along the ' + sides.map(s => s[0] + ' ' + Math.round(s[1] * 100) + '%').join(', ').replace(/, ([^,]*)$/, ' and $1'));
+        }
         /* a page wider than the screen: it slides sideways on a phone */
         out.wide = Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth);
         /* words drawn one box per letter or word, left by an entry animation */
@@ -61,9 +86,26 @@ for (const url of pages) for (const width of [1440, 390]) {
         return out;
     });
     if (r.pointer.length) note('pointer', name, width, r.pointer.slice(0, 3).join(', '));
-    [...new Set(r.unseen)].slice(0, 6).forEach(x => note('unseen', name, width, x));
+    /* words a menu button brings in without any script (a box ticked by its label, a summary that opens its details) do show: each such button is pressed, then pressed again to close */
+    if (r.unseen.length) {
+        const shown = new Set();
+        const toggles = await p.$$eval('label[for], details > summary', els => els.filter(e => {
+            if (e.tagName === 'SUMMARY') return !e.parentElement.open;
+            const box = document.getElementById(e.htmlFor); return box && /^(checkbox|radio)$/.test(box.type);
+        }).map((e, i) => { e.setAttribute('data-site-toggle', i); return i; }));
+        for (const i of toggles.slice(0, 6)) {
+            const el = await p.$(`[data-site-toggle="${i}"]`); if (!el || !(await el.isVisible())) continue;
+            try { await el.click({ timeout: 2000 }); } catch (e) { continue; }
+            await p.waitForTimeout(500);
+            (await p.$$eval('[data-site-unseen]', els => els.filter(e => !window.__unseen(e)).map(e => e.getAttribute('data-site-unseen')))).forEach(x => shown.add(x));
+            try { await el.click({ timeout: 2000 }); await p.waitForTimeout(400); } catch (e) {}
+        }
+        r.unseen = r.unseen.filter(x => !shown.has(x.split('|')[0]));
+    }
+    [...new Set(r.unseen.map(x => x.replace(/^\d+\|/, '')))].slice(0, 6).forEach(x => note('unseen', name, width, x));
     [...new Set(r.late)].slice(0, 4).forEach(x => note('late', name, width, x));
     if (r.wide > 1) note('wide', name, width, r.wide + ' px wider than the screen');
+    r.edges.forEach(x => { if (!edgesSeen.has(x.split(':')[0])) { edgesSeen.add(x.split(':')[0]); note('edges', name, 0, x); } }); /* a picture once, on the first page that shows it */
     if (r.boxes) note('boxes', name, width, r.boxes + (r.boxes === 1 ? ' text' : ' texts'));
     /* buttons that do nothing: each one clicked; nothing on the page changes, nothing opens, the address stays */
     const buttons = await p.$$eval('button, a[href="#"], a:not([href]), [role=button]', els => els.filter(e => !e.closest('form') && e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden').map((e, i) => { e.setAttribute('data-site-check', i); return i + '|' + (e.textContent.replace(/\s+/g, ' ').trim().slice(0, 30) || e.getAttribute('aria-label') || e.tagName.toLowerCase()); }));
@@ -88,6 +130,7 @@ const KINDS = {
     dead: ['Buttons that do nothing', 'A script opened or did something here. Ask the maker for a version that works without it, or remove the button.'],
     late: ['Pictures that never load', 'A script was to load them. Ask the maker to give them their address directly.'],
     wide: ['Pages wider than a phone', 'They slide sideways on a phone.'],
+    edges: ['Pictures with empty see-through edges', 'The page looks right, but the editor outlines the whole file. Crop each, and keep it in its place on the page.'],
     boxes: ['Titles drawn one box per letter or word', 'Tweakfast makes them plain words while the owner types; nothing to do.'],
     unreachable: ['Pages that did not load', '']
 };
@@ -98,6 +141,6 @@ for (const k of kinds) {
     console.log(`\n${KINDS[k][0]}${KINDS[k][1] ? ' — ' + KINDS[k][1] : ''}`);
     const byWhat = new Map();
     for (const f of found[k]) { const key = f.page + ': ' + f.what; byWhat.set(key, (byWhat.get(key) || []).concat(f.width)); }
-    for (const [what, widths] of [...byWhat].slice(0, 14)) console.log(`  ${what}  (${widths.length === 2 ? 'both widths' : widths[0] > 600 ? 'computer' : 'phone'})`);
+    for (const [what, widths] of [...byWhat].slice(0, 14)) console.log(`  ${what}${!widths[0] ? '' : `  (${widths.length === 2 ? 'both widths' : widths[0] > 600 ? 'computer' : 'phone'})`}`);
     if (byWhat.size > 14) console.log(`  …and ${byWhat.size - 14} more`);
 }

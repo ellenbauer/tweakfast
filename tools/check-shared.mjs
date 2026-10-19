@@ -3,6 +3,12 @@ const { chromium } = await import(process.env.TF_PLAYWRIGHT || new URL('../node_
 const b = await chromium.launch({ executablePath: process.env.TF_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true });
 const p = await b.newPage({ viewport: { width: 1100, height: 800 } });
 p.on('pageerror', e => console.log('PAGEERROR', e.message));
+const pickBlock = async (page, sel) => { /* a click on the block itself, off its words and pictures: selected, its toolbar up */
+  const at = await page.$eval(sel, e => { const b = e.getBoundingClientRect(), pr = window.__tweakfastProbe, tries = [[b.width - 6, b.height - 6], [b.width - 6, 6], [6, b.height - 6], [b.width / 2, b.height - 4], [b.width - 4, b.height / 2], [b.width / 2, 4]];
+    for (const [x, y] of tries) { const hit = document.elementFromPoint(b.left + x, b.top + y); if (hit && e.contains(hit) && !pr.textTarget(hit) && !pr.pictureTarget(hit) && !hit.closest('a[href],button,.tf-plus,[data-tweakfast]') && (pr.blockTarget(hit) || e) === e) return { x, y }; }
+    return { x: b.width - 6, y: b.height - 6 }; });
+  await page.click(sel, { position: at }); await page.waitForTimeout(150);
+  if (await page.$eval('.tf-edit-box', e => getComputedStyle(e).display === 'block').catch(() => false)) { await page.keyboard.press('Escape'); await page.waitForTimeout(120); } }; /* a block covered by its picture or words: the click took those; Esc steps out to the block */
 const edit = async (sel, o) => { await p.click(sel, o); await p.waitForTimeout(60); await p.click(sel, o); }; /* one click picks, the second edits */
 const status = () => p.$eval('.tf-status', s => s.classList.contains('tf-show') ? s.textContent.trim() : '');
 /* Done without a saving route writes files: caught here to read what every page would get */
@@ -29,7 +35,7 @@ await p.goto('http://127.0.0.1:8787/tools/check-menu.html#edit=test'); await p.w
 await edit('.page-head h1'); await p.waitForTimeout(100);
 console.log('a page-head title edits:', !!(await p.$('.page-head h1[contenteditable]')), '| no shared sentence:', !/every page/.test(await status()));
 /* blocks in a footer: tools like anywhere; Hide is made on every page whose footer matches, the others are named */
-await p.hover('footer .col:nth-child(2) h4'); await p.waitForTimeout(400);
+await pickBlock(p, 'footer .col:nth-child(2)');
 console.log('footer blocks have tools:', await p.evaluate(() => getComputedStyle(document.querySelector('.tf-tools')).display === 'flex'));
 await p.click('.tf-tools button:has-text("Hide")', { force: true }); await p.waitForTimeout(900);
 console.log('hidden here:', await p.$eval('footer .col:nth-child(2)', e => e.hasAttribute('data-tf-hidden')), '| other pages named:', await status());

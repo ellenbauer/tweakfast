@@ -3,6 +3,12 @@ const { chromium } = await import(process.env.TF_PLAYWRIGHT || new URL('../node_
 const b = await chromium.launch({ executablePath: process.env.TF_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true });
 const p = await b.newPage({ viewport: { width: 1100, height: 900 } });
 p.on('pageerror', e => console.log('PAGEERROR', e.message));
+const pickBlock = async (page, sel) => { /* a click on the block itself, off its words and pictures: selected, its toolbar up */
+  const at = await page.$eval(sel, e => { const b = e.getBoundingClientRect(), pr = window.__tweakfastProbe, tries = [[b.width - 6, b.height - 6], [b.width - 6, 6], [6, b.height - 6], [b.width / 2, b.height - 4], [b.width - 4, b.height / 2], [b.width / 2, 4]];
+    for (const [x, y] of tries) { const hit = document.elementFromPoint(b.left + x, b.top + y); if (hit && e.contains(hit) && !pr.textTarget(hit) && !pr.pictureTarget(hit) && !hit.closest('a[href],button,.tf-plus,[data-tweakfast]') && (pr.blockTarget(hit) || e) === e) return { x, y }; }
+    return { x: b.width - 6, y: b.height - 6 }; });
+  await page.click(sel, { position: at }); await page.waitForTimeout(150);
+  if (await page.$eval('.tf-edit-box', e => getComputedStyle(e).display === 'block').catch(() => false)) { await page.keyboard.press('Escape'); await page.waitForTimeout(120); } }; /* a block covered by its picture or words: the click took those; Esc steps out to the block */
 const edit = async (sel, o) => { await p.click(sel, o); await p.waitForTimeout(60); await p.click(sel, o); }; /* one click picks, the second edits */
 await p.goto('http://127.0.0.1:8787/demo/events.html#edit=test');
 /* drag the grip over another block of the same group: the dragged one takes that place */
@@ -17,28 +23,19 @@ async function dragTo(page, targetSel) {
 const titles = () => p.evaluate(() => [...document.querySelectorAll('.cards > *')].map(n => n.classList.contains('tf-plus') ? '+' : (n.querySelector('h3').textContent + (n.hasAttribute('data-tf-hidden') ? '(hidden)' : ''))).join(' | '));
 console.log('blocks:', await p.evaluate(() => document.querySelectorAll('[data-tf-block]').length), 'sections:', await p.evaluate(() => document.querySelectorAll('main > section[data-tf-block]').length), 'cards:', await p.evaluate(() => document.querySelectorAll('.card[data-tf-block]').length), 'plus:', await p.evaluate(() => document.querySelectorAll('.tf-plus').length));
 console.log('start:', await titles());
-await p.hover('.card:nth-child(1) h3');
+await pickBlock(p, '.card:nth-child(1)');
 console.log('tools shown:', await p.evaluate(() => getComputedStyle(document.querySelector('.tf-tools')).display), await p.evaluate(() => [...document.querySelectorAll('.tf-tools button')].map(b => b.textContent).join(',')));
 /* the tools and lines sit in the page, so a scroll carries them along with no lag */
-console.log('tools scroll with the page:', await p.evaluate(() => getComputedStyle(document.querySelector('.tf-tools')).position === 'absolute' && getComputedStyle(document.querySelector('.tf-block-box')).position === 'absolute'), '| plus is a drawn cross:', await p.$eval('.tf-plus span', e => !!e.querySelector('svg') && Math.abs((e.getBoundingClientRect().left + e.getBoundingClientRect().width / 2) - (e.querySelector('svg').getBoundingClientRect().left + e.querySelector('svg').getBoundingClientRect().width / 2)) < 1));
-/* heading away from the tools, the next block takes them at once; heading toward them, it waits */
-{ const c3 = await p.$eval('.card:nth-child(3)', e => { const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.bottom - 10 }; });
-  await p.mouse.move(c3.x, c3.y - 30); await p.mouse.move(c3.x, c3.y); await p.waitForTimeout(30);
-  console.log('tools switch at once:', await p.evaluate(() => document.querySelector('.tf-tools').getBoundingClientRect().top < document.querySelector('.card:nth-child(3)').getBoundingClientRect().top + 2 && document.querySelector('.tf-tools').getBoundingClientRect().top > document.querySelector('.card:nth-child(3)').getBoundingClientRect().top - 20));
-  const t = await p.$eval('.tf-tools', e => { const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
-  /* now up through card 2 toward the tools of card 3: card 2 must not take over right away */
-  const c2 = await p.$eval('.card:nth-child(2)', e => { const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
-  const sameRow = Math.abs(c2.y - t.y) < 60;
-  if (!sameRow) {
-    await p.mouse.move(c2.x, c2.y + 30); await p.mouse.move(c2.x + (t.x - c2.x) * 0.2, c2.y + 30 + (t.y - c2.y - 30) * 0.2); await p.waitForTimeout(30);
-    console.log('toward the tools it waits:', await p.evaluate(() => { const r = document.querySelector('.tf-tools').getBoundingClientRect(), c = document.querySelector('.card:nth-child(3)').getBoundingClientRect(); return Math.abs(r.top - (c.top - 14)) < 2; }));
-  } else console.log('toward the tools it waits: (skipped, same row)');
-  await p.hover('.card:nth-child(1) h3'); await p.waitForTimeout(400); }
+console.log('tools scroll with the page:', await p.evaluate(() => getComputedStyle(document.querySelector('.tf-tools')).position === 'absolute' && getComputedStyle(document.querySelector('.tf-block-box')).position === 'absolute'), '| plus is a drawn cross:', await p.$eval('.tf-plus span svg', e => !!e));
+/* hover draws the next block's dashed line and its name; the tools stay with the selected block until a click */
+await p.mouse.move(5, 5); { const c3 = await p.$eval('.card:nth-child(3)', e => { const r = e.getBoundingClientRect(); return { x: r.right - 8, y: r.bottom - 8 }; }); await p.mouse.move(c3.x, c3.y); await p.waitForTimeout(80); }
+console.log('hover on another card: its dashed line', await p.evaluate(() => { const b = document.querySelector('.tf-block-hover'); return !!b && getComputedStyle(b).display === 'block' && getComputedStyle(b).borderStyle === 'dashed'; }), '| named', await p.$eval('.tf-tag', t => getComputedStyle(t).display === 'block' ? t.textContent : 'none'), '| tools still on the first:', await p.evaluate(() => document.querySelector('.tf-tools').getBoundingClientRect().top < document.querySelector('.card:nth-child(1)').getBoundingClientRect().top + 2), '| selected line solid 2:', await p.$eval('.tf-block-box', e => getComputedStyle(e).borderStyle === 'solid' && getComputedStyle(e).borderTopWidth === '2px'));
+await pickBlock(p, '.card:nth-child(1)');
 await dragTo(p, ".card:nth-child(2)"); await p.waitForTimeout(300); /* the settle takes 170 ms; a hand never re-grabs sooner */
 console.log('after drag down:', await titles());
 await dragTo(p, ".card:nth-child(1)"); await p.waitForTimeout(300);
 console.log('after drag up:', await titles());
-await p.hover('.card:nth-child(2) h3'); await p.waitForTimeout(400);
+await pickBlock(p, '.card:nth-child(2)');
 await p.click('.tf-tools button:has-text("Hide")');
 const status = () => p.$eval('.tf-status', s => s.classList.contains('tf-show') ? s.textContent.trim() : '');
 console.log('after hide:', await titles(), '| hide button now:', await p.textContent('.tf-tools .tf-hide'), '| faded:', await p.evaluate(() => getComputedStyle(document.querySelector('[data-tf-hidden]')).opacity), '| said:', await status());
@@ -46,12 +43,12 @@ const quiet = () => p.evaluate(() => document.querySelector('.tf-status').classL
 await quiet(); await p.click('.tf-tools button:has-text("Show")'); await p.waitForTimeout(50); console.log('Show says nothing:', (await status()) === '');
 await quiet(); await p.click('.tf-tools button:has-text("Hide")'); await p.waitForTimeout(50); console.log('second Hide quiet:', (await status()) === '');
 /* Remove: gone at once, no ghost; Undo brings it back in its place */
-await quiet(); await p.hover('.card:nth-child(3) h3'); await p.waitForTimeout(400);
+await quiet(); await pickBlock(p, '.card:nth-child(3)');
 await p.click('.tf-tools button:has-text("Remove")'); await p.waitForTimeout(50);
 console.log('after remove:', await titles(), '| tools gone:', await p.evaluate(() => getComputedStyle(document.querySelector('.tf-tools')).display === 'none'), '| said:', await status());
 await p.click('.tf-button:has-text("Undo")'); await p.waitForTimeout(50);
 console.log('undo brings it back:', await titles());
-await p.hover('.card:nth-child(3) h3'); await p.waitForTimeout(400);
+await pickBlock(p, '.card:nth-child(3)');
 await p.click('.tf-tools button:has-text("Copy")');
 await p.waitForTimeout(700);
 console.log('copy said once:', await status(), '| copy in view:', await p.evaluate(() => { const r = document.querySelector('.cards > :nth-child(4)').getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; }));
@@ -65,10 +62,10 @@ console.log('second plus quiet:', await p.$eval('.tf-status', s => !s.classList.
 await p.keyboard.press('Escape'); await p.click('.tf-button:has-text("Undo")'); await p.waitForTimeout(100);
 /* a click into a card's text starts the edit and takes the block tools away; the next hover brings them back */
 await edit('.card:nth-child(1) p'); await p.waitForTimeout(50);
-console.log('typing: tools gone:', await p.evaluate(() => getComputedStyle(document.querySelector('.tf-tools')).display === 'none'), '| block line gone:', await p.evaluate(() => getComputedStyle(document.querySelector('.tf-block-box')).display === 'none'));
-await p.keyboard.press('Escape'); await p.mouse.move(5, 5); await p.hover('.card:nth-child(2) h3'); await p.waitForTimeout(400);
+console.log('typing: the toolbar stays with the block:', await p.evaluate(() => getComputedStyle(document.querySelector('.tf-tools')).display !== 'none'), '| the block\'s line dashed behind the words:', await p.evaluate(() => { const b = document.querySelector('.tf-block-box'); return getComputedStyle(b).display === 'block' && getComputedStyle(b).borderStyle === 'dashed'; }));
+await p.keyboard.press('Escape'); await p.mouse.move(5, 5); await pickBlock(p, '.card:nth-child(2)');
 console.log('after Esc and a hover: tools back:', await p.evaluate(() => getComputedStyle(document.querySelector('.tf-tools')).display === 'flex'));
-await p.hover('main > section:nth-of-type(2) h2'); await p.waitForTimeout(400);
+await pickBlock(p, 'main > section:nth-of-type(2)');
 await dragTo(p, "main > section:nth-of-type(1)"); await p.waitForTimeout(300);
 console.log('sections after drag up:', await p.evaluate(() => [...document.querySelectorAll('main > section')].map(s => s.querySelector('h1,h2').textContent).join(' | ')));
 await p.click('.tf-button:has-text("Undo")'); await p.click('.tf-button:has-text("Undo")'); await p.click('.tf-button:has-text("Undo")');
@@ -121,9 +118,9 @@ console.log('tap in the header: only its Look:', await m.evaluate(() => [...docu
 /* a finger needs 40 px: tools, grip, plus, row buttons; the Site panel shows its buttons; the hint speaks of taps */
 await m.tap('.card:nth-child(1)', { position: { x: 6, y: 6 } }); await m.waitForTimeout(100);
 await m.waitForTimeout(350); /* the tools spring in first */ console.log('finger sizes: tools', await m.$$eval('.tf-tools button', bs => bs.filter(x => x.getClientRects().length && x.getBoundingClientRect().width).every(x => x.getBoundingClientRect().height >= 40)), '| grip', await m.$eval('.tf-grip', e => e.getBoundingClientRect().height >= 40 && e.getBoundingClientRect().width >= 40), '| plus', await m.$eval('.tf-plus span', e => e.getBoundingClientRect().width >= 40), '| bar buttons', await m.$$eval('.tf-bar .tf-button', bs => bs.every(x => x.getBoundingClientRect().height >= 40)), '| bar fits', await m.evaluate(() => { const r = document.querySelector('.tf-bar').getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth; }));
-await m.tap('.tf-button:has-text("Site")'); await m.waitForTimeout(200);
+if (!(await m.$('.tf-panel:not(.tf-pal):not(.tf-out)'))) { await m.tap('.tf-pages'); await m.waitForTimeout(150); } await m.waitForTimeout(200);
 console.log('panel on a phone: row buttons shown:', await m.$eval('.tf-row:not(.tf-here) .tf-row-acts', e => getComputedStyle(e).opacity === '1'), '| 40 px:', await m.$$eval('.tf-row-acts .tf-button', bs => bs.every(x => x.getBoundingClientRect().height >= 40)));
-await m.tap('.tf-button:has-text("Site")'); await m.waitForTimeout(100);
+if (!(await m.$('.tf-panel:not(.tf-pal):not(.tf-out)'))) { await m.tap('.tf-pages'); await m.waitForTimeout(150); } await m.waitForTimeout(100);
 await m.evaluate(() => sessionStorage.clear());
 await m.tap('.card:nth-child(1) p'); await m.waitForTimeout(100); await m.tap('.card:nth-child(1) p'); await m.waitForTimeout(100);
 console.log('phone hint:', await m.$eval('.tf-status', s => s.textContent.trim()));

@@ -4,9 +4,15 @@ const { chromium } = await import(process.env.TF_PLAYWRIGHT || new URL('../node_
 const b = await chromium.launch({ executablePath: process.env.TF_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true });
 const p = await b.newPage({ viewport: { width: 1000, height: 700 } });
 p.on('pageerror', e => console.log('PAGEERROR', e.message));
+const pickBlock = async (page, sel) => { /* a click on the block itself, off its words and pictures: selected, its toolbar up */
+  const at = await page.$eval(sel, e => { const b = e.getBoundingClientRect(), pr = window.__tweakfastProbe, tries = [[b.width - 6, b.height - 6], [b.width - 6, 6], [6, b.height - 6], [b.width / 2, b.height - 4], [b.width - 4, b.height / 2], [b.width / 2, 4]];
+    for (const [x, y] of tries) { const hit = document.elementFromPoint(b.left + x, b.top + y); if (hit && e.contains(hit) && !pr.textTarget(hit) && !pr.pictureTarget(hit) && !hit.closest('a[href],button,.tf-plus,[data-tweakfast]') && (pr.blockTarget(hit) || e) === e) return { x, y }; }
+    return { x: b.width - 6, y: b.height - 6 }; });
+  await page.click(sel, { position: at }); await page.waitForTimeout(150);
+  if (await page.$eval('.tf-edit-box', e => getComputedStyle(e).display === 'block').catch(() => false)) { await page.keyboard.press('Escape'); await page.waitForTimeout(120); } }; /* a block covered by its picture or words: the click took those; Esc steps out to the block */
 await p.goto('http://127.0.0.1:8787/tools/check-drag.html#edit=test'); await p.waitForTimeout(400);
 const order = () => p.$$eval('main > section', es => es.map(e => e.className).join(' '));
-await p.hover('section.a h2'); await p.waitForTimeout(400);
+await pickBlock(p, 'section.a');
 const g = await p.$eval('.tf-grip', e => { const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
 await p.mouse.move(g.x, g.y); await p.mouse.down(); await p.mouse.move(g.x, g.y + 10);
 /* lifted: the held block grows a little and its line carries a shadow */
@@ -15,7 +21,7 @@ console.log('lifted:', await p.evaluate(() => getComputedStyle(document.querySel
 { const c1 = await p.$eval('.tf-moving', e => e.getBoundingClientRect().top);
   await p.mouse.move(g.x, g.y + 90, { steps: 4 });
   const c2 = await p.$eval('.tf-moving', e => e.getBoundingClientRect().top), box = await p.$eval('.tf-block-box', e => e.getBoundingClientRect().top);
-  console.log('follows the pointer:', Math.abs((c2 - c1) - 80) < 3, '| line follows:', Math.abs(box - (c2 - 6)) < 2);
+  console.log('follows the pointer:', Math.abs((c2 - c1) - 80) < 3, '| line follows:', Math.abs(box - c2) < 2);
   await p.mouse.move(g.x, g.y + 10, { steps: 4 }); }
 /* after a swap the block that stepped aside slides, then is clean again */
 { const kin = await p.evaluate(() => [...document.querySelectorAll('.tf-moving ~ [data-tf-block], [data-tf-block]')].filter(e => !e.classList.contains('tf-moving')).length);
@@ -44,7 +50,7 @@ let clicks = 0; await p.exposeFunction('tfClicked', () => clicks++); await p.eva
 await p.mouse.move(g2.x, g2.y); await p.mouse.down(); await p.mouse.move(g2.x - 30, g2.y + 30, { steps: 3 }); await p.mouse.up(); await p.waitForTimeout(100);
 console.log('release without a swap: editing started', (await p.$$('[contenteditable]')).length, '| dragging class left', await p.$eval('body', b => b.classList.contains('tf-dragging')));
 /* a missed release: the grip is held, then a move arrives with no button */
-await p.hover('section.a h2'); await p.waitForTimeout(400);
+await pickBlock(p, 'section.a');
 const g3 = await p.$eval('.tf-grip', e => { const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
 await p.mouse.move(g3.x, g3.y); await p.mouse.down(); await p.mouse.move(g3.x, g3.y + 20);
 await p.evaluate(() => document.querySelector('.tf-grip').dispatchEvent(new PointerEvent('pointermove', { clientX: 300, clientY: 690, buttons: 0, pointerId: 1, bubbles: true })));
@@ -52,7 +58,7 @@ await p.waitForTimeout(600);
 console.log('after a move with no button: dragging', await p.$eval('body', b => b.classList.contains('tf-dragging')), '| order unchanged:', await order());
 await p.mouse.up();
 /* a Done inside the settle's 170 ms must not save our animation styles */
-{ await p.keyboard.press('Escape'); await p.mouse.move(5, 5); await p.waitForTimeout(100); await p.hover('section.a h2'); await p.waitForTimeout(400);
+{ await p.keyboard.press('Escape'); await p.mouse.move(5, 5); await p.waitForTimeout(100); await pickBlock(p, 'section.a');
   const g4 = await p.$eval('.tf-grip', e => { const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
   const t4 = await p.$eval('section.b', e => { const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.bottom - 20 }; });
   await p.mouse.move(g4.x, g4.y); await p.mouse.down(); await p.mouse.move(g4.x, g4.y + 10); await p.mouse.move(t4.x, t4.y, { steps: 6 });

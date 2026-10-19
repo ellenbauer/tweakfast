@@ -11,8 +11,8 @@ const rows = () => p.$$eval('.tf-menu .tf-swatch', es => es.map(e => (e.closest(
 const grounds = {};
 for (const sel of ['header', 'footer']) {
   await p.mouse.move(5, 5); const el = await p.$(sel); await el.scrollIntoViewIfNeeded(); const r = await el.boundingBox();
-  await p.mouse.move(r.x + r.width - 10, r.y + 6); await p.waitForTimeout(500);
-  const shown = await p.$$eval('.tf-tools > *', es => es.filter(e => getComputedStyle(e).display !== 'none').map(e => e.textContent).join(','));
+  await p.mouse.click(r.x + r.width - 10, r.y + 6); await p.waitForTimeout(300); /* a click selects the part; hover only draws its line */
+  const shown = await p.$$eval('.tf-tools .tf-button', es => es.filter(e => getComputedStyle(e).display !== 'none').map(e => e.textContent).join(',')); /* the name tile leads; the buttons are what counts */
   await p.click('.tf-look-open'); await p.waitForTimeout(200);
   const list = await rows();
   console.log(sel + ': only Look', shown === 'Look', '| none greyed', !(await p.$('.tf-menu .tf-off')), '|', list.join(' '));

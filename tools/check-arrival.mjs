@@ -14,7 +14,7 @@ console.log('first visit card:', await p.textContent('.tf-card-title'), await p.
 await p.click('.tf-card .tf-button'); await p.waitForTimeout(300); /* the card fades first */ console.log('Got it removes it:', await p.evaluate(() => !document.querySelector('.tf-card')));
 await p.reload(); await p.waitForTimeout(300); console.log('not shown again:', await p.evaluate(() => !document.querySelector('.tf-card')));
 await edit('h1'); await p.keyboard.type('A'); await p.keyboard.press('Enter');
-await p.hover('.tf-button:has-text("Site")'); await p.click('.tf-button:has-text("Site")'); await act('.tf-row.tf-here', 'Words for Google'); await p.waitForTimeout(200);
+await p.hover('.tf-pages'); if (!(await p.$('.tf-panel:not(.tf-pal):not(.tf-out)'))) { await p.click('.tf-pages'); await p.waitForTimeout(150); } await act('.tf-row.tf-here', 'Words for Google'); await p.waitForTimeout(200);
 console.log('Google title field shows the real title:', await p.inputValue('.tf-words input >> nth=0'));
 await p.keyboard.press('Escape');
 try { fs.unlinkSync(LOG); } catch (e) {}
@@ -25,7 +25,7 @@ console.log('saved title has no Edit prefix:', m && m[1], '|', m && !/^Edit/.tes
 await p.evaluate(() => localStorage.clear());
 await p.goto('http://127.0.0.1:8788/demo/about.html#edit=wrong-old-link'); await p.waitForTimeout(500);
 console.log('wrong link told:', await p.textContent('.tf-status'), '| as an error, above the bar:', await p.evaluate(() => { const s = document.querySelector('.tf-status'); return s.classList.contains('tf-error') && s.getBoundingClientRect().bottom < document.querySelector('.tf-bar').getBoundingClientRect().top; }));
-console.log('Done disabled:', await p.$eval('.tf-button:has-text("Done")', b => b.disabled), '| Pages disabled:', await p.$eval('.tf-button:has-text("Site")', b => b.disabled));
+console.log('Done disabled:', await p.$eval('.tf-button:has-text("Done")', b => b.disabled), '| Pages disabled:', await p.$eval('.tf-pages', b => b.disabled));
 await p.click('h1'); await p.waitForTimeout(100);
 console.log('click edits nothing:', await p.evaluate(() => !document.querySelector('[contenteditable]')));
 await p.hover('p'); await p.waitForTimeout(100);

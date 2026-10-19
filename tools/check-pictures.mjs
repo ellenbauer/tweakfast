@@ -10,7 +10,7 @@ console.log('before: field', await field(), '| alt:', await alt());
 /* a click selects: solid line, the small bar with Describes and Replace; no chooser yet */
 let opened = false; p.on('filechooser', () => { opened = true; });
 await p.click('main img'); await p.waitForTimeout(200);
-console.log('picture clicked: no chooser', !opened, '| line on it:', await p.evaluate(() => { const r = document.querySelector('main img').getBoundingClientRect(), b = document.querySelector('.tf-edit-box').getBoundingClientRect(); return getComputedStyle(document.querySelector('.tf-edit-box')).display === 'block' && Math.abs(b.top - r.top + 3) < 1; }), '| field', await field(), '| shows:', await p.inputValue('.tf-link input'), '| Replace there:', (await p.$$('.tf-link button:has-text("Replace")')).length === 1);
+console.log('picture clicked: no chooser', !opened, '| line on it:', await p.evaluate(() => { const r = document.querySelector('main img').getBoundingClientRect(), b = document.querySelector('.tf-edit-box').getBoundingClientRect(); return getComputedStyle(document.querySelector('.tf-edit-box')).display === 'block' && Math.abs(b.top - r.top) < 1; }), '| field', await field(), '| shows:', await p.inputValue('.tf-link input'), '| Replace there:', (await p.$$('.tf-tools button:has-text("Replace")')).length === 1);
 const [chooser] = await Promise.all([p.waitForEvent('filechooser'), p.click('main img')]); await p.waitForTimeout(200);
 console.log('second click opens the chooser:', !!chooser);
 await p.fill('.tf-link input', 'A cup on the garden table'); await p.keyboard.press('Enter'); await p.waitForTimeout(150);
@@ -19,11 +19,11 @@ await p.click('.tf-button:has-text("Undo")'); await p.waitForTimeout(100);
 console.log('after Undo: alt:', await alt());
 await p.click('main img'); await p.waitForTimeout(200);
 await p.fill('.tf-link input', 'Typed then clicked away'); await p.click('h1'); await p.waitForTimeout(150);
-console.log('click away keeps it: alt:', await alt(), '| field gone', (await field()) === 0, '| line moved to the text:', await p.evaluate(() => { const r = document.querySelector('h1').getBoundingClientRect(), b = document.querySelector('.tf-edit-box').getBoundingClientRect(); return Math.abs(b.top - r.top + 3) < 1; }));
+console.log('click away keeps it: alt:', await alt(), '| field gone', (await field()) === 0, '| line moved to the text:', await p.evaluate(() => { const r = document.querySelector('h1').getBoundingClientRect(), b = document.querySelector('.tf-edit-box').getBoundingClientRect(); return Math.abs(b.top - r.top) < 1; }));
 await p.keyboard.press('Escape');
 /* Replace opens the chooser */
 await p.click('main img'); await p.waitForTimeout(200);
-const [c3] = await Promise.all([p.waitForEvent('filechooser'), p.click('.tf-link button:has-text("Replace")')]); await p.waitForTimeout(200);
+const [c3] = await Promise.all([p.waitForEvent('filechooser'), p.click('.tf-tools button:has-text("Replace")')]); await p.waitForTimeout(200);
 await c3.setFiles(new URL('pic.png', import.meta.url).pathname); await p.waitForTimeout(800);
 console.log('new picture: field', await field(), '| emptied:', (await p.inputValue('.tf-link input')) === '', '| caret in it:', await p.evaluate(() => document.activeElement === document.querySelector('.tf-link input')), '| placeholder says why:', /blind readers/.test(await p.$eval('.tf-link input', i => i.placeholder)), '| src is new:', (await p.$eval('main img', i => i.src)).startsWith('data:'), '| hint:', await p.$eval('.tf-status', s => s.textContent.trim()));
 /* a file dropped from the desktop replaces the picture; the hint is not said again; a drop elsewhere is told */

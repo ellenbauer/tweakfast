@@ -3,6 +3,12 @@ const { chromium } = await import(process.env.TF_PLAYWRIGHT || new URL('../node_
 const b = await chromium.launch({ executablePath: process.env.TF_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true });
 const p = await b.newPage({ viewport: { width: 1100, height: 800 } });
 p.on('pageerror', e => console.log('PAGEERROR', e.message));
+const pickBlock = async (page, sel) => { /* a click on the block itself, off its words and pictures: selected, its toolbar up */
+  const at = await page.$eval(sel, e => { const b = e.getBoundingClientRect(), pr = window.__tweakfastProbe, tries = [[b.width - 6, b.height - 6], [b.width - 6, 6], [6, b.height - 6], [b.width / 2, b.height - 4], [b.width - 4, b.height / 2], [b.width / 2, 4]];
+    for (const [x, y] of tries) { const hit = document.elementFromPoint(b.left + x, b.top + y); if (hit && e.contains(hit) && !pr.textTarget(hit) && !pr.pictureTarget(hit) && !hit.closest('a[href],button,.tf-plus,[data-tweakfast]') && (pr.blockTarget(hit) || e) === e) return { x, y }; }
+    return { x: b.width - 6, y: b.height - 6 }; });
+  await page.click(sel, { position: at }); await page.waitForTimeout(150);
+  if (await page.$eval('.tf-edit-box', e => getComputedStyle(e).display === 'block').catch(() => false)) { await page.keyboard.press('Escape'); await page.waitForTimeout(120); } }; /* a block covered by its picture or words: the click took those; Esc steps out to the block */
 const edit = async (sel, o) => { await p.click(sel, o); await p.waitForTimeout(60); await p.click(sel, o); }; /* one click picks, the second edits */
 const status = () => p.$eval('.tf-status', s => s.textContent.trim());
 await p.goto('http://127.0.0.1:8788/demo/events.html?v=' + Date.now() + '#edit=test'); await p.waitForTimeout(500);
@@ -11,7 +17,7 @@ await edit('h1'); console.log('editing says:', await status());
 await p.keyboard.press('End'); await p.keyboard.type(' A'); await p.keyboard.press('Enter'); await p.waitForTimeout(100);
 const count = () => p.$eval('.tf-count', c => c.style.visibility === 'hidden' ? '-' : c.textContent);
 console.log('one edit, count on Done:', await count(), '| bubble gone at rest:', ['', 'Kept. For a new line, press Shift+Enter while typing.'].includes(await status()) || await p.$eval('.tf-status', s => !s.classList.contains('tf-show')));
-await p.hover('.card:nth-child(3) h3'); await p.waitForTimeout(400); await p.click('.tf-tools button:has-text("Hide")'); await p.waitForTimeout(100);
+await pickBlock(p, '.card:nth-child(3)'); await p.click('.tf-tools button:has-text("Hide")'); await p.waitForTimeout(100);
 await p.click('body', { position: { x: 5, y: 700 } }); await p.waitForTimeout(100);
 console.log('two edits, count on Done:', await count());
 await p.keyboard.press('Meta+z'); await p.waitForTimeout(100);
@@ -37,7 +43,7 @@ console.log('Undo takes it back: h1 has A again:', /A$/.test(await p.$eval('h1',
 await p.click('.tf-button:has-text("Undo")'); await p.waitForTimeout(200); await p.click('.tf-button:has-text("Done")'); await p.waitForTimeout(800);
 const back = await (await fetch('http://127.0.0.1:8788/demo/events.html')).text();
 console.log('Done makes the put-back live: served h1 has A:', /<h1[^>]*>[^<]*A<\/h1>/.test(back), '| undo still there for the next Undo past Done:', await p.$eval('.tf-button:has-text("Undo")', e => !e.disabled));
-await p.click('.tf-button:has-text("Site")'); await p.waitForTimeout(200); await p.keyboard.press('Escape'); await p.waitForTimeout(100);
+if (!(await p.$('.tf-panel:not(.tf-pal):not(.tf-out)'))) { await p.click('.tf-pages'); await p.waitForTimeout(150); } await p.waitForTimeout(200); await p.keyboard.press('Escape'); await p.waitForTimeout(100);
 await p.waitForTimeout(300); /* the panel fades first */ console.log('Esc closes the panel:', (await p.$$('.tf-panel')).length === 0);
 /* Leave: with changes the bubble asks; a click elsewhere stays; Make live and leave saves first; clean, it just leaves */
 await edit('h1'); await p.keyboard.press('End'); await p.keyboard.type(' L'); await p.keyboard.press('Enter'); await p.waitForTimeout(100);

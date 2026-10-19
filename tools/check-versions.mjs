@@ -8,7 +8,7 @@ p.on('pageerror', e => console.log('PAGEERROR', e.message)); p.on('dialog', d =>
 const edit = async (sel, o) => { await p.click(sel, o); await p.waitForTimeout(60); await p.click(sel, o); }; /* one click picks, the second edits */
 const act = async (row, word) => { await p.hover(row); await p.click(row + ' button[title="More"]'); await p.click('.tf-menu button:has-text("' + word + '")'); };
 const status = () => p.$eval('.tf-status', s => s.textContent.trim());
-const openSite = async () => { if (!(await p.$('.tf-panel'))) await p.click('.tf-button:has-text("Site")'); };
+const openSite = async () => { if (!(await p.$('.tf-panel'))) if (!(await p.$('.tf-panel:not(.tf-pal):not(.tf-out)'))) { await p.click('.tf-pages'); await p.waitForTimeout(150); } };
 const count = () => p.$eval('.tf-count', c => c.style.visibility === 'hidden' ? 0 : +c.textContent);
 await p.goto('http://127.0.0.1:8788/demo/events.html?v=' + Date.now() + '#edit=test'); await p.waitForTimeout(500);
 const h1 = () => p.$eval('h1', e => e.textContent);
@@ -27,7 +27,10 @@ await p.click('.tf-versions .tf-row:has-text("The original") button'); await p.w
 await p.click('.tf-button:has-text("Done")'); await p.waitForFunction(() => /Live/.test(document.querySelector('.tf-status').textContent)); await p.waitForTimeout(100);
 const sent = JSON.parse(fs.readFileSync(LOG, 'utf8'));
 console.log('Done makes it live: served h1 is the original:', new RegExp('<h1[^>]*>' + original.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '</h1>').test(sent.files['events.html']), '| clean:', !/data-tf-block|tf-plus|contenteditable/.test(sent.files['events.html']), '| script kept in the file:', /tweakfast\.js/.test(sent.files['events.html']));
-/* another page: from About, a version of Events waits in the changes until Done */
+/* another page: from About, a version of Events waits in the changes until Done; put back again once live, it is no change */
+await p.goto('http://127.0.0.1:8788/demo/events.html?v=' + Date.now()); await p.waitForTimeout(500);
+await edit('main h1'); await p.keyboard.press('Control+A'); await p.keyboard.press('Meta+A'); await p.keyboard.type('V2'); await p.keyboard.press('Enter'); await p.waitForTimeout(400);
+await p.click('.tf-button:has-text("Done")'); await p.waitForFunction(() => /Live/.test(document.querySelector('.tf-status').textContent)); await p.waitForTimeout(100);
 await p.goto('http://127.0.0.1:8788/demo/about.html?v=' + Date.now()); await p.waitForTimeout(500);
 await openSite(); await act('.tf-row:has-text("Events")', 'Versions'); await p.waitForTimeout(400);
 await p.click('.tf-versions .tf-row:has-text("The original") button'); await p.waitForTimeout(500);
@@ -35,6 +38,9 @@ console.log('another page: says:', await status(), '| count', await count(), '| 
 await p.click('.tf-button:has-text("Done")'); await p.waitForFunction(() => /Live/.test(document.querySelector('.tf-status').textContent)); await p.waitForTimeout(100);
 const sent2 = JSON.parse(fs.readFileSync(LOG, 'utf8'));
 console.log('Done wrote it:', Object.keys(sent2.files).join(', '));
+await openSite(); await act('.tf-row:has-text("Events")', 'Versions'); await p.waitForTimeout(400);
+await p.click('.tf-versions .tf-row:has-text("The original") button'); await p.waitForTimeout(500);
+console.log('another page, the original it already is: says:', await status(), '| count', await count());
 /* a page the owner added has no original: it can be removed, out of the menu now, gone for good at Done */
 await openSite(); await p.click('.tf-sheet-head button[title="Add a page"]'); await p.selectOption('.tf-select', 'events.html'); await p.fill('.tf-add .tf-input', 'Zed'); await p.click('.tf-add button:has-text("Add")');
 await p.waitForFunction(() => /Page added/.test(document.querySelector('.tf-status').textContent));

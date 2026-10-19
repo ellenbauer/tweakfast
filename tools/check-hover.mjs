@@ -12,7 +12,7 @@ await p.hover('h1'); await p.waitForTimeout(100); console.log('heading: tag', aw
 /* the line is a box of ours around the element, drawn at once, not an outline a site's transitions could fade in */
 await p.mouse.move(5, 5); await p.waitForTimeout(100); const h = await p.$eval('h1', e => { const r = e.getBoundingClientRect(); return { x: r.left + 10, y: r.top + 10, top: r.top, left: r.left }; });
 await p.mouse.move(h.x, h.y); await p.waitForTimeout(40);
-console.log('line drawn at once, fits the heading:', await p.evaluate(h => { const b = document.querySelector('.tf-hover-box'); if (!b || getComputedStyle(b).display === 'none') return false; const r = b.getBoundingClientRect(); return Math.abs(r.top - (h.top - 3)) < 1 && Math.abs(r.left - (h.left - 3)) < 1 && getComputedStyle(b).transitionDuration === '0s'; }, h));
+console.log('line drawn at once, fits the heading:', await p.evaluate(h => { const b = document.querySelector('.tf-hover-box'); if (!b || getComputedStyle(b).display === 'none') return false; const r = b.getBoundingClientRect(); return Math.abs(r.top - h.top) < 1 && Math.abs(r.left - h.left) < 1 && getComputedStyle(b).transitionDuration === '0s'; }, h));
 await p.hover('main img'); await p.waitForTimeout(100); console.log('picture: tag', await tag(), '| outlined', await outlined());
 await p.hover('main a.button'); await p.waitForTimeout(100); console.log('link in a paragraph: tag', await tag(), '| outlined', await outlined());
 await p.hover('nav a >> nth=1'); await p.waitForTimeout(100); console.log('menu (fixed): tag', await tag(), '| outlined', await outlined());

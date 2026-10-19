@@ -14,7 +14,7 @@ await p.click('.card:nth-child(1) img'); await p.waitForTimeout(100); /* first c
 const [chooser] = await Promise.all([p.waitForEvent('filechooser'), p.click('.card:nth-child(1) img')]);
 await chooser.setFiles(new URL('pic.png', import.meta.url).pathname);
 await p.waitForFunction(() => document.querySelector('.card:nth-child(1) img').src.startsWith('data:'));
-await p.click('.tf-button:has-text("Site")'); await act('.tf-row:has-text("Contact")', 'Hide from the menu');
+if (!(await p.$('.tf-panel:not(.tf-pal):not(.tf-out)'))) { await p.click('.tf-pages'); await p.waitForTimeout(150); } await act('.tf-row:has-text("Contact")', 'Hide from the menu');
 await p.waitForFunction(() => /Hidden from the menu/.test(document.querySelector('.tf-status').textContent));
 await p.click('.tf-button:has-text("Done")');
 await p.waitForFunction(() => /Saved|Live|failed|may not/.test(document.querySelector('.tf-status').textContent));

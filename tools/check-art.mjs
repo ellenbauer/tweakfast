@@ -10,13 +10,13 @@ await p.goto('http://127.0.0.1:8788/tools/check-art.html#edit=test'); await p.wa
 await p.evaluate(async (html) => { await fetch('/api/save', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: 'test', force: true, files: { 'check-art.html': html } }) }); }, fs.readFileSync(new URL('check-art.html', import.meta.url).pathname, 'utf8'));
 await p.goto('http://127.0.0.1:8788/tools/check-art.html?v=' + Date.now() + '#edit=test'); await p.waitForTimeout(400);
 await p.hover('.art'); await p.waitForTimeout(100);
-console.log('hover on the drawn box: line', await p.$eval('.tf-hover-box', e => getComputedStyle(e).display === 'block'), '| pointer', await p.$eval('.art', e => getComputedStyle(e).cursor), '| no tag', await p.$eval('.tf-tag', e => getComputedStyle(e).display === 'none').catch(() => true));
+console.log('hover on the drawn box: line', await p.$eval('.tf-hover-box', e => getComputedStyle(e).display === 'block'), '| pointer', await p.$eval('.art', e => getComputedStyle(e).cursor), '| tag', await p.$eval('.tf-tag', e => getComputedStyle(e).display === 'block' ? e.textContent : 'none').catch(() => 'none'));
 await p.hover('.plain'); await p.waitForTimeout(100);
 console.log('an unpainted box: no line', await p.$eval('.tf-hover-box', e => getComputedStyle(e).display === 'none'));
 await p.click('.art'); await p.waitForTimeout(200);
-console.log('click selects: solid line', await p.$eval('.tf-edit-box', e => getComputedStyle(e).display === 'block'), '| bar: Replace only', await p.$eval('.tf-link', e => e.classList.contains('tf-art') && getComputedStyle(e.querySelector('.tf-input')).display === 'none' && [...e.querySelectorAll('button')].map(x => x.textContent).join() === 'Replace'));
+console.log('click selects: solid line', await p.$eval('.tf-edit-box', e => getComputedStyle(e).display === 'block'), '| toolbar: Replace only, no field', await p.evaluate(() => [...document.querySelectorAll('.tf-tools .tf-button')].filter(b => getComputedStyle(b).display !== 'none').map(b => b.textContent.trim()).join() === 'Replace' && !document.querySelector('.tf-link')));
 const styleBefore = await p.$eval('.art', e => e.getAttribute('style') || ''); /* a second run on the same fake server starts from the saved page */
-const [chooser] = await Promise.all([p.waitForEvent('filechooser'), p.click('.tf-link button:has-text("Replace")')]);
+const [chooser] = await Promise.all([p.waitForEvent('filechooser'), p.click('.tf-tools button:has-text("Replace")')]);
 await chooser.setFiles(new URL('pic.png', import.meta.url).pathname); await p.waitForTimeout(800);
 console.log('photo laid in as a picture over the box:', await p.$eval('.art', e => { const i = e.querySelector('img'); return !!i && i.src.startsWith('data:') && getComputedStyle(i).position === 'absolute' && i.getBoundingClientRect().width === e.getBoundingClientRect().width; }), '| covers the drawing:', await p.evaluate(() => { const e = document.querySelector('.art'), r = e.getBoundingClientRect(); return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2).tagName === 'IMG'; }), '| now selected as a picture, Describes shown:', await p.$eval('.tf-link', e => !e.classList.contains('tf-art')), '| count', await p.$eval('.tf-count', c => c.textContent));
 await p.click('.tf-button:has-text("Undo")'); await p.waitForTimeout(100);
@@ -32,8 +32,8 @@ await p.goto('http://127.0.0.1:8788/tools/check-art.html#edit=test'); await p.wa
 await p.hover('header a.mark'); await p.waitForTimeout(80);
 console.log('svg mark: hover tag', await p.$eval('.tf-tag', t => t.textContent), '| line', await p.$eval('.tf-hover-box', e => getComputedStyle(e).display === 'block'));
 await p.click('header a.mark'); await p.waitForTimeout(150);
-console.log('click selects it, Replace only:', await p.$eval('.tf-link', e => e.classList.contains('tf-art') && [...e.querySelectorAll('button')].map(x => x.textContent).join() === 'Replace'), '| no navigation', /check-art/.test(p.url()));
-const [ch] = await Promise.all([p.waitForEvent('filechooser'), p.click('.tf-link button:has-text("Replace")')]);
+console.log('click selects it, Replace only:', await p.evaluate(() => [...document.querySelectorAll('.tf-tools .tf-button')].filter(b => getComputedStyle(b).display !== 'none').map(b => b.textContent.trim()).join() === 'Replace' && !document.querySelector('.tf-link')), '| no navigation', /check-art/.test(p.url()));
+const [ch] = await Promise.all([p.waitForEvent('filechooser'), p.click('.tf-tools button:has-text("Replace")')]);
 await ch.setFiles(new URL('pic.png', import.meta.url).pathname); await p.waitForTimeout(800);
 console.log('picture in its place:', await p.$eval('header a.mark', a => !a.querySelector('svg') && !!a.querySelector('img') && a.querySelector('img').src.startsWith('data:') && a.querySelector('img').style.width === '120px'), '| said:', await p.$eval('.tf-status', s => s.textContent.trim()));
 await p.click('.tf-button:has-text("Undo")'); await p.waitForTimeout(100);

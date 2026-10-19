@@ -6,6 +6,12 @@ const b = await chromium.launch({ executablePath: process.env.TF_CHROME || '/App
 const ctx = await b.newContext({ viewport: { width: 1100, height: 900 } });
 const p = await ctx.newPage();
 p.on('pageerror', e => console.log('PAGEERROR', e.message));
+const pickBlock = async (page, sel) => { /* a click on the block itself, off its words and pictures: selected, its toolbar up */
+  const at = await page.$eval(sel, e => { const b = e.getBoundingClientRect(), pr = window.__tweakfastProbe, tries = [[b.width - 6, b.height - 6], [b.width - 6, 6], [6, b.height - 6], [b.width / 2, b.height - 4], [b.width - 4, b.height / 2], [b.width / 2, 4]];
+    for (const [x, y] of tries) { const hit = document.elementFromPoint(b.left + x, b.top + y); if (hit && e.contains(hit) && !pr.textTarget(hit) && !pr.pictureTarget(hit) && !hit.closest('a[href],button,.tf-plus,[data-tweakfast]') && (pr.blockTarget(hit) || e) === e) return { x, y }; }
+    return { x: b.width - 6, y: b.height - 6 }; });
+  await page.click(sel, { position: at }); await page.waitForTimeout(150);
+  if (await page.$eval('.tf-edit-box', e => getComputedStyle(e).display === 'block').catch(() => false)) { await page.keyboard.press('Escape'); await page.waitForTimeout(120); } }; /* a block covered by its picture or words: the click took those; Esc steps out to the block */
 p.on('dialog', d => d.accept());
 await p.addInitScript(() => { /* how many page listeners are bound: must not grow */
   window.__L = 0; const o = EventTarget.prototype.addEventListener;
@@ -22,7 +28,7 @@ const S = 'http://127.0.0.1:8788/demo/';
 await p.goto(S + 'index.html#edit=test'); await p.waitForTimeout(500);
 await p.evaluate(() => document.querySelector('header').addEventListener('click', () => { window.__site = (window.__site || 0) + 1; }));
 const first = await order();
-await p.hover('main > section:nth-of-type(1)'); await p.waitForTimeout(150);
+await pickBlock(p, 'main > section:nth-of-type(1)');
 await p.click('.tf-tools button[title^="Move down"]'); await p.waitForTimeout(200);
 await p.click('.tf-tools button[title^="Copy"]'); await p.waitForTimeout(200);
 await p.keyboard.press('Escape');
@@ -54,7 +60,7 @@ console.log('one Undo for words and address:', await href());
 /* 4 Tab from the last text keeps the place; Done can be pressed while the first change is typed */
 await p.goto(S + 'about.html#edit=test'); await p.waitForTimeout(500);
 await edit('footer p'); await p.keyboard.press('Tab'); await p.waitForTimeout(100);
-console.log('Tab at the end: still picked:', await p.$eval('.tf-edit-box', e => e.style.display !== 'none'), '| typing over:', await p.$$eval('[contenteditable]', e => e.length) === 0);
+console.log('Tab at the end: the block stays selected:', await p.$eval('.tf-block-box', e => getComputedStyle(e).display === 'block'), '| typing over:', await p.$$eval('[contenteditable]', e => e.length) === 0);
 await p.keyboard.press('Escape');
 await edit('main h1'); await p.keyboard.type('x');
 console.log('Done while the first change is typed:', !(await p.locator('.tf-button:has-text("Done")').isDisabled()));
@@ -62,12 +68,12 @@ await p.keyboard.press('Escape');
 
 /* 5 the last of a group stays: the plus makes more from it */
 await p.goto(S + 'events.html#edit=test'); await p.waitForTimeout(500);
-for (let i = 0; i < 3; i++) { await p.hover('.card >> nth=0'); await p.waitForTimeout(150); await p.click('.tf-tools button[title="Remove"]'); await p.waitForTimeout(150); }
+for (let i = 0; i < 3; i++) { await pickBlock(p, '.card >> nth=0'); await p.click('.tf-tools button[title="Remove"]'); await p.waitForTimeout(150); }
 console.log('last card kept:', await p.$$eval('.card', c => c.length), '|', await say());
 
 /* 6 pages: a rename to a name in use is refused; Add a page is one Undo; a file outside the menu is never written over */
 await p.goto(S + 'index.html#edit=test'); await p.waitForTimeout(500);
-await p.click('.tf-button:has-text("Site")');
+if (!(await p.$('.tf-panel:not(.tf-pal):not(.tf-out)'))) { await p.click('.tf-pages'); await p.waitForTimeout(150); }
 await act('.tf-row:has-text("About")', 'Rename'); await p.keyboard.press('Meta+a'); await p.keyboard.type('events'); await p.keyboard.press('Enter'); await p.waitForTimeout(300);
 console.log('rename to a name in use:', await say(), '| About still there:', await p.locator('.tf-row:has-text("About")').count());
 await p.click('.tf-sheet-head button[title="Add a page"]'); await p.selectOption('.tf-select', 'events.html');
@@ -81,7 +87,7 @@ await p.fill('.tf-add .tf-input', 'Rules'); await p.click('.tf-add button:has-te
 console.log('a file outside the menu:', await say(), '| count', await count());
 
 /* 7 Esc from the palette goes back to the sheet */
-if (!(await p.locator('.tf-panel:not(.tf-pal):not(.tf-out)').count())) await p.click('.tf-button:has-text("Site")');
+if (!(await p.locator('.tf-panel:not(.tf-pal):not(.tf-out)').count())) { if (!(await p.$('.tf-panel:not(.tf-pal):not(.tf-out)'))) { await p.click('.tf-pages'); await p.waitForTimeout(150); } }
 await p.keyboard.press('Meta+k'); await p.waitForTimeout(300); await p.keyboard.press('Escape'); await p.waitForTimeout(300);
 console.log('Esc from the palette: sheet back:', await p.locator('.tf-panel:not(.tf-pal):not(.tf-out)').count() === 1, '| focus in it:', await p.evaluate(() => !!document.activeElement.closest('.tf-panel')));
 await p.waitForTimeout(300);

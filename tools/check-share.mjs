@@ -8,7 +8,7 @@ const p = await ctx.newPage();
 p.on('pageerror', e => console.log('PAGEERROR', e.message));
 await p.goto('http://127.0.0.1:' + PORT + '/demo/index.html?v=' + Date.now() + '#edit=test'); await p.waitForTimeout(500);
 await p.click('.tf-button:has-text("Got it")').catch(() => {});
-await p.click('.tf-bar .tf-button:has-text("Site")'); await p.waitForTimeout(300);
+if (!(await p.$('.tf-panel:not(.tf-pal):not(.tf-out)'))) { await p.click('.tf-pages'); await p.waitForTimeout(150); } await p.waitForTimeout(300);
 console.log('head buttons:', await p.$$eval('.tf-sheet-head button', bs => bs.map(x => x.getAttribute('aria-label')).join(',')));
 await p.click('.tf-sheet-head button[aria-label="Share the site"]'); await p.waitForTimeout(300);
 const addr = await p.inputValue('.tf-share-line input');

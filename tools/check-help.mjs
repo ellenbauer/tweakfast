@@ -6,7 +6,7 @@ const p = await b.newPage({ viewport: { width: 1100, height: 900 } });
 p.on('pageerror', e => console.log('PAGEERROR', e.message));
 await p.goto('http://127.0.0.1:' + PORT + '/demo/index.html?v=' + Date.now() + '#edit=test'); await p.waitForTimeout(500);
 await p.click('.tf-button:has-text("Got it")').catch(() => {});
-await p.click('.tf-bar .tf-button:has-text("Site")'); await p.waitForTimeout(300);
+if (!(await p.$('.tf-panel:not(.tf-pal):not(.tf-out)'))) { await p.click('.tf-pages'); await p.waitForTimeout(150); } await p.waitForTimeout(300);
 console.log('head buttons:', await p.$$eval('.tf-sheet-head button', bs => bs.map(x => x.getAttribute('aria-label')).join(',')));
 await p.click('.tf-sheet-head button[aria-label="Help"]'); await p.waitForTimeout(400);
 console.log('help title:', await p.$eval('.tf-panel-title', e => e.textContent), '| sections:', await p.$$eval('.tf-panel .tf-help-title', cs => cs.map(c => c.textContent).join(', ')));
