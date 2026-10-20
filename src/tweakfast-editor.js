@@ -694,7 +694,7 @@
         var par = t.parentElement, pcs = getComputedStyle(par), col = par.clientWidth - (parseFloat(pcs.paddingLeft) || 0) - (parseFloat(pcs.paddingRight) || 0);
         /* one line in a box of its own width (narrower than its column, a pill): it widens; a line as wide as the column only wraps */
         var bx = t.getBoundingClientRect();
-        size = { ow: bx.width, w: t.offsetWidth, h: t.offsetHeight, tw: w.width, th: w.height, gl: Math.max(0, w.left - bx.left), gr: Math.max(0, bx.right - w.right), one: Object.keys(tops).length <= 1 && t.offsetWidth < col - 1, sx: t.scrollWidth - t.clientWidth, sy: t.scrollHeight - t.clientHeight, touched: [], holders: [] };
+        size = { ow: bx.width, w: t.offsetWidth, h: t.offsetHeight, tw: w.width, th: w.height, gl: Math.max(0, w.left - bx.left), gr: Math.max(0, bx.right - w.right), gt: Math.max(0, w.top - bx.top), gb: Math.max(0, bx.bottom - w.bottom), one: Object.keys(tops).length <= 1 && t.offsetWidth < col - 1, sx: t.scrollWidth - t.clientWidth, sy: t.scrollHeight - t.clientHeight, touched: [], holders: [] };
         /* the boxes holding the words, up to the page: how far each already spilled as made (a picture set past its edge,
            a picture breathing), so only spilling more than that is the words' doing */
         for (var n = t.parentElement; n && n !== document.body; n = n.parentElement) {
@@ -724,8 +724,10 @@
             if (t.scrollWidth - t.clientWidth > size.sx + 1 && getComputedStyle(t).overflowWrap === 'normal') s.overflowWrap = 'anywhere';
             if (!size.down && spills(t, size)) { /* then downwards */
                 size.down = true;
-                var above = Math.max(parseFloat(cs.paddingTop) || 0, (size.h - size.th) / 2);
-                s.height = 'auto'; s.minHeight = size.h + 'px'; s.paddingTop = s.paddingBottom = above + 'px';
+                /* the words keep the room they had above them; below them the same room, never more. Words centred in a
+                   pill keep their even room; words set at the top of a box made tall (a quote box) get none added */
+                var above = Math.max(parseFloat(cs.paddingTop) || 0, size.gt), below = Math.max(parseFloat(cs.paddingBottom) || 0, Math.min(size.gb, above));
+                s.height = 'auto'; s.minHeight = size.h + 'px'; s.paddingTop = above + 'px'; s.paddingBottom = below + 'px';
             }
         }
         /* one word wider than its column, where the column gives way instead (a grid or flex column sized by its longest

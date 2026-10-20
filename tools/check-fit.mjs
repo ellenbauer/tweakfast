@@ -44,4 +44,11 @@ const keptCol = await split(); console.log('kept: column kept', keptCol.col === 
 await p.click('.tf-bar >> text=Undo'); await p.waitForTimeout(120); console.log('Undo: heading as made', await p.$eval('.col', n => !n.getAttribute('style')));
 await p.click('.col'); await p.waitForTimeout(60); await p.click('.col'); await p.waitForTimeout(60); await p.keyboard.press('End'); await p.keyboard.type(' and tea'); await p.keyboard.press('Enter'); await p.waitForTimeout(80);
 console.log('words with spaces: no break rule added', await p.$eval('.col', n => getComputedStyle(n).overflowWrap !== 'anywhere'));
+/* words at the top of a box made tall (a quote box with room to spare): grown, they keep no room above them, and get no more room below */
+const qgap = () => p.$eval('.qt', t => { const r = t.getBoundingClientRect(), rg = document.createRange(); rg.selectNodeContents(t); const w = rg.getBoundingClientRect(); return { top: Math.round(w.top - r.top), bottom: Math.round(r.bottom - w.bottom), h: Math.round(r.height) }; });
+const qMade = await qgap();
+await edit('.qt'); for (let i = 0; i < 3; i++) await p.keyboard.type(' Let your customers review you and tell their friends how great you are, again and again.');
+const qGrown = await qgap();
+console.log('quote box grown: no room added above', Math.abs(qGrown.top - qMade.top) <= 1, '| no room added below', qGrown.bottom <= qMade.top + 2, /* a pixel of line-height rounding */ '| taller', qGrown.h > qMade.h);
+await p.keyboard.press('Escape'); await p.waitForTimeout(80); console.log('Esc: quote box as made', await p.$eval('.qt', n => !n.getAttribute('style')));
 await b.close();
