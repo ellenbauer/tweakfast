@@ -1,4 +1,4 @@
-# Tweakfast
+<h1><picture><source media="(prefers-color-scheme: dark)" srcset="brand/tweakfast-dark.svg"><img src="brand/tweakfast-light.svg" alt="Tweakfast" height="40"></picture></h1>
 
 Edit a plain HTML site by clicking on it. The owner changes words, pictures, blocks and pages right where they see them, presses Done, and it's live. No login, nothing to install for them.
 
