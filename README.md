@@ -1,5 +1,22 @@
 # Tweakfast
 
+Edit a plain HTML site by clicking on it. The owner changes words, pictures, blocks and pages right where they see them, presses Done, and it's live. No login, nothing to install for them.
+
+Website: [tweakfast.com](https://tweakfast.com) · [Try it on a demo site](https://try-tweakfast.space.fast/#edit=try-it)
+
+## Start
+
+```
+npm i -g spacefast && sf login
+npx github:ellenbauer/tweakfast site.zip
+```
+
+The second line puts the site on [Spacefast](https://spacefast.com) with the editor built in and prints the owner's link. A site folder works too. Run it again to publish changes; the owner's edits stay. More in [site/SETUP.md](site/SETUP.md).
+
+Building the site with an AI tool? Give it [site/RULES.md](site/RULES.md), one screen on how to write pages the owner can edit.
+
+## How it's built
+
 One script line on a plain HTML site. The owner keeps the site current by clicking.
 
 - `src/tweakfast.js`: the one line every page loads, a loader of a few hundred bytes. It fetches `src/tweakfast-editor.js`, the editor, only when the address carries `#edit=` or this browser keeps a key. On a page left without scripts of its own it also fetches `src/tweakfast-mend.js`, which mends what the cleaning took away: the pointer, a Menu button (opens the menu's links where they are hidden, steps aside where they show), a part that slid sideways as the page scrolled (its steps one under another), and other buttons with nothing left to do (hidden for readers).

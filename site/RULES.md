@@ -43,4 +43,4 @@ Nothing else. No new colours, fonts, sizes or kinds of blocks: the owner only pi
 
 ## Check your work
 
-Open any page with `#edit=test` and move the mouse over it: a thin line shows what the owner can change, with a tag where the eye cannot tell (Link, Picture), a block shows its tools at its top right, and fixed parts show nothing. Fix the markup until it shows what you meant. Then publish with `tools/tweakfast <site folder>`; it prints the owner's link. It takes out any scripts and badges a tool attached, so the site needs none of its own. Setup for the maker is in SETUP.md.
+Open any page with `#edit=test` and move the mouse over it: a thin line shows what the owner can change, with a tag where the eye cannot tell (Link, Picture), a block shows its tools at its top right, and fixed parts show nothing. Fix the markup until it shows what you meant. Then publish with `npx github:ellenbauer/tweakfast <site folder>`; it prints the owner's link. It takes out any scripts and badges a tool attached, so the site needs none of its own. Setup for the maker is in SETUP.md.
