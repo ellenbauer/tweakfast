@@ -142,7 +142,17 @@
     /* ---- nothing is lost ----
        What is not live yet is kept in this browser as it is made: a tab closed, a reload, a crash, and the next visit
        brings it back as one change, said so, with a way to throw it away. Done, Undo and Leave anyway end it; going to another page of the site carries it along quietly. */
-    var DRAFT = 'tweakfast:draft', draftTimer = 0, carrying = false;
+    var DRAFT = 'tweakfast:draft', draftTimer = 0, carrying = false, brought = null;
+    /* a demo keeps no draft: it saves nothing, its visitors share one browser at a kiosk, and the site behind its address
+       may be another one tomorrow (a draft of one site laid on another). Known from the site's answer, and remembered
+       here so the next visit skips the draft before the answer comes */
+    function demoHere() { try { return localStorage.getItem('tweakfast:demo') === '1'; } catch (e) { return false; } }
+    function forgetDraft() {
+        try { localStorage.removeItem(DRAFT); } catch (e) {}
+        if (!brought) return;
+        var i = steps.lastIndexOf(brought); brought = null;
+        if (i >= 0) { if (i === steps.length - 1) undo(); else undoOne(i); say(''); }
+    }
     var TAB = (function () { try { var t = sessionStorage.getItem('tweakfast:tab'); if (!t) { t = Math.random().toString(36).slice(2); sessionStorage.setItem('tweakfast:tab', t); } return t; } catch (e) { return ''; } })();
     /* going to another page of the site in this tab: the changes are kept for it, and it carries on with them quietly */
     function carry() { carrying = true; keepDraft(); try { sessionStorage.setItem('tweakfast:carry', '1'); } catch (e) {} }
@@ -150,6 +160,7 @@
     function keepDraft() {
         clearTimeout(draftTimer);
         if (!bar || locked) return;
+        if (demo || demoHere()) { try { localStorage.removeItem(DRAFT); } catch (e) {} return; }
         try {
             var typing = editing && editing.innerHTML !== before ? 1 : 0; /* words being typed, not yet kept, count too */
             if (!steps.length && !typing) { /* only this tab's own: another tab's unsaved work stays */
@@ -163,6 +174,7 @@
         } catch (e) { once('draftfull', 'These changes are too large to keep if this tab closes. Press Done to be safe.'); }
     }
     function bringBack() {
+        if (demoHere()) { try { localStorage.removeItem(DRAFT); } catch (e) {} return; }
         var d, carried = false; try { d = JSON.parse(localStorage.getItem(DRAFT) || 'null'); carried = !!sessionStorage.getItem('tweakfast:carry'); sessionStorage.removeItem('tweakfast:carry'); } catch (e) { d = null; }
         if (!d || !d.pages || (!Object.keys(d.pages).length && !(d.drops || []).length)) return;
         var now = snapshot(), wasUpdated = pageUpdated, wasDrops = copy(drops), wasFresh = copy(freshPages), path;
@@ -175,7 +187,7 @@
         (d.drops || []).forEach(function (x) { drops[x] = true; });
         (d.fresh || []).forEach(function (x) { freshPages[x] = true; });
         var mine = function () { restore(now); pageUpdated = wasUpdated; drops = wasDrops; freshPages = wasFresh; };
-        steps.push(mine);
+        steps.push(mine); brought = mine;
         refresh();
         if (carried && d.tab === TAB) return; /* came along from the page before: the count on Done says it */
         /* they come back as one step (one Undo, one row, 1 on Done), so the words name no other number */
@@ -3278,7 +3290,10 @@
         fetch('/api/check', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: key }), cache: 'no-store' }).then(function (r) {
             if (r.status === 403) r.json().then(function (j) { lock(j && j.message); }, function () { lock(); });
             else if (r.status === 503) r.json().then(function (j) { if (j && /not set up/i.test(j.message || '')) lock(j.message + ' Ask the person who set up the site.'); }, function () {}); /* no key stored on the site: nothing could be saved */
-            else if (r.ok) r.json().then(function (j) { if (j && j.demo) { demo = true; if (card) { fade(card); card = null; placeNote(); } } }, function () {}); /* "Bookmark this page" is not true of a demo */
+            else if (r.ok) r.json().then(function (j) {
+                if (j && j.demo) { demo = true; try { localStorage.setItem('tweakfast:demo', '1'); } catch (e) {} forgetDraft(); if (card) { fade(card); card = null; placeNote(); } } /* "Bookmark this page" is not true of a demo */
+                else { try { localStorage.removeItem('tweakfast:demo'); } catch (e) {} }
+            }, function () {});
         }, function () {});
     }
     var panel = null;
