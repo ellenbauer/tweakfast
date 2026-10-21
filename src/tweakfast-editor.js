@@ -3648,7 +3648,7 @@
                 var sw = el('button', 'tf-item tf-swatch-row'); sw.setAttribute('role', 'menuitem');
                 var name_ = it.word.charAt(0).toUpperCase() + it.word.slice(1), labelled = it.swatch.see || it.swatch.picture, chip = el('span', 'tf-swatch', labelled ? '' : name_);
                 if (it.swatch.see) { chip.className += ' tf-swatch-see'; if (/url\(/.test(it.swatch.see)) chip.style.background = it.swatch.see; else chip.style.backgroundColor = it.swatch.see; chip.appendChild(el('span', 'tf-swatch-name', name_)); } /* see-through: the colour under it now, a corner cut off to say it is borrowed; its name on a small white label, so it reads on anything */
-                else if (it.swatch.picture) { chip.className += ' tf-swatch-pic'; chip.style.backgroundImage = it.swatch.picture; chip.appendChild(el('span', 'tf-swatch-name', name_)); } /* the photo itself, its name on the same label */
+                else if (it.swatch.picture) { chip.className += ' tf-swatch-pic'; chip.style.background = it.swatch.picture; chip.appendChild(el('span', 'tf-swatch-name', name_)); } /* the photo itself, its name on the same label */
                 else { chip.style.background = it.swatch.ground; chip.style.color = it.swatch.ink; }
                 sw.appendChild(chip);
                 sw.type = 'button'; if (it.now) { var tk = el('span', 'tf-swatch-tick'); tk.innerHTML = ICON.check; chip.appendChild(tk); sw.setAttribute('aria-current', 'true'); }

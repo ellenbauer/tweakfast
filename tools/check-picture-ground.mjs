@@ -19,7 +19,7 @@ const take = async word => { await p.click('.tf-menu .tf-item:has-text("' + word
 await pick('.hero', 60, 200);
 const was = await state('.hero');
 console.log('hero picked: buttons', await buttons(), '| picture showing', was.img === 'visible', 'no tint', !was.tint);
-let list = await open(); console.log('menu:', list.join(' '), '| Picture first and ticked', list[0] === 'now:picture');
+let list = await open(); console.log('menu:', list.join(' '), '| Picture first and ticked', list[0] === 'now:picture', '| its strip is the photo', await p.$eval('.tf-menu .tf-swatch-pic', c => /father-and-son/.test(getComputedStyle(c).backgroundImage)));
 await take('Light');
 let now = await state('.hero');
 console.log('Light: photo away', now.img === 'hidden', '| room kept', now.h === was.h, '(' + was.h + ')', '| ground', now.bg, '| away in tint', now.away, '| buttons', await buttons());
