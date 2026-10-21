@@ -481,7 +481,7 @@
         if (panel) closePages(); if (pal) closePal();
         if (editing && editing.contains(e.target)) { if (editing.closest('button')) e.preventDefault(); return; } /* a click in a button's words places the caret; it never sends the form */
         if (editing) commit();
-        if (tools && !textTarget(e.target)) { var blk = toolAt(e.target, e.clientY); if (blk) showTools(blk); else hideTools(); } /* a tap works where there is no hover */
+        if (tools && !textTarget(e.target)) { var blk = toolAt(e.target, e.clientY); if (blk) showTools(blk, true); else hideTools(); } /* a tap works where there is no hover */
         var link = e.target.closest('a[href]');
         if (link && freshPages[link.getAttribute('href')] && !editing && !held) {
             e.preventDefault(); e.stopPropagation();
@@ -503,7 +503,7 @@
     function hold(t) {
         hoverNone(); if (picked) unpick();
         held = t; if (editBox && !editing && !picked) editBox.style.display = 'none'; /* Enter edits it again, Tab moves on; the eye sees its block selected, its toolbar up */
-        var b = toolTarget(t); if (tools) { if (b) showTools(b); else hideTools(); }
+        var b = toolTarget(t); if (tools) { if (b) showTools(b, true); else hideTools(); }
     }
     function unhold() { held = null; if (editBox && !editing && !picked) editBox.style.display = 'none'; giveRoom(); }
     /* a click on a fixed part (header, menu, footer) is answered once per visit; links there still work */
@@ -595,7 +595,7 @@
         t.setAttribute('contenteditable', 'true');
         t.classList.add('tf-editing');
         if (picked) unpick();
-        if (tools) { var bk = toolTarget(t); if (bk) showTools(bk); else hideTools(); } /* the block's tools stay in reach, beside the words, never on them */
+        if (tools) { var bk = toolTarget(t); if (bk) showTools(bk, true); else hideTools(); } /* the block's tools stay in reach, beside the words, never on them */
         showEditBox();
         clearBar(t);
         t.focus();
@@ -1242,7 +1242,7 @@
     var picked = null;
     function pick(img) {
         hoverNone(); picked = img; showEditBox(); clearBar(img);
-        if (tools) { var bk = toolTarget(img); if (bk) showTools(bk); else hideTools(); } /* the toolbar first: the Describes field hangs from it */
+        if (tools) { var bk = toolTarget(img); if (bk) showTools(bk, true); else hideTools(); } /* the toolbar first: the Describes field hangs from it */
         showAlt(img);
         if (isArt(img) && img.tagName !== 'svg' && drawnWords(img)) once('drawn', 'The words on this box are drawn by the site\'s style and cannot be changed here. A photo covers them.');
     }
@@ -1796,10 +1796,11 @@
         var any = Array.prototype.some.call(tools.querySelectorAll(':scope > .tf-button'), function (b) { return b.style.display !== 'none'; });
         nameTile.nextElementSibling.style.display = any ? '' : 'none';
     }
-    function showTools(block) {
+    /* now: a click, so the Colour is worked out at once; a hover may wait until the pointer rests */
+    function showTools(block, now) {
         if (!block || !block.isConnected) { hideTools(); return; }
         /* the header or a footer itself: it stays where it is, on every page; only its Look */
-        var part = !block.hasAttribute('data-tf-block'), ch = part ? choicesFor(block) : lookKnown(block);
+        var part = !block.hasAttribute('data-tf-block'), ch = part ? choicesFor(block) : lookKnown(block, now);
         if (part && !ch) { hideTools(); return; }
         toolsFor = block;
         /* words or a picture inside the block are the thing: the toolbar names them and carries only what is theirs */
@@ -1810,7 +1811,7 @@
         blockOnly.forEach(function (n) { n.style.display = part || inner ? 'none' : ''; });
         tools.classList.toggle('tf-less', !coarse());
         replaceBtn.style.display = (inner || ground) && on === picked ? '' : 'none'; altBtn.style.display = ALT_ON && (inner || ground) && on === picked && !isArt(on) ? '' : 'none'; /* a drawn box has no words to describe */
-        if (inner) { lookBtn.style.display = on === editing && isButton(on) && choicesFor(on) ? '' : 'none'; swapBtn.style.display = 'none'; }
+        if (inner) { var onBtn = on === editing && isButton(on); lookShow(onBtn ? choicesFor(on) : null, onBtn ? offWhy : ''); swapBtn.style.display = 'none'; }
         sepSync();
         if (inner) { clearTimeout(lookTimer); tools.style.display = 'flex'; placeTools(); return; }
         var hidden = block.hasAttribute('data-tf-hidden'); relabel(hideBtn, hidden ? 'eye' : 'eyeOff', hidden ? 'Show' : 'Hide');
@@ -1823,13 +1824,13 @@
             relabel(upBtn, backLeft ? 'left' : 'right', backLeft ? 'Move left' : 'Move right'); relabel(downBtn, backLeft ? 'right' : 'left', backLeft ? 'Move right' : 'Move left');
         }
         swapBtn.style.display = !part && twoSides(block) ? '' : 'none';
-        lookBtn.style.display = ch ? '' : 'none';
+        lookShow(ch, ch === undefined ? '' : lookWhy(block));
         tools.style.display = 'flex';
         placeTools();
         clearTimeout(lookTimer);
         if (ch === undefined) lookTimer = setTimeout(function () { /* not yet known: worked out once the pointer rests, so a pass over many cards stays smooth */
             if (toolsFor !== block || !block.isConnected) return;
-            lookBtn.style.display = lookKnown(block, true) ? '' : 'none'; placeTools();
+            lookShow(lookKnown(block, true), lookWhy(block)); placeTools();
         }, coarse() ? 0 : 120);
     }
     /* whether a block has a Look, remembered until the next change; undefined when not yet worked out and not asked to */
@@ -1837,7 +1838,18 @@
     function lookKnown(block, work) {
         if (block._tfLook && block._tfLook.at === era) return block._tfLook.has;
         if (!work) return undefined;
-        var has = !!choicesFor(block); block._tfLook = { at: era, has: has }; return has;
+        var has = !!choicesFor(block); block._tfLook = { at: era, has: has, why: has ? '' : offWhy }; return has;
+    }
+    function lookWhy(block) { return block._tfLook && block._tfLook.at === era ? block._tfLook.why : ''; }
+    /* the Colour button: there when the block has colours to choose; greyed, with the reason on hover, when it is the
+       kind of thing that takes a colour (a section, a card, a button) but this site has none to give it right now, the
+       Mac way, so the owner learns the rule instead of guessing; away when a colour there would make no sense at all */
+    function lookShow(ch, why) {
+        var off = !ch && !!why;
+        lookBtn.style.display = ch || off ? '' : 'none';
+        lookBtn.classList.toggle('tf-off', off);
+        if (off) lookBtn.setAttribute('aria-disabled', 'true'); else lookBtn.removeAttribute('aria-disabled');
+        tip(lookBtn, off ? why : '');
     }
     var blockBox = null, toolsHover = false;
     function hideTools() { toolsFor = null; tools.style.display = 'none'; if (blockBox) blockBox.style.display = 'none'; hidePlusUnder(null); }
@@ -2002,10 +2014,12 @@
         return g;
     }
     /* what Look offers for the block under the tools: a button's looks, or the block's grounds */
+    var offWhy = ''; /* after choicesFor said no: why, when the block is one that could have had a Colour; '' when it never could */
     function choicesFor(block) {
+        offWhy = '';
         if (!block) return null;
         var list;
-        if (isButton(block)) { list = still(function () { return looks(block); }); return list.length > 1 ? { t: block, list: list } : null; }
+        if (isButton(block)) { list = still(function () { return looks(block); }); if (list.length > 1) return { t: block, list: list }; offWhy = 'This page has only one kind of button.'; return null; }
         if (!block.getClientRects().length || block.matches('li,tr,td,th,dt,dd')) return null;
         var big = isBig(block);
         /* a small part with no ground of its own (a picture with words under it, on the section's ground) is not a card:
@@ -2021,8 +2035,20 @@
         else sides = covered(block) ? coverParts(block) : [{ part: block }];
         /* a Look with nothing to offer is not there at all (a section whose ground is its picture, or one ground only):
            a button that only says no is noise */
+        var had = sides;
         sides = sides.filter(function (s) { return groundRows(s.part).some(function (r) { return !r.off && !r.o.now; }); }); /* only the one it has: nothing to choose either */
-        return sides.length ? { t: block, sides: sides } : null;
+        if (sides.length) return { t: block, sides: sides };
+        offWhy = had.length ? groundWhy(had[0].part) : 'This part cannot take another background.';
+        return null;
+    }
+    /* why a part that takes a colour has none to take here: its ground is a picture, the site's other backgrounds
+       would not read or would move things, or the site has one background only */
+    function groundWhy(part) {
+        if (grounds(part).picture) return PICTURE_GROUND;
+        var offs = groundRows(part).map(function (r) { return r.off; });
+        if (offs.indexOf(WHY.read) >= 0) return 'Some words would be hard to read on the site\u2019s other backgrounds.';
+        if (offs.indexOf(WHY.move) >= 0) return 'The site\u2019s other backgrounds would move things here.';
+        return 'This site has only one background.';
     }
     /* the parts straight inside a block that draw a ground of their own, all one colour, the biggest first; else null */
     function groundedKids(b) {
@@ -2035,7 +2061,7 @@
     function isBig(b) { var d = b.ownerDocument, m = d.querySelector('main'); return !!(b.parentElement && (b.parentElement.matches('main') || m && b.parentElement === sectionsIn(m)) || b.matches('section,header,footer') || sharedParts(d).indexOf(b) >= 0 || onPicture(b)); }
     function openLooks() {
         hideLink();
-        var b = editing && isButton(editing) && toolsFor !== editing ? editing : toolsFor, ch = choicesFor(b); if (!ch) { lookBtn.style.display = 'none'; return; }
+        var b = editing && isButton(editing) && toolsFor !== editing ? editing : toolsFor, ch = choicesFor(b); if (!ch) { lookShow(null, offWhy); return; }
         var t = ch.t;
         var wordsOf = function (n) { var w = (n || t).textContent.replace(/\s+/g, ' ').trim(); return !w ? 'Aa' : w.length > 26 ? w.slice(0, 24).trim() + '\u2026' : w; };
         if (!ch.sides) {
@@ -2048,13 +2074,13 @@
             if (s.label) { if (n) items.push('gap'); items.push({ label: s.label }); }
             var rows = groundRows(s.part).filter(function (r) { return !r.off; });
             if (!rows.length) items.push({ note: grounds(s.part).picture ? PICTURE_GROUND : 'This part cannot take another background.' });
-            rows.forEach(function (r) { items.push(swatchItem(r, function (o) { takeGround(s.part, o, t, s.also); })); });
+            rows.forEach(function (r) { items.push(swatchItem(r, function (o) { takeGround(s.part, o, t, s.also); })); if (r.note) items.push({ note: r.note }); });
         });
         openMenu(lookBtn, items);
     }
     /* only what can be had and looks different is offered: a row that cannot be had here is left out */
     function swatchItem(r, take) {
-        var sw = r.word === 'clear' ? { clear: true } : { ground: r.o.ground, ink: nameInk(r.o.ground, r.o.look.color) }; /* clear: the see-through grid of a colour picker, not the picture under it */
+        var sw = r.word === 'see-through' ? { see: r.behind } : { ground: r.o.ground, ink: nameInk(r.o.ground, r.o.look.color) }; /* see-through: what is under the part right now, borrowed */
         return { swatch: sw, word: r.word, now: r.o.now, fn: r.o.now ? function () {} : function () { take(r.o); } };
     }
     /* the row's name is written in the words' colour on that ground; where the part has no words to judge it by (a
@@ -2067,7 +2093,7 @@
     /* the Look of a ground is the same four rows everywhere: light, dark, accent and inverted. A row that cannot be had
        here stays, greyed, and says why. Each of the first three is the site's own: the ground the block has now, else
        the one it came with, else the first that keeps every word readable. A part that came see-through over a picture
-       has one more row before them, clear: the way it came, the picture showing through. */
+       has one more row before them, see-through: the way it came, the page showing through. */
     var KINDS = ['light', 'dark', 'accent']; /* accent: the site's own colour as a background; it names where the colour comes from and asks for no partner the way Light asks for Dark */
     function kindOf(bg) {
         var c = rgbOf(bg); if (!c || c.a === 0) return null;
@@ -2097,7 +2123,7 @@
         var twin = f && f.ok && rows.filter(function (r) { return r.o && (alike(r.o, f) || sameByEye(r.o, f) || bare && groundAlike(r.o, f)); })[0]; /* swapped, it is a row already there */
         rows.push(twin ? { word: 'inverted', off: 'Same as ' + twin.word + ' here.' } : f && f.ok ? { o: f, word: 'inverted' } : { word: 'inverted', off: f ? WHY[f.why] : list.flipWhy || 'The background here is a picture.' });
         var see = list.filter(function (o) { return o.orig && o.ok && (o.see || o.plain && !rgbOf(o.ground)); })[0];
-        if (see) rows.unshift({ o: see, word: 'clear' });
+        if (see) rows.unshift({ o: see, word: 'see-through', behind: colourBehind(b) || see.ground, note: 'The page shows through this ' + (b.closest('header') ? 'header' : 'part') + '.' }); /* its swatch: what is under it right now, borrowed (a corner cut off says so), and a line under the row says why */
         return rows;
     }
     /* the parts that cover a block's ground, named by where they sit */
@@ -2190,6 +2216,26 @@
             }
         });
         return hits >= 3 ? pic : null;
+    }
+    /* the colour under a see-through part right now (a fixed header over whatever is scrolled beneath it): the same
+       five points as pictureBehind, the first colour that is not see-through under each, the one seen most; null when
+       a picture is under it (pictureBehind has that) or nothing opaque is found */
+    function colourBehind(b) {
+        var r = b.getBoundingClientRect(), count = {}, best = null;
+        if (!r.width || !r.height) return null;
+        [[.5, .5], [.15, .3], [.85, .3], [.15, .7], [.85, .7]].forEach(function (f) {
+            var x = r.left + r.width * f[0], y = r.top + r.height * f[1];
+            if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return;
+            var under = document.elementsFromPoint(x, y);
+            for (var i = 0; i < under.length; i++) {
+                var n = under[i];
+                if (n === b || b.contains(n) || n.closest('[data-tweakfast]')) continue;
+                var ns = getComputedStyle(n);
+                if (n.tagName === 'IMG' && n.currentSrc || /url\(/.test(ns.backgroundImage)) return;
+                if (opaque(ns.backgroundColor)) { var k = same(ns.backgroundColor); count[k] = (count[k] || 0) + 1; if (!best || count[k] > count[best]) best = k; return; }
+            }
+        });
+        return best ? 'rgba(' + best + ')' : null;
     }
     /* ---- reading ---- */
     function same(c) { var v = rgbOf(c); return v ? [v.r, v.g, v.b, v.a].map(function (x) { return Math.round(x * 100) / 100; }).join(',') : c; }
@@ -3560,8 +3606,9 @@
             if (it.swatch) { /* a background: a wide strip of it with its name written in its words' colour, always in our own font; a tick on the one it has */
                 menu.className += ' tf-grounds';
                 var sw = el('button', 'tf-item tf-swatch-row'); sw.setAttribute('role', 'menuitem');
-                var name_ = it.word.charAt(0).toUpperCase() + it.word.slice(1), chip = el('span', 'tf-swatch', it.swatch.clear ? '' : name_);
-                if (it.swatch.clear) { chip.className += ' tf-swatch-clear'; chip.appendChild(el('span', 'tf-swatch-name', name_)); } else { chip.style.background = it.swatch.ground; chip.style.color = it.swatch.ink; } /* clear: its name on a small white label, so it reads on the grid */
+                var name_ = it.word.charAt(0).toUpperCase() + it.word.slice(1), chip = el('span', 'tf-swatch', it.swatch.see ? '' : name_);
+                if (it.swatch.see) { chip.className += ' tf-swatch-see'; if (/url\(/.test(it.swatch.see)) chip.style.background = it.swatch.see; else chip.style.backgroundColor = it.swatch.see; chip.appendChild(el('span', 'tf-swatch-name', name_)); } /* see-through: the colour under it now, a corner cut off to say it is borrowed; its name on a small white label, so it reads on anything */
+                else { chip.style.background = it.swatch.ground; chip.style.color = it.swatch.ink; }
                 sw.appendChild(chip);
                 sw.type = 'button'; if (it.now) { var tk = el('span', 'tf-swatch-tick'); tk.innerHTML = ICON.check; chip.appendChild(tk); sw.setAttribute('aria-current', 'true'); }
                 sw.addEventListener('click', function () { closeMenu(); it.fn(); }); menu.appendChild(sw); return;
@@ -5054,7 +5101,7 @@
             '.tf-bar{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);display:flex;align-items:center;gap:3px;max-width:calc(100% - 32px);padding:4px;border-radius:12px;font:13.5px/1.3 var(--tf-font);z-index:2147483000}' +
             '.tf-bar .tf-button{height:32px;font-size:13.5px}.tf-sep{flex:none;width:1px;height:18px;margin:0 4px;background:var(--tf-hairline)}.tf-bar .tf-sym{display:none}.tf-pages{gap:5px}.tf-pages>svg{width:16px;height:16px;opacity:.7;margin:0 -4px 0 -2px;flex:none}.tf-page-name{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tf-item .tf-row-tag,.tf-item-check{margin-left:auto}.tf-item-check{display:inline-flex;color:var(--tf-muted)}.tf-item-check svg{width:16px;height:16px}.tf-item.tf-here{font-weight:600}' +
             '.tf-button{appearance:none;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 11px;border:0;border-radius:8px;background:transparent;color:inherit;font:400 13.5px/1 var(--tf-font);cursor:pointer;transition:background .12s,transform .08s;white-space:nowrap;box-sizing:border-box}' +
-            '.tf-button:hover{background:var(--tf-fill-hover)}.tf-button:active{background:var(--tf-fill-press);transform:scale(.98)}.tf-button:focus-visible{outline:2px solid var(--tf-accent);outline-offset:2px}.tf-button:disabled{opacity:.38;cursor:default;transform:none}.tf-button:disabled:hover{background:transparent}' +
+            '.tf-button:hover{background:var(--tf-fill-hover)}.tf-button:active{background:var(--tf-fill-press);transform:scale(.98)}.tf-button:focus-visible{outline:2px solid var(--tf-accent);outline-offset:2px}.tf-button:disabled{opacity:.38;cursor:default;transform:none}.tf-button:disabled:hover{background:transparent}.tf-button.tf-off{opacity:.38;cursor:default}.tf-button.tf-off:hover{background:transparent}.tf-button.tf-off:active{background:transparent;transform:none}' +
             '.tf-button.tf-primary{background:var(--tf-primary);color:var(--tf-primary-ink);font-weight:600}.tf-button.tf-primary:hover{background:var(--tf-primary);filter:brightness(.94)}.tf-button.tf-primary:disabled{background:transparent;color:inherit}.tf-button.tf-primary:disabled:hover{background:transparent}.tf-button.tf-quiet{background:transparent;color:inherit;opacity:.7}.tf-button.tf-quiet:hover{background:var(--tf-fill-hover);opacity:1}.tf-button.tf-on,.tf-button.tf-on:hover{background:var(--tf-on-fill);color:var(--tf-on-ink)}' +
             '.tf-count{display:inline-block;min-width:18px;height:18px;padding:0 5px;border-radius:6px;background:var(--tf-accent);color:#fff;font-size:11px;font-weight:600;line-height:18px;text-align:center;visibility:hidden;box-sizing:border-box}' +
             '.tf-status{position:fixed;left:50%;width:max-content;display:grid;grid-template-columns:auto 1fr;column-gap:8px;row-gap:8px;align-items:start;max-width:min(460px,calc(100% - 32px));padding:11px 14px;border-radius:12px;font:13.5px/1.4 var(--tf-font);z-index:2147483000;text-align:left;text-wrap:pretty}' +
@@ -5087,7 +5134,7 @@
             '.tf-row{position:relative;display:flex;align-items:center;gap:8px;min-height:40px;padding:0 6px 0 10px;border-radius:10px;font-size:14px;transition:background .12s}.tf-row:has(.tf-row-grip){padding-left:4px}.tf-row:hover,.tf-row.tf-open,.tf-row:focus-within{background:var(--tf-fill)}.tf-row-grip{opacity:0;transition:opacity .12s}.tf-row:hover .tf-row-grip,.tf-row.tf-open .tf-row-grip,.tf-row-moving .tf-row-grip{opacity:1}.tf-row-moving{background:var(--tf-lift);box-shadow:0 8px 24px rgba(0,0,0,.35)}.tf-rename{flex:1;min-width:0;height:28px}.tf-row-note,.tf-row-tag{color:var(--tf-muted);flex:none;height:18px;line-height:18px;font-size:11px;font-weight:600;padding:0 6px;border-radius:6px;background:var(--tf-fill)}.tf-row-hidden .tf-row-name{color:var(--tf-muted)}.tf-row-plain{padding:6px 6px 6px 10px}.tf-row-plain:hover{background:none}.tf-row-plain .tf-row-name{white-space:normal;line-height:1.4;font-size:13px;color:var(--tf-muted);cursor:default}.tf-row-plain .tf-row-name:hover{text-decoration:none}' +
             '.tf-row-name{flex:0 1 auto;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:inherit;text-decoration:none;padding:2px 0}.tf-row-name:hover{text-decoration:underline}.tf-row-name:focus{outline:none}.tf-row-name:focus-visible{outline:2px solid var(--tf-accent);outline-offset:2px;border-radius:4px}.tf-row.tf-here{background:var(--tf-fill)}.tf-row.tf-here:hover{background:var(--tf-fill-hover)}.tf-row.tf-here .tf-row-name{font-weight:600}.tf-row-check{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin-left:auto;color:var(--tf-muted);flex:none}.tf-row-check svg{width:14px;height:14px}.tf-row-check+.tf-row-acts{margin-left:0}' +
             '.tf-row-acts{display:flex;gap:2px;align-items:center;flex:none;margin-left:auto;opacity:0;transition:opacity .12s}.tf-row:hover .tf-row-acts,.tf-row.tf-open .tf-row-acts,.tf-row:focus-within .tf-row-acts,.tf-versions .tf-row-acts{opacity:1}.tf-row-acts .tf-button{height:28px;padding:0 10px;font-size:13px}.tf-row-acts .tf-icon{width:28px}.tf-versions{padding:2px 0 0;font-size:13px}.tf-versions .tf-row-name{cursor:default}.tf-versions .tf-row-name:hover{text-decoration:none}.tf-versions .tf-caption{margin-left:10px}.tf-menu{position:fixed;width:220px;padding:4px;border-radius:12px;font:13.5px/1 var(--tf-font);z-index:2147483001}.tf-item{appearance:none;display:flex;align-items:center;gap:10px;width:100%;height:32px;padding:0 10px;border:0;border-radius:8px;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}.tf-item:hover,.tf-item:focus-visible{background:var(--tf-fill);outline:0}.tf-item:focus-visible{box-shadow:inset 0 0 0 2px var(--tf-accent)}.tf-item svg{width:16px;height:16px;color:var(--tf-muted);flex:none}.tf-item.tf-danger{color:var(--tf-bad-ink)}.tf-item.tf-danger svg{color:currentColor}.tf-helps{display:grid;gap:16px;padding:10px 8px 8px}.tf-help-row{display:grid;grid-template-columns:30px 1fr;gap:12px;align-items:start}.tf-help-icon{display:grid;place-items:center;width:30px;height:30px;border-radius:8px;background:var(--tf-fill);color:var(--tf-accent)}.tf-help-icon svg{width:16px;height:16px}.tf-help-title{font:600 13.5px/1.3 var(--tf-font);margin:1px 0 3px}.tf-help{margin:0;font-size:13px;line-height:1.45;color:var(--tf-muted)}.tf-help-keys{display:flex;flex-wrap:wrap;gap:6px 14px}.tf-help-keys span{display:inline-flex;align-items:center;gap:6px}.tf-kbd{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:20px;padding:0 6px;border-radius:5px;background:var(--tf-fill);box-shadow:0 0 0 1px var(--tf-hairline),0 1px 0 var(--tf-hairline);font:500 11.5px/1 var(--tf-font);color:inherit}.tf-share-line{display:flex;gap:6px;align-items:center}.tf-share-line .tf-input{flex:1;min-width:0}.tf-qr{width:168px;margin:2px 0 10px;border-radius:12px;overflow:hidden;line-height:0}.tf-qr svg{width:100%;height:auto;display:block}.tf-share-note{margin:4px 2px 2px;font-size:13px;line-height:1.45;color:var(--tf-muted)}.tf-changes{width:340px;max-width:calc(100vw - 16px);max-height:50vh;overflow:auto}.tf-changes .tf-row{min-height:36px;padding-right:2px;font-size:13px}.tf-changes .tf-row-name{flex:1 1 auto;font-weight:400;color:inherit}.tf-changes .tf-row-acts{opacity:1}.tf-count{cursor:pointer}.tf-gap{height:1px;background:var(--tf-hairline);margin:6px 4px}.tf-note{padding:6px 10px 4px;color:var(--tf-muted);font-size:12px;line-height:1.4}' +
-            '.tf-menu.tf-looks{width:min(340px,calc(100vw - 16px))}.tf-item.tf-look{height:auto;min-height:44px;padding:5px 6px;gap:12px}.tf-look-ground{flex:1 1 auto;min-width:0;display:flex;align-items:center;padding:8px 10px;border-radius:8px;overflow:hidden}.tf-look-sample{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.2;box-sizing:border-box}.tf-look-word{display:flex;align-items:center;justify-content:flex-end;gap:4px;flex:none;width:92px;color:var(--tf-muted);font-size:12px}.tf-look-word svg{width:13px;height:13px;color:var(--tf-primary)}.tf-item.tf-off{cursor:default}.tf-item.tf-off:hover{background:none}.tf-look-why{flex:1 1 auto;min-width:0;padding:4px 10px;color:var(--tf-muted);font-size:12px;line-height:1.35}.tf-menu.tf-grounds{width:min(280px,calc(100vw - 16px))}.tf-swatch-row{height:auto;min-height:52px;padding:4px;gap:10px}.tf-swatch{flex:1 1 auto;min-width:0;display:flex;align-items:center;height:44px;padding:0 14px;border-radius:9px;box-shadow:inset 0 0 0 1px rgba(127,127,127,.28);font:500 14px/1 var(--tf-font)}.tf-swatch{justify-content:space-between}.tf-swatch-tick{flex:none;display:flex}.tf-swatch-clear{color:#1d1d1f;background-color:#fff;background-image:linear-gradient(45deg,#e5e5ea 25%,transparent 25%,transparent 75%,#e5e5ea 75%),linear-gradient(45deg,#e5e5ea 25%,transparent 25%,transparent 75%,#e5e5ea 75%);background-size:12px 12px;background-position:0 0,6px 6px}.tf-swatch-name{padding:3px 6px;margin-left:-6px;border-radius:5px;background:rgba(255,255,255,.9)}.tf-swatch-tick svg{width:15px;height:15px;color:currentColor}.tf-off .tf-look-word{opacity:.55}.tf-menu-label{padding:8px 10px 4px;color:var(--tf-muted);font-size:12px;font-weight:600}' +
+            '.tf-menu.tf-looks{width:min(340px,calc(100vw - 16px))}.tf-item.tf-look{height:auto;min-height:44px;padding:5px 6px;gap:12px}.tf-look-ground{flex:1 1 auto;min-width:0;display:flex;align-items:center;padding:8px 10px;border-radius:8px;overflow:hidden}.tf-look-sample{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.2;box-sizing:border-box}.tf-look-word{display:flex;align-items:center;justify-content:flex-end;gap:4px;flex:none;width:92px;color:var(--tf-muted);font-size:12px}.tf-look-word svg{width:13px;height:13px;color:var(--tf-primary)}.tf-item.tf-off{cursor:default}.tf-item.tf-off:hover{background:none}.tf-look-why{flex:1 1 auto;min-width:0;padding:4px 10px;color:var(--tf-muted);font-size:12px;line-height:1.35}.tf-menu.tf-grounds{width:min(280px,calc(100vw - 16px))}.tf-swatch-row{height:auto;min-height:52px;padding:4px;gap:10px}.tf-swatch{flex:1 1 auto;min-width:0;display:flex;align-items:center;height:44px;padding:0 14px;border-radius:9px;box-shadow:inset 0 0 0 1px rgba(127,127,127,.28);font:500 14px/1 var(--tf-font)}.tf-swatch{justify-content:space-between}.tf-swatch-tick{flex:none;display:flex}.tf-swatch-see{position:relative;overflow:hidden;color:#1d1d1f;background:#e5e5ea center/cover}.tf-swatch-see::after{content:"";position:absolute;right:0;bottom:0;width:0;height:0;border-style:solid;border-width:0 0 22px 22px;border-color:transparent transparent var(--tf-lift) transparent}.tf-swatch-name{padding:3px 6px;margin-left:-6px;border-radius:5px;background:rgba(255,255,255,.9)}.tf-swatch-tick svg{width:15px;height:15px;color:currentColor}.tf-off .tf-look-word{opacity:.55}.tf-menu-label{padding:8px 10px 4px;color:var(--tf-muted);font-size:12px;font-weight:600}' +
             '.tf-pal-field{display:flex;align-items:center;gap:10px;flex:none;height:48px;padding:0 12px 0 16px;border-bottom:1px solid var(--tf-hairline)}.tf-pal-field svg{width:16px;height:16px;color:var(--tf-muted);flex:none}.tf-pal-input{flex:1;min-width:0;border:0;padding:0;background:none;color:inherit;font:15px/1 var(--tf-font);outline:0}.tf-pal-input::placeholder{color:var(--tf-muted)}' +
             '.tf-key{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;border-radius:5px;background:var(--tf-fill);color:var(--tf-muted);font:500 11px/1 var(--tf-font);box-shadow:inset 0 -1px 0 var(--tf-hairline);flex:none}.tf-keys{display:flex;gap:3px;margin-left:auto}' +
             '.tf-pal .tf-sheet-body{padding:8px 8px 10px}.tf-pal .tf-caption{margin:6px 0 4px 10px}.tf-pal-row{height:40px;padding:0 10px;border-radius:10px;font-size:14px}.tf-pal-row:hover{background:none}.tf-pal-row.tf-lit{background:var(--tf-fill)}.tf-pal-name{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tf-pal-row .tf-row-tag{margin-left:auto}.tf-pal-none{padding:10px 10px 6px;color:var(--tf-muted);font-size:13px}' +
