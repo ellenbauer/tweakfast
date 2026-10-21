@@ -191,7 +191,7 @@
         refresh();
         if (carried && d.tab === TAB) return; /* came along from the page before: the count on Done says it */
         /* they come back as one step (one Undo, one row, 1 on Done), so the words name no other number */
-        say((d.n === 1 ? 'A change' : 'Changes') + ' from ' + when(d.at).replace(/^Today/, 'today') + ' came back. ' + (d.n === 1 ? 'It is' : 'They are') + ' not live yet.', 'stay');
+        say('Your ' + (d.n === 1 ? 'change' : d.n + ' changes') + ' from ' + backWhen(d.at) + ' ' + (d.n === 1 ? 'is' : 'are') + ' back. Press Done to make ' + (d.n === 1 ? 'it' : 'them') + ' live.', 'stay');
         offer('Throw away', function () { if (steps[steps.length - 1] === mine) undo(); else { var i = steps.lastIndexOf(mine); if (i >= 0) undoOne(i); } say(''); });
     }
 
@@ -3770,16 +3770,54 @@
             name.addEventListener('click', function (e) { e.preventDefault(); goTo(pg.path); });
             row.appendChild(name);
             if (pg.path === home) row.appendChild(el('span', 'tf-row-note', 'Home'));
-            if (pg.fresh) row.appendChild(el('span', 'tf-row-tag', 'new'));
+            var unlinked = !isLinked(pg.path); /* a page nothing leads to: the owner would think it was never made */
+            if (unlinked) row.appendChild(el('span', 'tf-row-tag', 'not linked yet'));
+            else if (pg.fresh) row.appendChild(el('span', 'tf-row-tag', 'new'));
             else if (!menuless) row.appendChild(el('span', 'tf-row-tag', 'not in menu'));
             if (pg.path === here()) { var mark = el('span', 'tf-row-check'); mark.innerHTML = ICON.check; tip(mark, 'The page you are on'); row.appendChild(mark); }
             var items = [{ icon: 'search', word: 'Words for Google', fn: function () { openView({ kind: 'words', pg: pg }); } }];
+            if (unlinked && footerLinkRow()) items.unshift({ icon: 'link', word: 'Link it from the footer', fn: function () { linkFromFooter(pg.path, pg.name); } });
             if (saver && !pg.fresh) items.push({ icon: 'clock', word: 'Versions', fn: function () { openView({ kind: 'versions', pg: pg }); } });
             if (pg.fresh) { items.push('gap'); items.push({ icon: 'trash', word: 'Remove the page', danger: true, fn: function () { dropFresh(pg); } }); }
             more(row, items);
             body.appendChild(row);
         });
         pageGroundRow(body);
+    }
+    /* does anything on the site lead to this page: a link on this page, or on any page this visit has read or changed */
+    function isLinked(path) {
+        var on = Array.prototype.some.call(document.querySelectorAll('a[href]'), function (a) { return !a.closest('[data-tweakfast]') && isPageLink(a) && pathOf(a) === path; });
+        if (on) return true;
+        var mark = 'href="' + path + '"', pages = {}, k;
+        for (k in loaded) pages[k] = loaded[k]; for (k in changes) pages[k] = changes[k];
+        for (k in pages) if (k !== path && k !== here() && pages[k] && pages[k].indexOf(mark) >= 0) return true;
+        return false;
+    }
+    /* the last row of a footer's row of links (Privacy, Imprint…): the outermost part of the footer that is just that one
+       page link and its words, a block or a text alike */
+    function footerLinkRow() {
+        var rows = [];
+        Array.prototype.forEach.call(document.querySelectorAll('footer a[href]'), function (a) {
+            if (!isPageLink(a) || !a.textContent.trim() || a.closest('nav,[data-tweakfast]') || a.hasAttribute('data-tf-hidden')) return;
+            var row = a, words = a.textContent.trim();
+            while (row.parentElement && row.parentElement.tagName !== 'FOOTER' && row.parentElement.textContent.trim() === words) row = row.parentElement;
+            if (row.parentElement && row.parentElement.tagName !== 'FOOTER' && rows.indexOf(row) < 0) rows.push(row); /* a lone link straight in the footer has no list to add to */
+        });
+        return rows.length ? rows[rows.length - 1] : null;
+    }
+    /* a new row after the footer's last page link, named for the page and leading to it, on every page (footers are shared) */
+    function linkFromFooter(path, name) {
+        var last = footerLinkRow(); if (!last) return;
+        var parent = last.parentElement, parentWas = cleanOuter(parent), twin = makeTwin(last);
+        var a = twin.tagName === 'A' ? twin : twin.querySelector('a[href]');
+        a.setAttribute('href', path); a.textContent = name;
+        var gap = last.nextSibling && last.nextSibling.nodeType === 3 && !last.nextSibling.nodeValue.trim() ? last.nextSibling.nodeValue : '';
+        parent.insertBefore(twin, last.nextSibling); if (gap) parent.insertBefore(document.createTextNode(gap), twin);
+        var st = function () { twin.remove(); }; st.label = 'Linked ' + name + ' from the footer'; steps.push(st);
+        mirror(parent, parentWas);
+        refresh(); if (panel) renderPages();
+        say(name + ' is now linked from the footer on every page. Press Done to make it live.');
+        twin.scrollIntoView({ block: 'nearest', behavior: motion() });
     }
     /* a page added here and not saved yet goes again, with the rows and menu entries made for it; Undo brings all back */
     var freshWays = {};
@@ -4189,6 +4227,14 @@
         }
         for (j = 0; j < lk.length; j++) if (!used[j]) lk[j].remove();
     }
+    /* "10:34 today", "yesterday at 10:34", "3 Oct at 10:34": for the sentence about work that came back */
+    function backWhen(iso) {
+        var d = new Date(iso); if (isNaN(d)) return iso;
+        var t = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }), now = new Date(), y = new Date(now); y.setDate(now.getDate() - 1);
+        if (d.toDateString() === now.toDateString()) return t + ' today';
+        if (d.toDateString() === y.toDateString()) return 'yesterday at ' + t;
+        return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: d.getFullYear() === now.getFullYear() ? undefined : 'numeric' }) + ' at ' + t;
+    }
     function when(iso) {
         var d = new Date(iso); if (isNaN(d)) return iso;
         var today = new Date(), same = d.toDateString() === today.toDateString();
@@ -4359,6 +4405,7 @@
                 if (viaMenu && where) say('Page added, in the menu on every page and with ' + where + '. Press Done to save it.');
                 else if (viaMenu) say('Page added and in the menu on every page. Press Done to save it, then open it from the menu.');
                 else if (where) say('Page added, with ' + where + '. Press Done to save it.');
+                else if (footerLinkRow()) say('Page added. Nothing links to it yet: its row\u2019s menu can link it from the footer, or pick it under Goes to on any words. Press Done to save it.');
                 else say('Page added to Pages. Nothing on this site lists ' + likeName + ', so to link to the new page, click any words, then choose it under Goes to. Press Done to save it.');
             };
             everyPage(function (d, at) { var n = listRows(d, likePath, path, name); if (n && at !== path && rows.indexOf(at) < 0) rows.push(at); return n > 0; }, function (failed, again, step) {
