@@ -923,7 +923,7 @@
     function placeTag() {
         if (!hoverEl || !tag) return;
         var r = hoverEl.getBoundingClientRect();
-        put(tag, Math.max(4, r.left), Math.max(4, r.top - 22), hoverEl);
+        placeTagAt(r, hoverEl, false);
         if (!hoverBox) { hoverBox = el('span', 'tf-hover-box'); hoverBox.setAttribute('data-tweakfast', ''); document.body.appendChild(hoverBox); }
         frame(hoverBox, r, hoverEl); hoverBox.style.display = toolsHover ? 'none' : 'block'; /* one line at a time */
     }
@@ -1001,7 +1001,20 @@
         frame(blockHover, r, columnOf(b) && !onPicture(b) ? null : b, b); blockHover.style.display = 'block';
         if (!tag) { tag = el('span', 'tf-tag'); tag.setAttribute('data-tweakfast', ''); document.body.appendChild(tag); }
         tag.textContent = nameOf(b); tag.style.display = 'block';
-        put(tag, Math.max(4, r.left), Math.max(4, r.top - 22), b);
+        placeTagAt(r, b, true);
+    }
+    /* the name label: a block's sits inside its top-left corner, on its line, so it never leaves the block, never
+       covers a neighbour or the menu, and scrolls with it as one piece; a thing inside a block (words, a picture)
+       keeps its label just above. Once the top has gone under the fixed menu or off the window while some of the
+       part still shows, the label waits just under the menu (held in the window, as the toolbar does); gone with it. */
+    function placeTagAt(r, of, inside) {
+        if (!tag) return;
+        var cover = topCover(), floor = cover && !cover.contains(of) ? cover.getBoundingClientRect().bottom + 4 : 4;
+        var edge = -window.scrollX, x = inside ? (r.left <= edge ? edge + 6 : r.left) + 4 : Math.max(4, r.left), y = inside ? r.top + 4 : r.top - 22;
+        if (r.bottom < floor + 22 || r.top > window.innerHeight) { tag.style.visibility = 'hidden'; return; } /* nothing left to name */
+        tag.style.visibility = '';
+        if (y < floor && !inWindow(of)) { tag.style.position = 'fixed'; tag.style.left = x + 'px'; tag.style.top = floor + 'px'; return; }
+        put(tag, x, Math.max(floor, y), of);
     }
 
     /* ---- where a link goes ---- */
@@ -1568,7 +1581,7 @@
         }, true);
         document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !editing && !held && !picked && !menu && !dragging) hideTools(); });
         /* the lines and tools follow the page once a frame, however many scroll events the frame brings */
-        var placeTick = false, placeAll = function () { if (placeTick) return; placeTick = true; requestAnimationFrame(function () { placeTick = false; if (toolsFor) placeTools(); placeTag(); placeEdit(); }); };
+        var placeTick = false, placeAll = function () { if (placeTick) return; placeTick = true; requestAnimationFrame(function () { placeTick = false; if (toolsFor) placeTools(); placeTag(); syncBlockHover(); placeEdit(); }); };
         window.addEventListener('scroll', placeAll, { passive: true });
         window.addEventListener('resize', placeAll);
         /* the page's own motion (a card lifting on hover, a fade, a slide) carries the words away from our lines:
@@ -1581,7 +1594,7 @@
             if (following) return; following = true;
             requestAnimationFrame(function tick() {
                 moving = moving.filter(function (n) { return n.isConnected && framed(n); });
-                if (toolsFor) placeTools(); placeTag(); placeEdit();
+                if (toolsFor) placeTools(); placeTag(); syncBlockHover(); placeEdit();
                 if (moving.length) requestAnimationFrame(tick); else following = false;
             });
         };
@@ -4780,7 +4793,8 @@
     function say(t, kind) {
         if (locked) return;
         clearTimeout(noteTimer); noteTimer = 0; asking = false;
-        status.textContent = t || '';
+        status.textContent = ''; /* the words in a span of their own: a flex item that takes the whole width when a button is there, so narrow screens never squeeze them into a column */
+        if (t) { var words = el('span', 'tf-status-text'); words.textContent = t; status.appendChild(words); }
         status.classList.toggle('tf-error', kind === 'error');
         status.classList.toggle('tf-live', kind === 'live');
         status.classList.toggle('tf-show', !!t);
@@ -4876,10 +4890,10 @@
             '.tf-button:hover{background:var(--tf-fill-hover)}.tf-button:active{background:var(--tf-fill-press);transform:scale(.98)}.tf-button:focus-visible{outline:2px solid var(--tf-accent);outline-offset:2px}.tf-button:disabled{opacity:.38;cursor:default;transform:none}.tf-button:disabled:hover{background:transparent}' +
             '.tf-button.tf-primary{background:var(--tf-primary);color:var(--tf-primary-ink);font-weight:600}.tf-button.tf-primary:hover{background:var(--tf-primary);filter:brightness(.94)}.tf-button.tf-primary:disabled{background:transparent;color:inherit}.tf-button.tf-primary:disabled:hover{background:transparent}.tf-button.tf-quiet{background:transparent;color:inherit;opacity:.7}.tf-button.tf-quiet:hover{background:var(--tf-fill-hover);opacity:1}.tf-button.tf-on,.tf-button.tf-on:hover{background:var(--tf-on-fill);color:var(--tf-on-ink)}' +
             '.tf-count{display:inline-block;min-width:18px;height:18px;padding:0 5px;border-radius:6px;background:var(--tf-accent);color:#fff;font-size:11px;font-weight:600;line-height:18px;text-align:center;visibility:hidden;box-sizing:border-box}' +
-            '.tf-status{position:fixed;left:50%;display:flex;align-items:center;justify-content:center;gap:7px;max-width:min(460px,calc(100% - 32px));padding:9px 14px;border-radius:12px;font:13.5px/1.4 var(--tf-font);z-index:2147483000;text-align:center;text-wrap:balance}' +
+            '.tf-status{position:fixed;left:50%;display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:7px;max-width:min(460px,calc(100% - 32px));padding:9px 14px;border-radius:12px;font:13.5px/1.4 var(--tf-font);z-index:2147483000;text-align:center;text-wrap:balance}' +
             '.tf-status.tf-error::before{content:"";display:block;flex:none;width:14px;height:14px;background:url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 14 14%27%3E%3Ccircle cx=%277%27 cy=%277%27 r=%277%27 fill=%27%23ff453a%27/%3E%3Cpath d=%27M7 3.6v4.2%27 stroke=%27%23fff%27 stroke-width=%271.7%27 stroke-linecap=%27round%27/%3E%3Ccircle cx=%277%27 cy=%2710.4%27 r=%27.95%27 fill=%27%23fff%27/%3E%3C/svg%3E") center/contain no-repeat}' +
             '.tf-status.tf-live::before{content:"";display:block;flex:none;width:14px;height:14px;background:url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 14 14%27%3E%3Ccircle cx=%277%27 cy=%277%27 r=%277%27 fill=%27%2330d158%27/%3E%3Cpath d=%27M4 7.2l2 2 4-4.4%27 fill=%27none%27 stroke=%27%23fff%27 stroke-width=%271.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E") center/contain no-repeat}' +
-            '.tf-status .tf-offer{flex:none;height:26px;padding:0 10px;margin-left:4px;font-size:13.5px}' +
+            '.tf-status .tf-status-text{flex:1 1 auto;min-width:0}.tf-offer{flex:none;height:26px;padding:0 10px;margin-left:4px;font-size:13.5px}' +
             '.tf-editing{min-height:1em;outline:0}.tf-edit-box{position:absolute;display:none;box-sizing:border-box;border:2px solid #0a84ff;border-radius:4px;pointer-events:none;z-index:2147482999}' +
             '.tf-hover{cursor:text}img.tf-hover,[data-tf-art].tf-hover{cursor:pointer}.tf-link.tf-art .tf-link-label,.tf-link.tf-art .tf-input{display:none}.tf-link.tf-art{padding-left:4px}.tf-hover-box,.tf-block-hover,.tf-block-box{position:absolute;display:none;box-sizing:border-box;border:1px dashed #0a84ff;opacity:1;border-radius:4px;pointer-events:none;z-index:2147482999}.tf-block-box.tf-block-selected{border:2px solid #0a84ff;opacity:1}.tf-block-box.tf-block-inner{border:1px dashed #0a84ff;opacity:1}.tf-block-box.tf-block-moving{border:2px solid #0a84ff;opacity:1;box-shadow:0 12px 32px rgba(0,0,0,.18)}' +
             '.tf-tag{position:absolute;display:none;height:18px;padding:0 6px;border-radius:6px;background:#0a84ff;color:#fff;font:500 11px/18px -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;letter-spacing:.02em;white-space:nowrap;pointer-events:none;z-index:2147483000}' +

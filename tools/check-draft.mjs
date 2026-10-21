@@ -20,6 +20,11 @@ const typed = await h1();
 await p.close(); p = await ctx.newPage(); p.on('pageerror', e => console.log('PAGEERROR', e.message)); p.on('dialog', d => d.accept());
 await open(U);
 console.log('after a closed tab: heading back:', await h1() === typed && typed !== original, '| count', await count(), '|', (await say()).replace(/\d+:\d+( [AP]M)?/, 'HH:MM'));
+/* on a phone the words take the bubble's width and the button drops under them: never a column of single words */
+await p.setViewportSize({ width: 390, height: 800 }); await p.waitForTimeout(200);
+console.log('phone: words wide, button below:', await p.$eval('.tf-status', s => { const w = s.querySelector('.tf-status-text').getBoundingClientRect(), b = s.querySelector('.tf-offer').getBoundingClientRect(), r = s.getBoundingClientRect(); return w.width > r.width * .7 && b.top >= w.bottom - 2; }));
+await p.screenshot({ path: process.env.TF_SHOT || '/dev/null' }).catch(() => {});
+await p.setViewportSize({ width: 1100, height: 800 }); await p.waitForTimeout(200);
 await p.click('.tf-offer:has-text("Throw away")'); await p.waitForTimeout(200);
 console.log('Throw away: heading as served:', await h1() === original, '| count', await count());
 await open(U); console.log('and gone for good: bubble:', JSON.stringify((await say()).trim()));
