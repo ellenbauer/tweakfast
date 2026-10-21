@@ -25,12 +25,13 @@ const order = () => p.$$eval('main > section', s => s.map(e => (e.querySelector(
 const S = 'http://127.0.0.1:8788/demo/';
 
 /* 1 Undo after Redo takes back what it says; nothing is bound twice; the site's own listeners live on */
+const viaMore = async (pg, word) => { await pg.click('.tf-tools button[aria-label="More"]'); await pg.click('.tf-menu button:has-text("' + word + '")'); await pg.waitForTimeout(60); }; /* the block tools wait behind More on a desk */
 await p.goto(S + 'index.html#edit=test'); await p.waitForTimeout(500);
 await p.evaluate(() => document.querySelector('header').addEventListener('click', () => { window.__site = (window.__site || 0) + 1; }));
 const first = await order();
 await pickBlock(p, 'main > section:nth-of-type(1)');
-await p.click('.tf-tools button[aria-label="Move down"]'); await p.waitForTimeout(200);
-await p.click('.tf-tools button[aria-label="Copy"]'); await p.waitForTimeout(200);
+await viaMore(p, 'Move down'); await p.waitForTimeout(200);
+await viaMore(p, 'Copy'); await p.waitForTimeout(200);
 await p.keyboard.press('Escape');
 for (const k of ['Meta+z', 'Meta+Shift+z', 'Meta+z', 'Meta+z']) { await p.keyboard.press(k); await p.waitForTimeout(200); }
 console.log('undo after redo: back to the start:', await order() === first, '| count', await count(), '| hover listeners', await p.evaluate(() => window.__L));
@@ -68,7 +69,7 @@ await p.keyboard.press('Escape');
 
 /* 5 the last of a group stays: the plus makes more from it */
 await p.goto(S + 'events.html#edit=test'); await p.waitForTimeout(500);
-for (let i = 0; i < 3; i++) { await pickBlock(p, '.card >> nth=0'); await p.click('.tf-tools button[aria-label="Remove"]'); await p.waitForTimeout(150); }
+for (let i = 0; i < 3; i++) { await pickBlock(p, '.card >> nth=0'); await viaMore(p, 'Remove'); await p.waitForTimeout(150); }
 console.log('last card kept:', await p.$$eval('.card', c => c.length), '|', await say());
 
 /* 6 pages: a rename to a name in use is refused; Add a page is one Undo; a file outside the menu is never written over */

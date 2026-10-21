@@ -11,13 +11,14 @@ const pickBlock = async (page, sel) => { /* a click on the block itself, off its
   if (await page.$eval('.tf-edit-box', e => getComputedStyle(e).display === 'block').catch(() => false)) { await page.keyboard.press('Escape'); await page.waitForTimeout(120); } }; /* a block covered by its picture or words: the click took those; Esc steps out to the block */
 const edit = async (sel, o) => { await p.click(sel, o); await p.waitForTimeout(60); await p.click(sel, o); }; /* one click picks, the second edits */
 const status = () => p.$eval('.tf-status', s => s.textContent.trim());
+const viaMore = async (pg, word) => { await pg.click('.tf-tools button[aria-label="More"]'); await pg.click('.tf-menu button:has-text("' + word + '")'); await pg.waitForTimeout(60); }; /* the block tools wait behind More on a desk */
 await p.goto('http://127.0.0.1:8788/demo/events.html?v=' + Date.now() + '#edit=test'); await p.waitForTimeout(500);
 console.log('at rest the bar says:', JSON.stringify(await status()), '| buttons:', await p.$$eval('.tf-bar .tf-button', bs => bs.map(x => x.textContent).join(',')));
 await edit('h1'); console.log('editing says:', await status());
 await p.keyboard.press('End'); await p.keyboard.type(' A'); await p.keyboard.press('Enter'); await p.waitForTimeout(100);
 const count = () => p.$eval('.tf-count', c => c.style.visibility === 'hidden' ? '-' : c.textContent);
 console.log('one edit, count on Done:', await count(), '| bubble gone at rest:', ['', 'Kept. For a new line, press Shift+Enter while typing.'].includes(await status()) || await p.$eval('.tf-status', s => !s.classList.contains('tf-show')));
-await pickBlock(p, '.card:nth-child(3)'); await p.click('.tf-tools button:has-text("Hide")'); await p.waitForTimeout(100);
+await pickBlock(p, '.card:nth-child(3)'); await viaMore(p, 'Hide'); await p.waitForTimeout(100);
 await p.click('body', { position: { x: 5, y: 700 } }); await p.waitForTimeout(100);
 console.log('two edits, count on Done:', await count());
 await p.keyboard.press('Meta+z'); await p.waitForTimeout(100);

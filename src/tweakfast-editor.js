@@ -1048,7 +1048,8 @@
             linkBox = el('div', 'tf-link'); linkBox.setAttribute('data-tweakfast', '');
             linkLabel = el('span', 'tf-link-label', 'Goes to'); linkBox.appendChild(linkLabel);
             linkInput = el('input', 'tf-input'); linkInput.type = 'text'; linkInput.autocomplete = 'off'; linkInput.spellcheck = false;
-            linkBox.appendChild(linkInput);
+            var field = el('span', 'tf-link-field'), mark = el('span', 'tf-link-mark'); mark.innerHTML = ICON.link; field.appendChild(mark); field.appendChild(linkInput); /* in the toolbar the field has no label: a link mark inside it says what it is */
+            linkBox.appendChild(field);
             var open = el('button', 'tf-link-open'); open.type = 'button'; tip(open, 'Open in a new tab'); open.setAttribute('aria-label', 'Open in a new tab');
             open.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9 9 3M4 3h5v5"/></svg>';
             open.addEventListener('click', function () { applyLink(); var to = linkFor && linkFor.getAttribute('href'); if (to) window.open(to, '_blank'); linkInput.focus(); });
@@ -1063,15 +1064,24 @@
         }
         if (a && a !== linkFor) { applyLink(); linkFor = a; linkRange = null; linkInput.value = a.getAttribute('href') || ''; linkTyped = false; }
         if (!a) { linkFor = null; linkRange = rg; linkInput.value = ''; linkTyped = false; }
-        linkLabel.textContent = a ? 'Goes to' : 'Link to'; linkInput.placeholder = a ? '' : 'A page of the site, or an address';
+        linkLabel.textContent = a ? 'Goes to' : 'Link to'; linkInput.placeholder = a ? 'Page, address or phone' : 'A page of the site, or an address';
         linkRemove.style.display = a ? '' : 'none'; linkBox.querySelector('.tf-link-open').style.display = a ? '' : 'none';
         var home = linkHome();
         if (linkBox.parentNode !== home) {
             linkBox.classList.toggle('tf-link-in', home === tools);
-            if (home === tools) { tools.insertBefore(linkBox, nameTile.nextElementSibling.nextSibling); linkBox.style.width = ''; linkBox.style.left = linkBox.style.top = ''; sepSync(); } /* right after the name's hairline */
+            if (home === tools) { tools.appendChild(linkBox); linkBox.style.width = ''; linkBox.style.left = linkBox.style.top = ''; sepSync(); fitRows(); } /* a second row under the tools: one toolbar, one surface, the name and the tools above, the address below */
             else document.body.appendChild(linkBox);
         }
         if (linkBox.parentNode === tools) placeTools(); else placeLink();
+    }
+    /* a wrapping toolbar grows to the width of both rows side by side (how a browser sizes it), so it is held at the
+       width of the tools row and the address row takes that. On a phone the strip has the bar's width already. */
+    function fitRows() {
+        tools.style.width = '';
+        if (!linkBox || linkBox.parentNode !== tools || coarse()) return;
+        var w = 0, n = 0; /* the tools row, summed: the toolbar sits absolute, so its own width could be cut by the window's right edge */
+        Array.prototype.forEach.call(tools.children, function (c) { if (c === linkBox || !c.getClientRects().length) return; var cs = getComputedStyle(c), auto = c === moreBtn; w += c.getBoundingClientRect().width + (auto ? 0 : (parseFloat(cs.marginLeft) || 0) + (parseFloat(cs.marginRight) || 0)); n++; }); /* More's margin is the slack, not a width of its own */
+        tools.style.width = Math.max(280, Math.ceil(w + 3 * Math.max(0, n - 1) + 8)) + 'px'; /* never narrower than the address row needs */
     }
     function placeLink() {
         if (!linkBox || !linkBox.parentNode || linkBox.parentNode === tools || !editing) return; /* in the toolbar it goes where the toolbar goes */
@@ -1144,7 +1154,7 @@
     function hideLink() {
         hidePages();
         var was = linkBox && linkBox.parentNode; if (was) linkBox.remove(); linkFor = null; linkRange = null; linkTyped = false; if (linkInput) linkInput.value = '';
-        if (was === tools && toolsFor && toolsFor.isConnected && tools.style.display === 'flex') { sepSync(); placeTools(); } /* the toolbar shrinks back and re-centres */
+        tools.style.width = ''; if (was === tools && toolsFor && toolsFor.isConnected && tools.style.display === 'flex') { sepSync(); placeTools(); } /* the toolbar shrinks back and re-centres */
     }
     /* the words become a link; the text step at the end of the edit carries it, so Undo takes it back as one */
     function makeLink(to) {
@@ -1467,6 +1477,18 @@
     /* ---- blocks ---- */
     var tools, toolsFor = null, hideBtn;
     var upBtn = null, downBtn = null; /* the block tools' Move up and Move down; Move left and Move right when the block sits beside its own */
+    var moreBtn = null, inMore = []; /* the block tools behind More on a desk */
+    var MORE_KEYS = { 'Move up': ['\u2191'], 'Move down': ['\u2193'], 'Move left': ['\u2190'], 'Move right': ['\u2192'], 'Copy': ['\u2318D'], 'Remove': ['\u232B'] };
+    function openMore() {
+        var items = [];
+        inMore.forEach(function (b) {
+            if (b.style.display === 'none') return;
+            var word = b.getAttribute('aria-label');
+            if (b === inMore[inMore.length - 1]) items.push('gap');
+            items.push({ icon: b.getAttribute('data-icon'), word: word, keys: MORE_KEYS[word], disabled: b.disabled, danger: b.classList.contains('tf-danger'), fn: function () { b.click(); } });
+        });
+        openMenu(moreBtn, items, null, { left: false });
+    }
     var swapBtn = null; /* Swap sides, on a block of two big parts side by side */
     var lookBtn = null; /* Look: a button takes another button's look, a section another background, both from the site */
     var blockOnly = [], nameTile = null, nameWord = null, replaceBtn = null, altBtn = null; /* the tools a block has and the header or a footer has not: they only take a Look */
@@ -1761,7 +1783,11 @@
         tools.appendChild(hideBtn);
         var cp = iconButton('copy', 'Copy', copyBlock); tools.appendChild(cp);
         var rm = iconButton('trash', 'Remove', removeBlock); rm.className += ' tf-danger'; tools.appendChild(rm);
-        blockOnly = blockOnly.concat([upBtn, downBtn, hideBtn, cp, rm]);
+        /* on a desk the block tools wait behind More, so the toolbar reads name · Colour · More (three things, not seven);
+           on a phone the strip has the width for them all and a menu would be one more tap */
+        inMore = [upBtn, downBtn, swapBtn, hideBtn, cp, rm]; inMore.forEach(function (b) { b.className += ' tf-in-more'; });
+        moreBtn = iconButton('more', 'More', openMore); moreBtn.className += ' tf-more'; tools.appendChild(moreBtn);
+        blockOnly = blockOnly.concat([upBtn, downBtn, hideBtn, cp, rm, moreBtn]);
         document.body.appendChild(tools);
         tools.addEventListener('mouseenter', function () { toolsHover = true; placeTools(); });
         tools.addEventListener('mouseleave', function () { toolsHover = false; placeTools(); }); /* the tools stay until another block is hovered */
@@ -1769,7 +1795,7 @@
     /* the hairline only parts the name from something: a button that shows, or the link field */
     function sepSync() {
         if (!tools) return;
-        var any = (linkBox && linkBox.parentNode === tools) || Array.prototype.some.call(tools.querySelectorAll(':scope > .tf-button'), function (b) { return b.style.display !== 'none'; });
+        var any = Array.prototype.some.call(tools.querySelectorAll(':scope > .tf-button'), function (b) { return b.style.display !== 'none'; });
         nameTile.nextElementSibling.style.display = any ? '' : 'none';
     }
     function showTools(block) {
@@ -1784,6 +1810,7 @@
         nameWord.textContent = nameOf(inner ? on : block);
         nameTile.classList.toggle('tf-handle', !part && !inner); tip(nameTile, !part && !inner ? 'Drag to move' : '');
         blockOnly.forEach(function (n) { n.style.display = part || inner ? 'none' : ''; });
+        tools.classList.toggle('tf-less', !coarse());
         replaceBtn.style.display = (inner || ground) && on === picked ? '' : 'none'; altBtn.style.display = ALT_ON && (inner || ground) && on === picked && !isArt(on) ? '' : 'none'; /* a drawn box has no words to describe */
         if (inner) { lookBtn.style.display = on === editing && isButton(on) && choicesFor(on) ? '' : 'none'; swapBtn.style.display = 'none'; }
         sepSync();
@@ -1818,6 +1845,7 @@
     function hideTools() { toolsFor = null; tools.style.display = 'none'; if (blockBox) blockBox.style.display = 'none'; hidePlusUnder(null); }
     function placeTools() {
         if (!toolsFor || !toolsFor.isConnected) { hideTools(); return; }
+        if (linkBox && linkBox.parentNode === tools) fitRows(); /* once the buttons for this block are set, before the width is read */
         var r = toolsFor.getBoundingClientRect();
         if (columnOf(toolsFor) && !onPicture(toolsFor)) { var pw = document.documentElement.clientWidth; r = { left: 0, right: pw, width: pw, top: r.top, bottom: r.bottom, height: r.height }; } /* a section is the band the eye sees, edge to edge */
         if (!blockBox) { blockBox = el('span', 'tf-block-box'); blockBox.setAttribute('data-tweakfast', ''); document.body.appendChild(blockBox); }
@@ -1830,7 +1858,7 @@
         blockBox.classList.toggle('tf-block-inner', !!inner); blockBox.classList.toggle('tf-block-selected', !inner);
         if (hoverBox) hoverBox.style.display = toolsHover || !hoverEl ? 'none' : 'block'; /* one line at a time */ blockBox.classList.toggle('tf-block-moving', dragging); syncBlockHover();
         if (coarse()) { /* a finger: the tools wait in a strip just above the bar, where the thumb is, never over the words a tap is meant for */
-            tools.classList.add('tf-tools-dock'); tools.style.left = tools.style.top = tools.style.position = '';
+            tools.classList.add('tf-tools-dock'); tools.style.left = tools.style.top = tools.style.position = tools.style.width = '';
             blockBox.style.visibility = ''; placeNote(); return;
         }
         tools.classList.remove('tf-tools-dock'); tools.style.bottom = '';
@@ -3462,6 +3490,8 @@
             } else {
                 b.innerHTML = it.icon ? ICON[it.icon] : ''; b.appendChild(document.createTextNode(it.word));
                 if (it.tag) b.appendChild(el('span', 'tf-row-tag', it.tag));
+                if (it.keys) { var ks = el('span', 'tf-keys'); it.keys.forEach(function (k) { ks.appendChild(el('span', 'tf-key', k)); }); b.appendChild(ks); }
+                if (it.disabled) b.disabled = true;
                 if (it.here) { b.className += ' tf-here'; b.setAttribute('aria-current', 'page'); var ck = el('span', 'tf-item-check'); ck.innerHTML = ICON.check; b.appendChild(ck); }
             }
             b.addEventListener('click', function () { closeMenu(); it.fn(); });
@@ -3469,7 +3499,7 @@
         });
         document.body.appendChild(menu);
         var r = anchor.getBoundingClientRect(), w = menu.offsetWidth, h = menu.offsetHeight, gap = 6, fromTools = tools && tools.contains(anchor);
-        if (fromTools) { var tr = tools.getBoundingClientRect(); r = { left: r.left, right: r.right, top: tr.top, bottom: tr.bottom }; gap = 8; opts.left = true; } /* from the toolbar: 8 under it, left edge on its button */
+        if (fromTools) { var tr = tools.getBoundingClientRect(); r = { left: r.left, right: r.right, top: tr.top, bottom: tr.bottom }; gap = 8; if (opts.left !== false) opts.left = true; } /* from the toolbar: 8 under it, left edge on its button (More, the last one: right edge on it) */
         var left = Math.max(8, Math.min(opts.left ? r.left : r.right - w, window.innerWidth - w - 8)), top = r.bottom + gap;
         if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - gap); /* no room below: above the button */
         menu.style.left = left + 'px'; menu.style.top = top + 'px';
@@ -4874,7 +4904,7 @@
     function button(label, fn) { var b = el('button', 'tf-button', label); b.type = 'button'; b.addEventListener('click', fn); return b; }
     /* a button that shows a shape and says its word to the tooltip, to screen readers and to the checks */
     function iconButton(icon, word, fn) { var b = el('button', 'tf-button tf-icon'); b.type = 'button'; b.addEventListener('click', fn); relabel(b, icon, word); return b; }
-    function relabel(b, icon, word) { b.innerHTML = ICON[icon] + '<span class="tf-word"></span>'; b.lastChild.textContent = word; tip(b, word); b.setAttribute('aria-label', word); }
+    function relabel(b, icon, word) { b.innerHTML = ICON[icon] + '<span class="tf-word"></span>'; b.lastChild.textContent = word; tip(b, word); b.setAttribute('aria-label', word); b.setAttribute('data-icon', icon); }
     /* Tooltips, one rule. A tooltip says the word a control has no room for, and its key; it never explains (sentences belong in Help).
        It opens over a shape: the icon buttons, the grip, the check mark, the plus, the count on Done. A worded button gets one only
        to show its key (Undo, Done); a button whose word is on its face gets none, and the bar, the name of the page and the
@@ -4945,7 +4975,7 @@
             '.tf-hover{cursor:text}img.tf-hover,[data-tf-art].tf-hover{cursor:pointer}.tf-link.tf-art .tf-link-label,.tf-link.tf-art .tf-input{display:none}.tf-link.tf-art{padding-left:4px}.tf-hover-box,.tf-block-hover,.tf-block-box{position:absolute;display:none;box-sizing:border-box;border:1px dashed #0a84ff;opacity:1;border-radius:4px;pointer-events:none;z-index:2147482999}.tf-block-box.tf-block-selected{border:2px solid #0a84ff;opacity:1}.tf-block-box.tf-block-inner{border:1px dashed #0a84ff;opacity:1}.tf-block-box.tf-block-moving{border:2px solid #0a84ff;opacity:1;box-shadow:0 12px 32px rgba(0,0,0,.18)}' +
             '.tf-tag{position:absolute;display:none;height:18px;padding:0 6px;border-radius:6px;background:#0a84ff;color:#fff;font:500 11px/18px -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;letter-spacing:.02em;white-space:nowrap;pointer-events:none;z-index:2147483000}' +
             '.tf-link{position:absolute;display:flex;align-items:center;gap:6px;padding:4px 4px 4px 12px;border-radius:12px;font:13.5px/1.2 var(--tf-font);z-index:2147483000}' +
-            ':root:has(#tf-style) .tf-tools .tf-link.tf-link-in{position:static;transform:none;animation:none;background:none;-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:none;padding:0 0 0 6px;gap:4px;z-index:auto}.tf-link-in .tf-input{flex:none;width:220px}.tf-tools-dock .tf-link-in{flex:1;min-width:0}.tf-tools-dock .tf-link-in .tf-input{flex:1;width:auto;min-width:72px}' +
+            ':root:has(#tf-style) .tf-tools .tf-link.tf-link-in{position:static;transform:none;animation:none;background:none;-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:none;flex:1 0 100%;order:99;min-width:0;margin-top:4px;padding:4px 0 0;border-top:1px solid var(--tf-hairline);gap:3px;z-index:auto}.tf-tools:has(.tf-link-in){flex-wrap:wrap}:root:has(#tf-style) .tf-tools.tf-less>.tf-in-more{display:none}:root:has(#tf-style) .tf-tools:not(.tf-less)>.tf-more{display:none}.tf-tools.tf-less>.tf-more{margin-left:auto}.tf-item:disabled{opacity:.4;cursor:default}.tf-item .tf-keys{margin-left:auto}.tf-link-in .tf-link-label{display:none}.tf-link-field{position:relative;display:flex;flex:1 1 0;width:0;min-width:72px;align-items:center}.tf-link-mark{display:none;position:absolute;left:10px;top:50%;transform:translateY(-50%);width:14px;height:14px;color:var(--tf-muted);pointer-events:none}.tf-link-mark svg{width:14px;height:14px;display:block}.tf-link-in .tf-link-mark{display:block}.tf-link.tf-link-in .tf-input{flex:1 1 auto;width:100%;min-width:0;padding:0 10px 0 31px;border-radius:8px}' +
             /* the list of pages under the link field: our own, not the datalist of the browser; the glass of the menu, rows like the palette */
             '.tf-menu.tf-pages-list{--tf-y:-6px;transform-origin:0 0;width:auto;min-width:240px;max-width:360px;max-height:264px;overflow:auto;padding:4px}.tf-page-item{height:40px;gap:10px;border-radius:8px}.tf-page-item:hover{background:none}.tf-page-item.tf-lit{background:var(--tf-fill)}.tf-page-item .tf-page-name{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tf-page-file{margin-left:auto;flex:none;color:var(--tf-muted);font-size:12px}.tf-pages-none{padding:10px 10px 8px;color:var(--tf-muted);font-size:13px}' +
             '.tf-link-label{white-space:nowrap;color:var(--tf-muted)}.tf-link .tf-input{flex:1;height:32px;padding:0 10px;font-size:13.5px;border-radius:8px}.tf-link .tf-small{flex:none;height:32px;padding:0 10px;background:var(--tf-fill)}.tf-link-open{appearance:none;flex:none;display:flex;align-items:center;justify-content:center;width:32px;height:32px;border:0;border-radius:8px;background:var(--tf-fill);color:inherit;cursor:pointer;transition:background .12s}.tf-link-open:hover{background:var(--tf-fill-hover)}.tf-link-open:focus-visible{outline:2px solid var(--tf-accent);outline-offset:2px}' +

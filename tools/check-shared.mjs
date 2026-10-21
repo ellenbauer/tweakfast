@@ -13,6 +13,7 @@ const edit = async (sel, o) => { await p.click(sel, o); await p.waitForTimeout(6
 const status = () => p.$eval('.tf-status', s => s.classList.contains('tf-show') ? s.textContent.trim() : '');
 /* Done without a saving route writes files: caught here to read what every page would get */
 const captured = async () => { await p.evaluate(() => { window._blobs = {}; window._names = {}; const c = URL.createObjectURL; URL.createObjectURL = b => { const u = c(b); window._blobs[u] = b; return u; }; HTMLAnchorElement.prototype.click = function () { window._names[this.href] = this.download; }; }); await p.click('.tf-button:has-text("Done")'); await p.waitForTimeout(300); return p.evaluate(async () => { const out = {}; for (const u in window._names) out[window._names[u]] = await window._blobs[u].text(); return out; }); };
+const viaMore = async (pg, word) => { await pg.click('.tf-tools button[aria-label="More"]'); await pg.click('.tf-menu button:has-text("' + word + '")'); await pg.waitForTimeout(60); }; /* the block tools wait behind More on a desk */
 await p.goto('http://127.0.0.1:8787/demo/index.html#edit=test'); await p.waitForTimeout(400);
 await edit('footer p'); await p.waitForTimeout(100);
 console.log('footer text edits:', !!(await p.$('footer p[contenteditable]')), '| said:', await status());
@@ -37,6 +38,6 @@ console.log('a page-head title edits:', !!(await p.$('.page-head h1[contentedita
 /* blocks in a footer: tools like anywhere; Hide is made on every page whose footer matches, the others are named */
 await pickBlock(p, 'footer .col:nth-child(2)');
 console.log('footer blocks have tools:', await p.evaluate(() => getComputedStyle(document.querySelector('.tf-tools')).display === 'flex'));
-await p.click('.tf-tools button:has-text("Hide")', { force: true }); await p.waitForTimeout(900);
+await viaMore(p, 'Hide'); await p.waitForTimeout(900);
 console.log('hidden here:', await p.$eval('footer .col:nth-child(2)', e => e.hasAttribute('data-tf-hidden')), '| other pages named:', await status());
 await b.close();

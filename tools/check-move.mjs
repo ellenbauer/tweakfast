@@ -12,7 +12,8 @@ const pickBlock = async (page, sel) => { /* a click on the block itself, off its
   if (await page.$eval('.tf-edit-box', e => getComputedStyle(e).display === 'block').catch(() => false)) { await page.keyboard.press('Escape'); await page.waitForTimeout(120); } }; /* a block covered by its picture or words: the click took those; Esc steps out to the block */
 const titles = () => p.evaluate(() => [...document.querySelectorAll('.cards > *')].filter(n => !n.classList.contains('tf-plus')).map(n => n.querySelector('h3').textContent).join(','));
 const count = () => p.$eval('.tf-count', c => c.style.visibility === 'hidden' ? '-' : c.textContent);
-const BACK = '.tf-tools button:is([aria-label="Move up"],[aria-label="Move left"])', FWD = '.tf-tools button:is([aria-label="Move down"],[aria-label="Move right"])';
+const BACK = '.tf-tools button:is([aria-label="Move up"],[aria-label="Move left"])', FWD = '.tf-tools button:is([aria-label="Move down"],[aria-label="Move right"])'; /* hidden behind More on a desk: read for their words and off-state, pressed through the menu */
+const press = async (sel) => { const word = await p.$eval(sel, e => e.getAttribute('aria-label')); await p.click('.tf-tools button[aria-label="More"]'); await p.click('.tf-menu button:has-text("' + word + '")'); };
 const off = sel => p.$eval(sel, e => e.disabled);
 await p.goto('http://127.0.0.1:8787/demo/events.html#edit=test'); await p.waitForTimeout(400);
 await p.click('.tf-button:has-text("Got it")').catch(() => {});
@@ -20,9 +21,9 @@ console.log('tools in order:', await p.$$eval('.tf-tools button', bs => bs.map(x
 await pickBlock(p, '.card:nth-child(1)');
 console.log('cards in a row, arrows sideways:', await p.$eval(BACK, e => e.getAttribute('aria-label')) === 'Move left' && await p.$eval(FWD, e => e.getAttribute('aria-label')) === 'Move right');
 console.log('first card: up off', await off(BACK), '| down on', !(await off(FWD)));
-await p.click(FWD); await p.waitForTimeout(300);
+await press(FWD); await p.waitForTimeout(300);
 console.log('moved down:', await titles(), '| count', await count(), '| tools follow it: up on now', !(await off(BACK)));
-await p.click(FWD); await p.waitForTimeout(300);
+await press(FWD); await p.waitForTimeout(300);
 console.log('and again:', await titles(), '| last: down off', await off(FWD));
 await p.click('.tf-button:has-text("Undo")'); await p.waitForTimeout(100); await p.click('.tf-button:has-text("Undo")'); await p.waitForTimeout(100);
 console.log('two Undos put it back:', await titles(), '| count', await count());
@@ -30,7 +31,7 @@ console.log('two Undos put it back:', await titles(), '| count', await count());
 await p.goto('http://127.0.0.1:8787/tools/check-menu.html#edit=test'); await p.waitForTimeout(300);
 await pickBlock(p, 'footer .col:nth-child(1)');
 await p.evaluate(() => { window._blobs = {}; window._names = {}; const c = URL.createObjectURL; URL.createObjectURL = b => { const u = c(b); window._blobs[u] = b; return u; }; HTMLAnchorElement.prototype.click = function () { window._names[this.href] = this.download; }; });
-await p.click(FWD); await p.waitForTimeout(900);
+await press(FWD); await p.waitForTimeout(900);
 console.log('footer column moved:', await p.$$eval('footer .col h4', hs => hs.map(h => h.textContent).join(',')));
 await p.click('.tf-button:has-text("Done")'); await p.waitForTimeout(300);
 const files = await p.evaluate(async () => { const out = {}; for (const u in window._names) out[window._names[u]] = await window._blobs[u].text(); return out; });

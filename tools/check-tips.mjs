@@ -17,7 +17,7 @@ await p.click('h1'); await p.waitForTimeout(60); await p.click('h1'); await p.ke
 await p.hover('.tf-bar button:has-text("Undo")'); await p.waitForTimeout(650); console.log('Undo with its key:', await tip(), '| key muted:', await p.$eval('.tf-tip .tf-tip-key', e => e.textContent + ' ' + getComputedStyle(e).fontWeight));
 await p.hover(PREVIEW); await p.waitForTimeout(80); console.log('a neighbour at once:', await tip());
 await p.mouse.down(); console.log('gone on the press:', (await tip()) === ''); await p.mouse.up(); await p.waitForTimeout(300); await p.keyboard.press('Escape'); await p.waitForTimeout(300);
-await p.click('.card:nth-child(1)'); await p.waitForTimeout(300); const HIDE = '.tf-tools button[aria-label="Hide"]'; await p.hover(HIDE); await p.waitForTimeout(650); console.log('a block tool:', await tip(), '|', await where(HIDE));
+await p.click('.card:nth-child(1)'); await p.waitForTimeout(300); const HIDE = '.tf-tools button[aria-label="More"]'; await p.hover(HIDE); await p.waitForTimeout(650); console.log('a block tool:', await tip(), '|', await where(HIDE));
 await p.hover('.tf-tools .tf-name'); await p.waitForTimeout(650); console.log('the handle:', await tip());
 await p.mouse.move(5, 400); await p.waitForTimeout(300); console.log('off everything: none:', (await tip()) === '');
 await p.click('.tf-bar .tf-pages'); await p.waitForTimeout(400); const HELP = '.tf-sheet-head button[aria-label="Help"]'; await p.hover(HELP); await p.waitForTimeout(650); console.log('in the sheet head:', await tip(), '|', await where(HELP));

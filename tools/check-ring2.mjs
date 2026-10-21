@@ -10,6 +10,7 @@ const pickBlock = async (page, sel) => { /* a click on the block itself, off its
   await page.click(sel, { position: at }); await page.waitForTimeout(150);
   if (await page.$eval('.tf-edit-box', e => getComputedStyle(e).display === 'block').catch(() => false)) { await page.keyboard.press('Escape'); await page.waitForTimeout(120); } }; /* a block covered by its picture or words: the click took those; Esc steps out to the block */
 const edit = async (sel, o) => { await p.click(sel, o); await p.waitForTimeout(60); await p.click(sel, o); }; /* one click picks, the second edits */
+const viaMore = async (pg, word) => { await pg.click('.tf-tools button[aria-label="More"]'); await pg.click('.tf-menu button:has-text("' + word + '")'); await pg.waitForTimeout(60); }; /* the block tools wait behind More on a desk */
 await p.goto('http://127.0.0.1:8787/demo/events.html#edit=test');
 /* drag the grip over another block of the same group: the dragged one takes that place */
 async function dragTo(page, targetSel) {
@@ -36,20 +37,20 @@ console.log('after drag down:', await titles());
 await dragTo(p, ".card:nth-child(1)"); await p.waitForTimeout(300);
 console.log('after drag up:', await titles());
 await pickBlock(p, '.card:nth-child(2)');
-await p.click('.tf-tools button:has-text("Hide")');
+await viaMore(p, 'Hide');
 const status = () => p.$eval('.tf-status', s => s.classList.contains('tf-show') ? s.textContent.trim() : '');
-console.log('after hide:', await titles(), '| hide button now:', await p.textContent('.tf-tools .tf-hide'), '| faded:', await p.evaluate(() => getComputedStyle(document.querySelector('[data-tf-hidden]')).opacity), '| said:', await status());
+console.log('after hide:', await titles(), '| hide button now:', await p.$eval('.tf-tools .tf-hide', e => e.getAttribute('aria-label')), '| faded:', await p.evaluate(() => getComputedStyle(document.querySelector('[data-tf-hidden]')).opacity), '| said:', await status());
 const quiet = () => p.evaluate(() => document.querySelector('.tf-status').classList.remove('tf-show')); /* the bubble would fade by itself in 6 s */
-await quiet(); await p.click('.tf-tools button:has-text("Show")'); await p.waitForTimeout(50); console.log('Show says nothing:', (await status()) === '');
-await quiet(); await p.click('.tf-tools button:has-text("Hide")'); await p.waitForTimeout(50); console.log('second Hide quiet:', (await status()) === '');
+await quiet(); await viaMore(p, 'Show'); await p.waitForTimeout(50); console.log('Show says nothing:', (await status()) === '');
+await quiet(); await viaMore(p, 'Hide'); await p.waitForTimeout(50); console.log('second Hide quiet:', (await status()) === '');
 /* Remove: gone at once, no ghost; Undo brings it back in its place */
 await quiet(); await pickBlock(p, '.card:nth-child(3)');
-await p.click('.tf-tools button:has-text("Remove")'); await p.waitForTimeout(50);
+await viaMore(p, 'Remove'); await p.waitForTimeout(50);
 console.log('after remove:', await titles(), '| tools gone:', await p.evaluate(() => getComputedStyle(document.querySelector('.tf-tools')).display === 'none'), '| said:', await status());
 await p.click('.tf-button:has-text("Undo")'); await p.waitForTimeout(50);
 console.log('undo brings it back:', await titles());
 await pickBlock(p, '.card:nth-child(3)');
-await p.click('.tf-tools button:has-text("Copy")');
+await viaMore(p, 'Copy');
 await p.waitForTimeout(700);
 console.log('copy said once:', await status(), '| copy in view:', await p.evaluate(() => { const r = document.querySelector('.cards > :nth-child(4)').getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; }));
 console.log('after copy:', await titles(), '| placeholders:', await p.evaluate(() => { const c = document.querySelector('.cards > :nth-child(4)'); return [c.querySelector('h3').textContent, c.querySelector('time').textContent, c.querySelector('p').textContent, c.querySelector('img').getAttribute('src').startsWith('data:image/svg') ? 'placeholder picture' : c.querySelector('img').getAttribute('src')].join(' / '); }));
