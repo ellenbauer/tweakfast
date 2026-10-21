@@ -2874,6 +2874,14 @@
                 var q = n.getBoundingClientRect(), gap = side[1] > 0 ? q.top - r.bottom : r.top - q.bottom; if (gap < 0) { o[side[0]] = 0; return; }
                 o[side[0]] = sameG(n) ? gap : Math.min(cap, gap / 2);
             });
+            /* room is the air a bare part lacks around its words once it has a colour: a part that draws its own edge (a
+               line on any side) is a box already and the colour ends at the line; one with padding of its own needs only
+               what that padding lacks of the 24 px */
+            if (!band) {
+                var sides = ['Top', 'Right', 'Bottom', 'Left'];
+                if (sides.some(function (k) { return parseFloat(cs['border' + k + 'Width']) > 0 && !seeThrough(cs['border' + k + 'Color']); })) return;
+                sides.forEach(function (k) { o[k.charAt(0).toLowerCase()] = Math.min(o[k.charAt(0).toLowerCase()], Math.max(0, cap - (parseFloat(cs['padding' + k]) || 0))); });
+            }
             if (!band) for (var s = b.parentElement && b.parentElement.firstElementChild; s; s = s.nextElementSibling) { /* a card: halfway to its siblings across from it, at most 24 px */
                 if (s === b || s.closest('[data-tweakfast]') || /^(SCRIPT|STYLE)$/.test(s.tagName)) continue;
                 var q = s.getBoundingClientRect(); if (!q.width || !q.height) continue;
