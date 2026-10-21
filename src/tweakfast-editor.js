@@ -1655,9 +1655,9 @@
         if (!last) return;
         var leads = rowPage(last); if (leads) { if (!panel) togglePages(); if (panel) openView({ kind: 'add', like: leads }); return; } /* each row leads to its own page: a new row is a new page */
         var twin = makeTwin(last), parentWas = cleanOuter(parent);
-        parent.insertBefore(twin, plus);
+        parent.insertBefore(twin, plus); frameTwin(last, twin);
         var back = rowRoom(parent);
-        steps.push(function () { twin.remove(); if (back) back(); });
+        steps.push(function () { unTwin(twin); if (back) back(); });
         mirror(parent, parentWas);
         refresh();
         showTools(twin);
@@ -1681,8 +1681,8 @@
             if (own[j].classList.contains('tf-plus')) holders.push(own[j].parentElement);
             own[j].remove();
         }
-        twin.removeAttribute('id');
-        twin.removeAttribute('data-tf-hidden');
+        twin.removeAttribute('data-tf-hidden'); twin.removeAttribute('data-tf-frame'); Array.prototype.forEach.call(twin.querySelectorAll('style[data-tf-frame]'), function (n) { n.remove(); }); /* a frame is measured anew for each copy */
+        freshIds(twin);
         /* a moving strip keeps its words: its loop needs the sentence repeated, a placeholder would break it */
         var m = keepsWords(block), keep = null;
         if (m) { var all = block.querySelectorAll('*'), at = Array.prototype.indexOf.call(all, m); keep = at < 0 ? twin : twin.querySelectorAll('*')[at]; if (keep) keep.setAttribute('data-tf-keep', ''); }
@@ -1743,8 +1743,6 @@
             }
             t.textContent = placeholder(t);
         }
-        var ids = root.querySelectorAll('[id]');
-        for (i = 0; i < ids.length; i++) ids[i].removeAttribute('id');
         /* the pictures: a neutral placeholder in the old one's frame, so the owner sees what to replace */
         var imgs = root.querySelectorAll('img');
         for (i = 0; i < imgs.length; i++) {
@@ -3194,9 +3192,9 @@
         var b = toolsFor; if (!b) return;
         if (isButton(b)) { copyButton(b); return; }
         var twin = makeTwin(b), parentWas = cleanOuter(b.parentElement);
-        b.parentElement.insertBefore(twin, b.nextSibling);
+        b.parentElement.insertBefore(twin, b.nextSibling); frameTwin(b, twin);
         var back = rowRoom(b.parentElement);
-        steps.push(function () { twin.remove(); if (back) back(); });
+        steps.push(function () { unTwin(twin); if (back) back(); });
         mirror(b.parentElement, parentWas);
         refresh();
         showTools(twin);
@@ -3297,6 +3295,88 @@
             var rules = rowRules(box, id); if (rules.length) rowStyle(id, rules); else box.removeAttribute('data-tf-rows');
         });
         sheets.forEach(function (s) { if (!worn.some(function (id) { return s.textContent.indexOf('"' + id + '"') >= 0; })) s.remove(); }); /* a rule no row wears any more (an Undo took the row back) goes, so Done does not save it */
+    }
+    /* ---- the ids of a copy ----
+       A site often styles a part by its id (#team { padding-top: … }) or names it from elsewhere in the part (a heading
+       the section is labelled by, a label's for, a link to #faq-3). A copy cannot carry the same id twice, and without it
+       such a rule or reference is lost: the copy of a section sat with no top padding. So an id that a rule or a
+       reference inside the copy depends on lives on under a fresh name (team-2): the references inside follow, and the
+       site's rules naming it are written again for the new name, only those, at their widths, in one style in the head,
+       which the saved page keeps. An id nothing depends on goes, as before. */
+    var REFS = ['aria-labelledby', 'aria-describedby', 'aria-controls', 'aria-owns', 'for', 'href'];
+    function idRe(id, all) { return new RegExp('#' + id.replace(/[^\w-]/g, '\\$&') + '(?![\\w-])', all ? 'g' : ''); }
+    /* the site's sheets, ours left out (a copy's own rules count: a copy of a copy reads them) */
+    function siteSheets() { return Array.prototype.filter.call(document.styleSheets, function (sh) { return !(sh.ownerNode && sh.ownerNode.closest && sh.ownerNode.closest('[data-tweakfast]')); }); }
+    function eachRule(fn) {
+        var walk = function (list, media) {
+            Array.prototype.forEach.call(list, function (r) {
+                if (r.media && r.cssRules) { walk(r.cssRules, media.concat(r.media.mediaText)); return; }
+                if (r.selectorText && r.style) fn(r, media);
+                else if (r.cssRules) walk(r.cssRules, media); /* @supports, @layer */
+            });
+        };
+        siteSheets().forEach(function (sh) { try { walk(sh.cssRules, []); } catch (e) {} });
+    }
+    /* every selector of the site in one text: whether a rule names #id is one test */
+    function selectorsText() { var out = []; eachRule(function (r) { out.push(r.selectorText); }); return out.join('\n'); }
+    function idNamed(id, text) { return idRe(id).test(text === undefined ? selectorsText() : text); }
+    /* the site's rules naming #id, written for #to: only the selectors that name it, at their widths */
+    function idRules(id, to) {
+        var re = idRe(id), all = idRe(id, true), rules = [];
+        eachRule(function (r, media) {
+            if (!re.test(r.selectorText)) return;
+            var sel = r.selectorText.split(/,(?![^(]*\))/).filter(function (x) { return re.test(x); }).map(function (x) { return x.trim().replace(all, '#' + to); });
+            if (!sel.length || !r.style.cssText) return;
+            rules.push(media.reduce(function (inner, m) { return '@media ' + m + '{' + inner + '}'; }, sel.join(',') + '{' + r.style.cssText + '}'));
+        });
+        return rules;
+    }
+    function idStyle(id, rules, doc) {
+        var st = (doc || document).createElement('style'); st.setAttribute('data-tf-id', id); st.textContent = rules.join('\n');
+        (doc || document).head.appendChild(st); return st;
+    }
+    function freshIds(twin, doc) {
+        doc = doc || document;
+        var text = selectorsText(), refSel = REFS.map(function (a) { return '[' + a + ']'; }).join(','), refs = (twin.matches(refSel) ? [twin] : []).concat(Array.prototype.slice.call(twin.querySelectorAll(refSel))); /* the copy itself may be labelled by a heading inside */
+        var named = [twin].concat(Array.prototype.slice.call(twin.querySelectorAll('[id]'))).filter(function (n) { return n.id; });
+        twin._tfSheets = [];
+        named.forEach(function (n) {
+            var id = n.id;
+            var refd = Array.prototype.some.call(refs, function (r) { return REFS.some(function (a) { var v = r.getAttribute(a); return !!v && (a === 'href' ? v === '#' + id : v.split(/\s+/).indexOf(id) >= 0); }); });
+            if (!refd && !idNamed(id, text)) { n.removeAttribute('id'); return; }
+            var base = id.replace(/-\d+$/, ''), k = 2, to;
+            while (doc.getElementById(to = base + '-' + k) || document.getElementById(to) || idNamed(to, text)) k++; /* no element, no rule of the site's own by that name */
+            n.id = to;
+            Array.prototype.forEach.call(refs, function (r) { REFS.forEach(function (a) { var v = r.getAttribute(a); if (!v) return; if (a === 'href') { if (v === '#' + id) r.setAttribute(a, '#' + to); } else if (v.split(/\s+/).indexOf(id) >= 0) r.setAttribute(a, v.split(/\s+/).map(function (w) { return w === id ? to : w; }).join(' ')); }); });
+            var rules = idRules(id, to); if (rules.length) twin._tfSheets.push(idStyle(to, rules, doc));
+        });
+    }
+    /* a copy taken back by Undo takes its rules with it */
+    function unTwin(twin) { twin.remove(); (twin._tfSheets || []).forEach(function (st) { st.remove(); }); }
+    /* a copy keeps the frame of its original, the way its pictures do: placeholder words are shorter than the words they
+       stand for, and a box laid out by its words would come out lower, squeezing what the site draws from the box's size
+       (a shape of 50% width and height, a picture that covers). So a copy that comes out lower than its original keeps
+       the original's height as its least, on wide screens, where the original's height was measured; longer words
+       grow it as they would the original, and a phone lays it out by its words as always */
+    function frameTwin(block, twin) {
+        var was = block.getBoundingClientRect().height, now = twin.getBoundingClientRect().height;
+        if (!(was > now + 2) || /^(fixed|sticky|absolute)$/.test(getComputedStyle(twin).position)) return;
+        var id = Math.random().toString(36).slice(2, 7), st = document.createElement('style');
+        st.setAttribute('data-tf-frame', ''); st.textContent = '@media (min-width:' + (PHONE + 1) + 'px){[data-tf-frame="' + id + '"]{min-height:' + Math.ceil(was) + 'px}}';
+        twin.setAttribute('data-tf-frame', id); twin.appendChild(st);
+    }
+    /* a copy whose rules are missing gets them again (a draft brought back and a Redo put the body back without the
+       head): the copy wears base-N, the site has #base with rules and no rule for #base-N. A rule no copy wears goes. */
+    function mendIds() {
+        var sheets = Array.prototype.slice.call(document.querySelectorAll('style[data-tf-id]')), worn = [], text = selectorsText();
+        Array.prototype.forEach.call(document.querySelectorAll('[id]'), function (n) {
+            var id = n.id, m = /^(.+)-(\d+)$/.exec(id); if (!m || n.closest('[data-tweakfast]')) return;
+            if (sheets.some(function (s) { return s.getAttribute('data-tf-id') === id; })) { worn.push(id); return; }
+            var model = document.getElementById(m[1]);
+            if (!model || model.tagName !== n.tagName || (model.getAttribute('class') || '') !== (n.getAttribute('class') || '') || idNamed(id, text) || !idNamed(m[1], text)) return;
+            var rules = idRules(m[1], id); if (rules.length) { idStyle(id, rules); worn.push(id); }
+        });
+        sheets.forEach(function (s) { if (worn.indexOf(s.getAttribute('data-tf-id')) < 0) s.remove(); });
     }
     function siteGap(b) {
         var all = document.querySelectorAll('body *');
@@ -4235,7 +4315,7 @@
         morphKids(document.body, doc.body, true); /* both sides compared in the saved form */
         liveHidden(document.body);
         markPictures(); markBlocks();
-        mendRows();
+        mendRows(); mendIds();
         var pics = document.querySelectorAll('img[data-tf-pos]'); for (var i = 0; i < pics.length; i++) enableDrag(pics[i]);
     }
     function ours(n) { return n.nodeType === 1 && (n.hasAttribute('data-tweakfast') || n.id === 'tf-style'); }
@@ -4354,7 +4434,8 @@
             seen.push(item.parentElement);
             var sig = signature(item), last = item; for (var c = item.parentElement.firstElementChild; c; c = c.nextElementSibling) if (signature(c) === sig && !c.hasAttribute('data-tweakfast')) last = c;
             var twin = item.cloneNode(true);
-            [twin].concat(Array.prototype.slice.call(twin.querySelectorAll('*'))).forEach(function (x) { x.removeAttribute('id'); x.removeAttribute('aria-current'); x.removeAttribute('data-tf-hidden'); x.removeAttribute('hidden'); x.classList && x.classList.remove('tf-hover', 'tf-editing', 'tf-picture', 'tf-moving'); });
+            freshIds(twin, d);
+            [twin].concat(Array.prototype.slice.call(twin.querySelectorAll('*'))).forEach(function (x) { x.removeAttribute('aria-current'); x.removeAttribute('data-tf-hidden'); x.removeAttribute('hidden'); x.classList && x.classList.remove('tf-hover', 'tf-editing', 'tf-picture', 'tf-moving'); });
             [twin].concat(Array.prototype.slice.call(twin.querySelectorAll('a[href]'))).forEach(function (x) { if (x.tagName === 'A' && pathOf(x) === likePath) x.setAttribute('href', path); });
             var label = Array.prototype.filter.call(twin.querySelectorAll('*'), function (x) { return !x.children.length && x.textContent.trim().toLowerCase() === fileName(likePath).toLowerCase(); })[0] || twin.querySelector('h1,h2,h3,h4,h5,h6');
             var nums = numbersIn(twin);
@@ -4823,6 +4904,7 @@
         var cls = doc.querySelectorAll('.tf-picture,.tf-editing,.tf-hover,.tf-moving');
         for (i = 0; i < cls.length; i++) { cls[i].classList.remove('tf-picture', 'tf-editing', 'tf-hover', 'tf-moving'); if (!cls[i].className) cls[i].removeAttribute('class'); }
         var s = doc.querySelector('#tf-style'); if (s) s.remove();
+        Array.prototype.forEach.call(doc.querySelectorAll('style[data-tf-id]'), function (st) { if (!doc.querySelector('[id="' + st.getAttribute('data-tf-id') + '"]')) st.remove(); }); /* a copy's rules after the copy was removed */
         if (doc.querySelector('body')) savedHidden(doc.querySelector('body'));
         var t = doc.querySelector('title'); if (t) t.textContent = realTitle;
         var cls2 = doc.querySelectorAll('.tf-on'); for (i = 0; i < cls2.length; i++) cls2[i].classList.remove('tf-on');

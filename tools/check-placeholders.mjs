@@ -6,7 +6,7 @@ const b = await chromium.launch({ executablePath: process.env.TF_CHROME || '/App
 const p = await b.newPage({ viewport: { width: 1000, height: 700 } }); p.on('pageerror', e => console.log('PAGEERROR', e.message));
 const viaMore = async (pg, word) => { await pg.click('.tf-tools button[aria-label="More"]'); await pg.click('.tf-menu button:has-text("' + word + '")'); await pg.waitForTimeout(60); }; /* the block tools wait behind More on a desk */
 await p.goto('http://127.0.0.1:8787/tools/check-placeholders.html#edit=test'); await p.waitForTimeout(1200);
-const r = await (await p.$('section')).boundingBox(); await p.mouse.move(r.x + r.width - 30, r.y + 20); await p.waitForTimeout(600);
+const r = await (await p.$('section')).boundingBox(); await p.mouse.click(r.x + r.width - 30, r.y + 20); await p.waitForTimeout(600); /* a click selects the block, its toolbar up */
 await viaMore(p, 'Copy'); await p.waitForTimeout(800);
 const c = await p.evaluate(() => { const s = document.querySelectorAll('main > section')[1]; return { big: s.querySelector('.big').textContent, mark: s.querySelector('[aria-hidden]').textContent, h2: s.querySelector('h2').textContent, said: s.querySelector('h2').getAttribute('aria-label'), p: s.querySelector('p').textContent, marks: !!s.querySelector('[data-tf-deco]') }; });
 console.log('decorations kept:', c.big === '波' && c.mark === '✦', '| boxed title:', c.h2 === 'New heading' && c.said === null, '| inner words blanked, link kept:', !/Words|inner/.test(c.p) && /a link/.test(c.p), '| no marks left:', !c.marks);

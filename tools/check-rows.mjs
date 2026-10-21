@@ -16,7 +16,7 @@ const say = async (label, want) => { const r = await rows(); console.log(label +
 const load = async (h) => { await p.goto('http://127.0.0.1:' + PORT + '/tools/_sw/index.html?v=' + Date.now() + h); await p.waitForSelector('.tf-bar, .tf-pages', { timeout: 15000 }); await p.waitForTimeout(900); await p.click('.tf-button:has-text("Got it")').catch(() => {}); };
 await load('#edit=test');
 const card = (await p.$$('.quotes > .quote'))[2]; await card.scrollIntoViewIfNeeded(); const r = await card.boundingBox(); await p.mouse.click(r.x + r.width / 2, r.y + 20); await p.waitForTimeout(400);
-await p.click('[data-tweakfast] button:has-text("Copy")'); await p.waitForTimeout(600);
+await p.click('.tf-tools button[aria-label="More"]'); await p.click('.tf-menu button:has-text("Copy")'); await p.waitForTimeout(600); /* the block tools wait behind More on a desk */
 await say('copied');
 await p.reload(); await p.waitForSelector('.tf-bar, .tf-pages', { timeout: 15000 }); await p.waitForTimeout(1200);
 await say('draft back after reload');
