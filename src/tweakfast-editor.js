@@ -417,7 +417,7 @@
         if (!node || node.nodeType !== 1) return null;
         var n = node.closest('[data-tf-art]'); if (n) return n;
         for (n = node; n && n !== document.body; n = n.parentElement) {
-            if (pinned(n) || n.matches(TEXT) || n.tagName === 'IMG' || n.closest('svg') || n.hasAttribute('data-tf-block')) continue;
+            if (pinned(n) || n.matches(TEXT) || n.tagName === 'IMG' || n.closest('svg') || n.hasAttribute('data-tf-block') || isWash(n)) continue;
             if (n.textContent.trim() || n.querySelector('img,svg,video,iframe')) return null; /* words or a picture inside: a block, not a box */
             var r = n.getBoundingClientRect(); if (r.width < 120 || r.height < 120) continue;
             var cs = getComputedStyle(n);
@@ -428,6 +428,9 @@
         return null;
     }
     function isArt(n) { return !!n && n.tagName !== 'IMG'; }
+    /* a wash: a see-through gradient with no words and no picture of its own, laid over a photo to dim it; not a box
+       to pick, and it goes with the photo */
+    function isWash(n) { var cs = getComputedStyle(n); return /gradient/.test(cs.backgroundImage) && !opaque(cs.backgroundColor) && !n.textContent.trim() && !n.querySelector('img,svg,video,iframe'); }
     /* a mark drawn as inline SVG (a logo): big enough to be a picture, not a small icon; Replace puts a picture in its place */
     function svgTarget(node) {
         var sv = node.closest ? node.closest('svg') : null; if (!sv || pinned(sv)) return null;
@@ -455,6 +458,7 @@
             if (list[i].closest('[data-tweakfast]')) return null; /* never through our own bar, bubble or tools */
             var pic = pictureTarget(list[i]); if (pic) return top && !top.contains(pic) ? null : pic; /* what is clicked is what changes: a floating header is not the photo under it */
             if (list[i].matches(TEXT)) return null;
+            if (isWash(list[i])) continue; /* a see-through wash over the photo: the photo shows through it */
             var cs = getComputedStyle(list[i]); if (opaque(cs.backgroundColor) || cs.backgroundImage !== 'none') return null; /* a box with its own colour hides the picture there: only where the picture shows can it be picked */
         }
         return null;
@@ -2080,7 +2084,7 @@
     }
     /* only what can be had and looks different is offered: a row that cannot be had here is left out */
     function swatchItem(r, take) {
-        var sw = r.word === 'see-through' ? { see: r.behind } : { ground: r.o.ground, ink: nameInk(r.o.ground, r.o.look.color) }; /* see-through: what is under the part right now, borrowed */
+        var sw = r.word === 'see-through' ? { see: r.behind } : r.word === 'picture' ? { picture: r.o.ground } : { ground: r.o.ground, ink: nameInk(r.o.ground, r.o.look.color) }; /* clear: the see-through grid of a colour picker, not the picture under it; picture: the photo itself */
         return { swatch: sw, word: r.word, now: r.o.now, fn: r.o.now ? function () {} : function () { take(r.o); } };
     }
     /* the row's name is written in the words' colour on that ground; where the part has no words to judge it by (a
@@ -2124,6 +2128,8 @@
         rows.push(twin ? { word: 'inverted', off: 'Same as ' + twin.word + ' here.' } : f && f.ok ? { o: f, word: 'inverted' } : { word: 'inverted', off: f ? WHY[f.why] : list.flipWhy || 'The background here is a picture.' });
         var see = list.filter(function (o) { return o.orig && o.ok && (o.see || o.plain && !rgbOf(o.ground)); })[0];
         if (see) rows.unshift({ o: see, word: 'see-through', behind: colourBehind(b) || see.ground, note: 'The page shows through this ' + (b.closest('header') ? 'header' : 'part') + '.' }); /* its swatch: what is under it right now, borrowed (a corner cut off says so), and a line under the row says why */
+        var pic = list.filter(function (o) { return o.picture; })[0];
+        if (pic) rows.unshift({ o: pic, word: 'picture' }); /* the way it came: the photo, before the colours that put it away */
         return rows;
     }
     /* the parts that cover a block's ground, named by where they sit */
@@ -2364,14 +2370,19 @@
     /* the choices are worked out from the block as the page came, never from what it took since: the same rows every
        time the menu opens, and the one it has now is ticked */
     function groundsNow(b, classOnly) {
-        var list = [], off = [], full = !isButton(b) && fullPicture(b);
-        if (full) list.picture = true; /* its own picture covers all of its ground: a colour there would never show */
-        if (!full && !isButton(b) && !b.matches('li,tr,td,th,dt,dd') && b.getClientRects().length && !covered(b)) {
-            var was = b.getAttribute('class'), tintWas = tintState(b), held = tintPair(b), from = groundFrom(b);
+        var list = [], off = [], full = !isButton(b) && fullPicture(b), pics = full ? groundPics(b) : [];
+        if (full) list.picture = true; /* its own picture covers all of its ground: a colour there shows only once the picture is put away */
+        if (!isButton(b) && !b.matches('li,tr,td,th,dt,dd') && b.getClientRects().length && !covered(b)) {
+            var was = b.getAttribute('class'), tintWas = tintState(b), held = tintPair(b), awayWas = tintAway(b), from = groundFrom(b);
             untint(b); putAttr(b, 'class', from); /* as it came */
+            /* a picture section: every colour is tried with its picture put away (kept in the page, unseen, so nothing moves),
+               the way the colour would show; the picture itself is the row it came with, its own photo for a swatch */
+            var picWas = pics.map(function (n) { return n.getAttribute('style'); });
+            pics.forEach(function (n) { n.style.setProperty('visibility', 'hidden', 'important'); });
             var names = groundClasses(), own = names.filter(function (c) { return b.classList.contains(c); }), base = layoutOf(b), first = groundLook(b), read = readings(b);
             var cs = getComputedStyle(b), ink = cs.color;
-            var choice = function (cls, pair, g, extra) { var o = { cls: cls, pair: pair, look: g.look, ground: g.ground, plain: g.plain, key: g.key, ok: true }; for (var k in extra) o[k] = extra[k]; return o; };
+            var choice = function (cls, pair, g, extra) { var o = { cls: cls, pair: pair, look: g.look, ground: g.ground, plain: g.plain, key: g.key, ok: true, away: full }; for (var k in extra) o[k] = extra[k]; return o; };
+            if (full) { var src = pics[0].tagName === 'IMG' ? 'url("' + (pics[0].currentSrc || pics[0].src) + '") center / cover' : getComputedStyle(pics[0]).backgroundImage + ' center / cover'; list.push({ cls: from, pair: null, look: first.look, ground: src, plain: false, key: 'picture', ok: true, orig: true, picture: true, away: false }); }
             /* a choice that reads well is kept unless one like it is there; one that does not, only to say why its row is grey */
             var put = function (o) {
                 if (o.flip) { list.push(o); return; }
@@ -2382,7 +2393,7 @@
                are the site's own colours laid on it, the same at the top of the page and at its end */
             var see = first.plain && pinned(b);
             /* the ground it came with is always a choice: the way back needs no checking */
-            put(choice(from, null, first, { orig: true, see: see }));
+            put(choice(from, null, first, full ? { bare: true, ok: bareReads(b), why: 'read' } : { orig: true, see: see })); /* bare on a picture section: the colour under the photo, checked like any other */
             var bare = Array.prototype.filter.call(b.classList, function (c) { return own.indexOf(c) < 0; });
             var tried = 0;
             [''].concat(names).forEach(function (c) {
@@ -2394,7 +2405,7 @@
                 var tries = [keep.concat(add).join(' ')]; if (c && own.length) tries.push(Array.prototype.slice.call(b.classList).filter(function (k) { return !inkC || inkNames.indexOf(k) < 0; }).concat(add).join(' '));
                 tries.some(function (cls, n) {
                     b.setAttribute('class', cls); retint(b, from);
-                    var fits = layoutOf(b) === base, ok = fits && staysReadable(read, readings(b)), g = groundLook(b); /* nothing moves, and every text still reads */
+                    var fits = layoutOf(b) === base, ok = fits && staysReadable(read, readings(b)) && (!full || bareReads(b)), g = groundLook(b); /* nothing moves, and every text still reads */
                     untint(b); putAttr(b, 'class', from);
                     if (fits || n === tries.length - 1) put(choice(cls, null, g, { ok: ok, why: fits ? 'read' : 'move' }));
                     return fits;
@@ -2404,8 +2415,8 @@
                 var picture = cs.backgroundImage !== 'none' || !see && !rgbOf(first.ground);
                 /* the site's own colour pairs laid on the block as they are: no class, so nothing can move */
                 if (!picture) sitePairs().forEach(function (p) {
-                    if (list.some(function (x) { return x.ok && same(x.ground) === same(p.g); })) return; /* a class gives it already */
-                    retint(b, from, p); var ok = staysReadable(read, readings(b)), g = groundLook(b); untint(b);
+                    if (list.some(function (x) { return x.ok && !x.see && same(x.ground) === same(p.g); })) return; /* a class gives it already; the see-through row's ground is borrowed from the page under it and gives nothing */
+                    retint(b, from, p); var ok = staysReadable(read, readings(b)) && (!full || bareReads(b)), g = groundLook(b); untint(b);
                     put(choice(from, p, g, { ok: ok, why: 'read' }));
                 });
                 /* inverted: the ground it came with becomes its ink, and that ink its ground */
@@ -2415,16 +2426,17 @@
                 else if (contrast(blend(iv, gv), gv) < 3) list.flipWhy = 'Its words and background are too close to swap.';
                 if (!see && !picture && gv && iv && contrast(blend(iv, gv), gv) >= 3) {
                     var fp = { g: rgbText(blend(iv, gv)), i: rgbText(gv), flip: true };
-                    retint(b, from, fp); var okF = staysReadable(read, readings(b)), gF = groundLook(b); untint(b);
+                    retint(b, from, fp); var okF = staysReadable(read, readings(b)) && (!full || bareReads(b)), gF = groundLook(b); untint(b);
                     put(choice(from, fp, gF, { ok: okF, why: 'read', flip: true }));
                 }
             }
+            pics.forEach(function (n, i) { putAttr(n, 'style', picWas[i]); });
             putAttr(b, 'class', was); setTint(b, tintWas);
             off.forEach(function (o, n) { if (!list.some(function (x) { return !x.flip && alike(x, o); }) && !off.slice(0, n).some(function (x) { return alike(x, o); })) list.push(o); });
             /* the tick: the choice that is what the block has now */
             var samePair = function (x, y) { return !x && !y || !!x && !!y && !x.flip === !y.flip && same(x.g) === same(y.g) && same(x.i) === same(y.i); };
-            list.forEach(function (o) { o.now = o.ok && (o.cls || '') === (was || '') && samePair(o.pair, held); });
-            if (!list.some(function (o) { return o.now; })) { var seen = groundLook(b), tick = list.filter(function (o) { return o.ok && !o.flip && (alike(o, seen) || sameByEye(o, seen)); })[0]; if (tick) tick.now = true; } /* a Look that now looks as the part came: that row */
+            list.forEach(function (o) { o.now = o.ok && (o.cls || '') === (was || '') && samePair(o.pair, held) && !!o.away === awayWas; });
+            if (!list.some(function (o) { return o.now; })) { var seen = groundLook(b), tick = list.filter(function (o) { return o.ok && !o.flip && !o.see && (alike(o, seen) || sameByEye(o, seen)); })[0]; if (tick) tick.now = true; } /* a Look that now looks as the part came: that row */
         }
         b[classOnly ? '_tfGroundsC' : '_tfGrounds'] = { at: era, list: list };
         return list;
@@ -2436,6 +2448,28 @@
         return Array.prototype.some.call(b.querySelectorAll('img'), function (img) {
             var q = img.getBoundingClientRect(), w = Math.min(q.right, r.right) - Math.max(q.left, r.left), h = Math.min(q.bottom, r.bottom) - Math.max(q.top, r.top);
             return w > 0 && h > 0 && w * h >= area * .95;
+        });
+    }
+    /* the pictures that are a block's whole ground (each covering it), and any wash laid over them (a see-through gradient
+       with no words, covering the block too): what goes away together when the block takes a colour */
+    function groundPics(b) {
+        var r = b.getBoundingClientRect(), area = r.width * r.height, out = []; if (!area) return out;
+        var covers = function (n) { var q = n.getBoundingClientRect(), w = Math.min(q.right, r.right) - Math.max(q.left, r.left), h = Math.min(q.bottom, r.bottom) - Math.max(q.top, r.top); return w > 0 && h > 0 && w * h >= area * .9; };
+        Array.prototype.forEach.call(b.querySelectorAll('*'), function (n) {
+            if (n.closest('[data-tweakfast]') || out.some(function (o) { return o.contains(n); })) return;
+            if (n.tagName === 'IMG') { if (covers(n)) out.push(n); return; }
+            var cs = getComputedStyle(n);
+            if (/gradient/.test(cs.backgroundImage) && !n.textContent.trim() && !n.querySelector('img') && covers(n)) out.push(n);
+        });
+        return out;
+    }
+    /* words that sit straight on the block's ground (not in a card of their own) read on it, 3:1 and up */
+    function bareReads(b) {
+        var out = []; measure(b, out);
+        return out.every(function (m) {
+            if (m.k !== 't' || m.v === null || m.v >= 3) return true;
+            for (var n = m.el; n && n !== b; n = n.parentElement) { var cs = getComputedStyle(n); if (cs.backgroundImage !== 'none' || opaque(cs.backgroundColor)) return true; }
+            return false;
         });
     }
     /* the photo that is a section's whole ground (a first photo with the words laid over it): the section has no bare
@@ -2517,7 +2551,8 @@
             return m ? { b: n, o: m } : null;
         }).filter(Boolean));
         var saved = list.map(function (x) { return { b: x.b, was: x.b.getAttribute('class'), outerWas: cleanOuter(x.b), tintWas: tintState(x.b), from: groundFrom(x.b) }; });
-        list.forEach(function (x, i) { putAttr(x.b, 'class', x.o.cls); retint(x.b, saved[i].from, x.o.pair); });
+        list.forEach(function (x, i) { putAttr(x.b, 'class', x.o.cls); retint(x.b, saved[i].from, x.o.pair, x.o.away); });
+        if (o.away && picked && b.contains(picked)) unpick(); /* the photo put away is no longer there to replace */
         steps.push(function () { saved.forEach(function (v) { putAttr(v.b, 'class', v.was); setTint(v.b, v.tintWas); }); });
         refresh();
         saved.forEach(function (v) { if (sharedParts(document).indexOf(v.b) >= 0) mirrorGround(v.b, v.was, v.tintWas); else mirror(v.b, v.outerWas); });
@@ -2528,7 +2563,7 @@
        (its insides may differ, the menu marks another page as the current one) */
     function mirrorGround(part, classWas, tintWas) {
         var which = sharedParts(document).indexOf(part), cls = part.getAttribute('class'), st = tintStyle(part), id = part.getAttribute('data-tf-tint');
-        var marked = st ? ownMarks(part).map(function (n) { return { path: pathFrom(part, n), m: markOf(n, id) }; }) : [];
+        var marked = st ? ownMarks(part).map(function (n) { return { path: pathFrom(part, n), m: marksOf(n, id) }; }) : [];
         var paths = otherPages(); if (!paths.length) return;
         var local = steps[steps.length - 1];
         var tintText = function (n) { var t = tintStyle(n); return t ? t.textContent : ''; };
@@ -2539,7 +2574,7 @@
                 var doc = parse(html), there = sharedParts(doc)[which];
                 if (there && (there.getAttribute('class') || '') === (classWas || '') && tintText(there) === (tintWas ? tintWas.style.textContent : '')) {
                     untint(there); putAttr(there, 'class', cls);
-                    if (st) { there.appendChild(doc.importNode(st, true)); there.setAttribute('data-tf-tint', id); marked.forEach(function (x) { var n = walkPath(there, x.path); if (n) mark(n, x.m); }); }
+                    if (st) { there.appendChild(doc.importNode(st, true)); there.setAttribute('data-tf-tint', id); marked.forEach(function (x) { var n = walkPath(there, x.path); if (n) x.m.forEach(function (mm) { mark(n, mm); }); }); }
                     led.put(path_, serialize(doc));
                 } else differ.push(path_);
             }, function () {
@@ -2566,11 +2601,11 @@
        new ground, so its words keep reading. Answers the way back. */
     function relook(page, doc, change) {
         var back = Array.prototype.filter.call(doc.querySelectorAll('[data-tf-tint]'), function (t) { return t.tagName !== 'STYLE' && t !== page && !t.contains(page); }) /* parts, not our own style elements */
-            .map(function (t) { return { t: t, state: tintState(t), from: groundFrom(t), pair: tintPair(t) }; });
+            .map(function (t) { return { t: t, state: tintState(t), from: groundFrom(t), pair: tintPair(t), away: tintAway(t) }; });
         still(function () {
             back.forEach(function (x) { untint(x.t); }); /* set aside, so the page's colours reach them as they came */
             change();
-            back.forEach(function (x) { retintNow(x.t, x.from, x.pair); }); /* outer first: document order */
+            back.forEach(function (x) { retintNow(x.t, x.from, x.pair, x.away); }); /* outer first: document order */
         });
         return function () { back.slice().reverse().forEach(function (x) { setTint(x.t, x.state); }); };
     }
@@ -2643,19 +2678,20 @@
     /* the class the block's colours were made for: kept in its tint, so it lasts past a reload */
     /* the colours laid on a block as a pair, kept in its tint: { g, i, flip } */
     function tintPair(b) { var st = tintStyle(b), v = st && st.getAttribute('data-tf-pair'); if (!v) return null; v = v.split('|'); return { g: v[0], i: v[1], flip: st.hasAttribute('data-tf-flip') }; }
+    function tintAway(b) { var st = tintStyle(b); return !!st && st.hasAttribute('data-tf-away'); } /* its ground picture put away, in its tint */
     function groundFrom(b) { var st = tintStyle(b); if (st) return st.getAttribute('data-tf-from'); if (b._tfGroundFrom === undefined) b._tfGroundFrom = b.getAttribute('class'); return b._tfGroundFrom; }
     function tintState(b) {
         var st = tintStyle(b); if (!st) return null;
         var id = b.getAttribute('data-tf-tint');
-        return { style: st.cloneNode(true), id: id, marks: ownMarks(b).map(function (n) { return [n, markOf(n, id)]; }) };
+        return { style: st.cloneNode(true), id: id, marks: ownMarks(b).map(function (n) { return [n, marksOf(n, id)]; }) };
     }
     /* a part may carry marks of more than one tint (a section's and a card's inside it): each tint adds and takes away
        only its own word in the attribute */
     function marks(n) { return (n.getAttribute('data-tf-t') || '').split(' ').filter(Boolean); }
-    function markOf(n, id) { return marks(n).filter(function (m) { return m.indexOf(id + '-') === 0; })[0]; }
+    function marksOf(n, id) { return marks(n).filter(function (m) { return m.indexOf(id + '-') === 0; }); } /* all of one tint's marks on a part: its colours, and its picture put away */
     function mark(n, m) { var all = marks(n); if (all.indexOf(m) < 0) all.push(m); n.setAttribute('data-tf-t', all.join(' ')); }
     function unmark(n, id) { var all = marks(n).filter(function (m) { return m.indexOf(id + '-') !== 0; }); putAttr(n, 'data-tf-t', all.join(' ')); }
-    function ownMarks(b) { var id = b.getAttribute('data-tf-tint'); return id ? Array.prototype.filter.call(b.querySelectorAll('[data-tf-t]'), function (n) { return !!markOf(n, id); }) : []; }
+    function ownMarks(b) { var id = b.getAttribute('data-tf-tint'); return id ? Array.prototype.filter.call(b.querySelectorAll('[data-tf-t]'), function (n) { return marksOf(n, id).length > 0; }) : []; }
     function untint(b) {
         var id = b.getAttribute('data-tf-tint');
         ownMarks(b).forEach(function (n) { unmark(n, id); });
@@ -2665,7 +2701,7 @@
     function setTint(b, state) {
         untint(b); if (!state) return;
         b.appendChild(state.style.cloneNode(true)); b.setAttribute('data-tf-tint', state.id);
-        state.marks.forEach(function (m) { mark(m[0], m[1]); });
+        state.marks.forEach(function (m) { m[1].forEach(function (x) { mark(m[0], x); }); });
     }
     function tintParts(b) { return [b].concat(Array.prototype.slice.call(b.querySelectorAll('*'))).filter(function (n) { return !n.closest('[data-tweakfast],svg') && !/^(STYLE|SCRIPT)$/.test(n.tagName); }).slice(0, b.tagName === 'BODY' || b.tagName === 'MAIN' ? 3000 : 400); } /* the page's own ground reaches its footer too */
     function tintRead(n) { var cs = getComputedStyle(n), o = { under: behind(n) }; for (var k in TINT) o[k] = cs[k]; o.stroke = parseFloat(cs.webkitTextStrokeWidth) > 0; o.image = cs.backgroundImage !== 'none'; o.lines = ['Top', 'Right', 'Bottom', 'Left'].map(function (s) { return parseFloat(cs['border' + s + 'Width']) > 0 && cs['border' + s + 'Style'] !== 'none'; }); return o; }
@@ -2746,11 +2782,13 @@
         return 'rgba(' + Math.round(c.r) + ',' + Math.round(c.g) + ',' + Math.round(c.b) + ',' + alpha + ')';
     }
     /* pair: a ground and an ink laid on the block itself (inverted, or a colour of the site), past what its class gives */
-    function retint(b, from, pair) { still(function () { retintNow(b, from, pair); }); }
-    function retintNow(b, from, pair) {
+    function retint(b, from, pair, away) { still(function () { retintNow(b, from, pair, away); }); }
+    /* away: the block's ground picture (and a wash over it) is kept in the page but unseen, so the block keeps the room
+       it had on every screen, and the colour shows where the picture was */
+    function retintNow(b, from, pair, away) {
         untint(b);
-        var to = b.getAttribute('class'); if (from === undefined) { if (!pair) return; from = to; }
-        if (!pair && (from || '') === (to || '')) return;
+        var to = b.getAttribute('class'); if (from === undefined) { if (!pair && !away) return; from = to; }
+        if (!pair && !away && (from || '') === (to || '')) return;
         var parts = tintParts(b), A, B, HA, HB;
         putAttr(b, 'class', from || null); A = parts.map(tintRead); HA = tintHovers(b); var g0 = behind(b), i0 = rgbOf(getComputedStyle(b).color), bare0 = !A[0].image && seeThrough(A[0].backgroundColor);
         putAttr(b, 'class', to);
@@ -2822,10 +2860,12 @@
             if (set.length) rules.push(':is([data-tf-tint="' + id + '"],[data-tf-tint="' + id + '"] *):is(' + h.sel + ',' + h.base + '[data-tf-hover]){' + set.join(';') + '}');
         });
         if (band) rules.push('[data-tf-tint="' + id + '"]{box-shadow:0 0 0 100vw ' + band + '!important;clip-path:inset(0 -100vw)!important}'); /* edge to edge; the room above and below is the page's, per screen size */
+        if (away) groundPics(b).forEach(function (n, j) { mark(n, id + '-p' + j); rules.push('[data-tf-t~="' + id + '-p' + j + '"]{visibility:hidden!important}'); });
         var seen = {}; rules = rules.filter(function (r) { return seen[r] ? false : (seen[r] = true); });
         if (!rules.length) return;
         var st = document.createElement('style'); st.setAttribute('data-tf-tint', ''); st.setAttribute('data-tf-from', from || ''); st.textContent = rules.join('\n');
         if (pair) { st.setAttribute('data-tf-pair', pair.g + '|' + pair.i); if (pair.flip) st.setAttribute('data-tf-flip', ''); }
+        if (away) st.setAttribute('data-tf-away', '');
         b.setAttribute('data-tf-tint', id); b.appendChild(st);
     }
     /* a menu fixed to the top of the window must read over whatever scrolls under it. As the site was made, a see-through
@@ -3606,8 +3646,9 @@
             if (it.swatch) { /* a background: a wide strip of it with its name written in its words' colour, always in our own font; a tick on the one it has */
                 menu.className += ' tf-grounds';
                 var sw = el('button', 'tf-item tf-swatch-row'); sw.setAttribute('role', 'menuitem');
-                var name_ = it.word.charAt(0).toUpperCase() + it.word.slice(1), chip = el('span', 'tf-swatch', it.swatch.see ? '' : name_);
+                var name_ = it.word.charAt(0).toUpperCase() + it.word.slice(1), labelled = it.swatch.see || it.swatch.picture, chip = el('span', 'tf-swatch', labelled ? '' : name_);
                 if (it.swatch.see) { chip.className += ' tf-swatch-see'; if (/url\(/.test(it.swatch.see)) chip.style.background = it.swatch.see; else chip.style.backgroundColor = it.swatch.see; chip.appendChild(el('span', 'tf-swatch-name', name_)); } /* see-through: the colour under it now, a corner cut off to say it is borrowed; its name on a small white label, so it reads on anything */
+                else if (it.swatch.picture) { chip.className += ' tf-swatch-pic'; chip.style.backgroundImage = it.swatch.picture; chip.appendChild(el('span', 'tf-swatch-name', name_)); } /* the photo itself, its name on the same label */
                 else { chip.style.background = it.swatch.ground; chip.style.color = it.swatch.ink; }
                 sw.appendChild(chip);
                 sw.type = 'button'; if (it.now) { var tk = el('span', 'tf-swatch-tick'); tk.innerHTML = ICON.check; chip.appendChild(tk); sw.setAttribute('aria-current', 'true'); }
@@ -5134,7 +5175,7 @@
             '.tf-row{position:relative;display:flex;align-items:center;gap:8px;min-height:40px;padding:0 6px 0 10px;border-radius:10px;font-size:14px;transition:background .12s}.tf-row:has(.tf-row-grip){padding-left:4px}.tf-row:hover,.tf-row.tf-open,.tf-row:focus-within{background:var(--tf-fill)}.tf-row-grip{opacity:0;transition:opacity .12s}.tf-row:hover .tf-row-grip,.tf-row.tf-open .tf-row-grip,.tf-row-moving .tf-row-grip{opacity:1}.tf-row-moving{background:var(--tf-lift);box-shadow:0 8px 24px rgba(0,0,0,.35)}.tf-rename{flex:1;min-width:0;height:28px}.tf-row-note,.tf-row-tag{color:var(--tf-muted);flex:none;height:18px;line-height:18px;font-size:11px;font-weight:600;padding:0 6px;border-radius:6px;background:var(--tf-fill)}.tf-row-hidden .tf-row-name{color:var(--tf-muted)}.tf-row-plain{padding:6px 6px 6px 10px}.tf-row-plain:hover{background:none}.tf-row-plain .tf-row-name{white-space:normal;line-height:1.4;font-size:13px;color:var(--tf-muted);cursor:default}.tf-row-plain .tf-row-name:hover{text-decoration:none}' +
             '.tf-row-name{flex:0 1 auto;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:inherit;text-decoration:none;padding:2px 0}.tf-row-name:hover{text-decoration:underline}.tf-row-name:focus{outline:none}.tf-row-name:focus-visible{outline:2px solid var(--tf-accent);outline-offset:2px;border-radius:4px}.tf-row.tf-here{background:var(--tf-fill)}.tf-row.tf-here:hover{background:var(--tf-fill-hover)}.tf-row.tf-here .tf-row-name{font-weight:600}.tf-row-check{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin-left:auto;color:var(--tf-muted);flex:none}.tf-row-check svg{width:14px;height:14px}.tf-row-check+.tf-row-acts{margin-left:0}' +
             '.tf-row-acts{display:flex;gap:2px;align-items:center;flex:none;margin-left:auto;opacity:0;transition:opacity .12s}.tf-row:hover .tf-row-acts,.tf-row.tf-open .tf-row-acts,.tf-row:focus-within .tf-row-acts,.tf-versions .tf-row-acts{opacity:1}.tf-row-acts .tf-button{height:28px;padding:0 10px;font-size:13px}.tf-row-acts .tf-icon{width:28px}.tf-versions{padding:2px 0 0;font-size:13px}.tf-versions .tf-row-name{cursor:default}.tf-versions .tf-row-name:hover{text-decoration:none}.tf-versions .tf-caption{margin-left:10px}.tf-menu{position:fixed;width:220px;padding:4px;border-radius:12px;font:13.5px/1 var(--tf-font);z-index:2147483001}.tf-item{appearance:none;display:flex;align-items:center;gap:10px;width:100%;height:32px;padding:0 10px;border:0;border-radius:8px;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}.tf-item:hover,.tf-item:focus-visible{background:var(--tf-fill);outline:0}.tf-item:focus-visible{box-shadow:inset 0 0 0 2px var(--tf-accent)}.tf-item svg{width:16px;height:16px;color:var(--tf-muted);flex:none}.tf-item.tf-danger{color:var(--tf-bad-ink)}.tf-item.tf-danger svg{color:currentColor}.tf-helps{display:grid;gap:16px;padding:10px 8px 8px}.tf-help-row{display:grid;grid-template-columns:30px 1fr;gap:12px;align-items:start}.tf-help-icon{display:grid;place-items:center;width:30px;height:30px;border-radius:8px;background:var(--tf-fill);color:var(--tf-accent)}.tf-help-icon svg{width:16px;height:16px}.tf-help-title{font:600 13.5px/1.3 var(--tf-font);margin:1px 0 3px}.tf-help{margin:0;font-size:13px;line-height:1.45;color:var(--tf-muted)}.tf-help-keys{display:flex;flex-wrap:wrap;gap:6px 14px}.tf-help-keys span{display:inline-flex;align-items:center;gap:6px}.tf-kbd{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:20px;padding:0 6px;border-radius:5px;background:var(--tf-fill);box-shadow:0 0 0 1px var(--tf-hairline),0 1px 0 var(--tf-hairline);font:500 11.5px/1 var(--tf-font);color:inherit}.tf-share-line{display:flex;gap:6px;align-items:center}.tf-share-line .tf-input{flex:1;min-width:0}.tf-qr{width:168px;margin:2px 0 10px;border-radius:12px;overflow:hidden;line-height:0}.tf-qr svg{width:100%;height:auto;display:block}.tf-share-note{margin:4px 2px 2px;font-size:13px;line-height:1.45;color:var(--tf-muted)}.tf-changes{width:340px;max-width:calc(100vw - 16px);max-height:50vh;overflow:auto}.tf-changes .tf-row{min-height:36px;padding-right:2px;font-size:13px}.tf-changes .tf-row-name{flex:1 1 auto;font-weight:400;color:inherit}.tf-changes .tf-row-acts{opacity:1}.tf-count{cursor:pointer}.tf-gap{height:1px;background:var(--tf-hairline);margin:6px 4px}.tf-note{padding:6px 10px 4px;color:var(--tf-muted);font-size:12px;line-height:1.4}' +
-            '.tf-menu.tf-looks{width:min(340px,calc(100vw - 16px))}.tf-item.tf-look{height:auto;min-height:44px;padding:5px 6px;gap:12px}.tf-look-ground{flex:1 1 auto;min-width:0;display:flex;align-items:center;padding:8px 10px;border-radius:8px;overflow:hidden}.tf-look-sample{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.2;box-sizing:border-box}.tf-look-word{display:flex;align-items:center;justify-content:flex-end;gap:4px;flex:none;width:92px;color:var(--tf-muted);font-size:12px}.tf-look-word svg{width:13px;height:13px;color:var(--tf-primary)}.tf-item.tf-off{cursor:default}.tf-item.tf-off:hover{background:none}.tf-look-why{flex:1 1 auto;min-width:0;padding:4px 10px;color:var(--tf-muted);font-size:12px;line-height:1.35}.tf-menu.tf-grounds{width:min(280px,calc(100vw - 16px))}.tf-swatch-row{height:auto;min-height:52px;padding:4px;gap:10px}.tf-swatch{flex:1 1 auto;min-width:0;display:flex;align-items:center;height:44px;padding:0 14px;border-radius:9px;box-shadow:inset 0 0 0 1px rgba(127,127,127,.28);font:500 14px/1 var(--tf-font)}.tf-swatch{justify-content:space-between}.tf-swatch-tick{flex:none;display:flex}.tf-swatch-see{position:relative;overflow:hidden;color:#1d1d1f;background:#e5e5ea center/cover}.tf-swatch-see::after{content:"";position:absolute;right:0;bottom:0;width:0;height:0;border-style:solid;border-width:0 0 22px 22px;border-color:transparent transparent var(--tf-lift) transparent}.tf-swatch-name{padding:3px 6px;margin-left:-6px;border-radius:5px;background:rgba(255,255,255,.9)}.tf-swatch-tick svg{width:15px;height:15px;color:currentColor}.tf-off .tf-look-word{opacity:.55}.tf-menu-label{padding:8px 10px 4px;color:var(--tf-muted);font-size:12px;font-weight:600}' +
+            '.tf-menu.tf-looks{width:min(340px,calc(100vw - 16px))}.tf-item.tf-look{height:auto;min-height:44px;padding:5px 6px;gap:12px}.tf-look-ground{flex:1 1 auto;min-width:0;display:flex;align-items:center;padding:8px 10px;border-radius:8px;overflow:hidden}.tf-look-sample{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.2;box-sizing:border-box}.tf-look-word{display:flex;align-items:center;justify-content:flex-end;gap:4px;flex:none;width:92px;color:var(--tf-muted);font-size:12px}.tf-look-word svg{width:13px;height:13px;color:var(--tf-primary)}.tf-item.tf-off{cursor:default}.tf-item.tf-off:hover{background:none}.tf-look-why{flex:1 1 auto;min-width:0;padding:4px 10px;color:var(--tf-muted);font-size:12px;line-height:1.35}.tf-menu.tf-grounds{width:min(280px,calc(100vw - 16px))}.tf-swatch-row{height:auto;min-height:52px;padding:4px;gap:10px}.tf-swatch{flex:1 1 auto;min-width:0;display:flex;align-items:center;height:44px;padding:0 14px;border-radius:9px;box-shadow:inset 0 0 0 1px rgba(127,127,127,.28);font:500 14px/1 var(--tf-font)}.tf-swatch{justify-content:space-between}.tf-swatch-tick{flex:none;display:flex}.tf-swatch-see{position:relative;overflow:hidden;color:#1d1d1f;background:#e5e5ea center/cover}.tf-swatch-see::after{content:"";position:absolute;right:0;bottom:0;width:0;height:0;border-style:solid;border-width:0 0 22px 22px;border-color:transparent transparent var(--tf-lift) transparent}.tf-swatch-name{padding:3px 6px;margin-left:-6px;border-radius:5px;background:rgba(255,255,255,.9)}.tf-swatch-pic{color:#1d1d1f;background:#e5e5ea center/cover}.tf-swatch-pic .tf-swatch-tick{padding:2px;border-radius:5px;background:rgba(255,255,255,.9)}.tf-swatch-tick svg{width:15px;height:15px;color:currentColor}.tf-off .tf-look-word{opacity:.55}.tf-menu-label{padding:8px 10px 4px;color:var(--tf-muted);font-size:12px;font-weight:600}' +
             '.tf-pal-field{display:flex;align-items:center;gap:10px;flex:none;height:48px;padding:0 12px 0 16px;border-bottom:1px solid var(--tf-hairline)}.tf-pal-field svg{width:16px;height:16px;color:var(--tf-muted);flex:none}.tf-pal-input{flex:1;min-width:0;border:0;padding:0;background:none;color:inherit;font:15px/1 var(--tf-font);outline:0}.tf-pal-input::placeholder{color:var(--tf-muted)}' +
             '.tf-key{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;border-radius:5px;background:var(--tf-fill);color:var(--tf-muted);font:500 11px/1 var(--tf-font);box-shadow:inset 0 -1px 0 var(--tf-hairline);flex:none}.tf-keys{display:flex;gap:3px;margin-left:auto}' +
             '.tf-pal .tf-sheet-body{padding:8px 8px 10px}.tf-pal .tf-caption{margin:6px 0 4px 10px}.tf-pal-row{height:40px;padding:0 10px;border-radius:10px;font-size:14px}.tf-pal-row:hover{background:none}.tf-pal-row.tf-lit{background:var(--tf-fill)}.tf-pal-name{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tf-pal-row .tf-row-tag{margin-left:auto}.tf-pal-none{padding:10px 10px 6px;color:var(--tf-muted);font-size:13px}' +

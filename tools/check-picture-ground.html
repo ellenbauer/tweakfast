@@ -1,0 +1,26 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Picture ground</title>
+<style>
+:root{--green:#4a7c6b;--cream:#f4f1e8;--ink:#1f3d33}
+body{font:17px/1.4 sans-serif;margin:0;background:var(--cream);color:var(--ink)}
+header{display:flex;gap:24px;padding:20px 32px;background:var(--green);color:#fff}header a{color:#fff}
+.section-green{background:var(--green);color:#fff}.section-dark{background:var(--ink);color:var(--cream)}
+.hero{position:relative;min-height:420px;padding:60px 32px 0 0;display:flex;justify-content:flex-end}
+.hero img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.card{position:relative;width:300px;padding:24px;border-radius:16px;background:#fff;color:var(--ink)}
+.words{position:relative;min-height:320px;padding:48px 32px;color:#fff}
+.words img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.words .wash{position:absolute;inset:0;background:linear-gradient(rgba(0,0,0,.2),rgba(0,0,0,.6))}
+.words h2,.words p{position:relative;margin:0 0 12px}
+.plain{padding:48px 32px}
+footer{padding:24px 32px;background:var(--ink);color:var(--cream)}
+</style></head>
+<body>
+<header><a href="index.html">Bary</a><nav><a href="about.html">About</a></nav></header>
+<main>
+<section class="hero"><img src="../lab/assets/father-and-son.avif" alt="A father and son"><div class="card"><h1>Contact us</h1><p>First name</p><p>Email</p></div></section>
+<section class="words"><img src="../lab/assets/father-and-son.avif" alt="A father and son"><div class="wash"></div><h2>Care at home</h2><p>Words straight on the photo, in white.</p></section>
+<section class="plain section-green"><h2>About us</h2><p>A plain green section with words.</p></section>
+</main>
+<footer><p>Bary, every day of the week.</p></footer>
+<script src="../src/tweakfast.js"></script>
+</body></html>
