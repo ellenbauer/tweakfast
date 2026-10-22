@@ -2405,8 +2405,10 @@
                 var tries = [keep.concat(add).join(' ')]; if (c && own.length) tries.push(Array.prototype.slice.call(b.classList).filter(function (k) { return !inkC || inkNames.indexOf(k) < 0; }).concat(add).join(' '));
                 tries.some(function (cls, n) {
                     b.setAttribute('class', cls); retint(b, from);
-                    var fits = layoutOf(b) === base, ok = fits && staysReadable(read, readings(b)) && (!full || bareReads(b)), g = groundLook(b); /* nothing moves, and every text still reads */
+                    var fits = layoutOf(b) === base, ok = fits && staysReadable(read, readings(b)) && (!full || bareReads(b)), g = groundLook(b), bs = getComputedStyle(b), none = bs.backgroundImage === 'none' && seeThrough(bs.backgroundColor); /* nothing moves, and every text still reads */
                     untint(b); putAttr(b, 'class', from);
+                    /* a class that paints nothing here (a background from a variable the page never sets, bg-transparent): the block stays see-through, and the row would be the page's own colour under a name that changes nothing */
+                    if (none) return fits;
                     if (fits || n === tries.length - 1) put(choice(cls, null, g, { ok: ok, why: fits ? 'read' : 'move' }));
                     return fits;
                 });
